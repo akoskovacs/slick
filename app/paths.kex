@@ -1,0 +1,14 @@
+# The addresses Slick has, said once. The router declares its routes with
+# these, the views write links with them, and the live view reads the
+# address bar back through them.
+module App.Paths
+
+# A channel of an organization: /acme/channels/general
+let channelPath = Metro.Path.define("/:organization/channels/:name")
+
+# The private chat with a person there: /acme/dm/u17…
+let directPath = Metro.Path.define("/:organization/dm/:person")
+
+# Either, with the thread that is open beside it, if one is.
+threaded : String -> String -> String
+let threaded(address, thread) = Metro.Path.asking(address, [("thread", thread)])

@@ -1,4 +1,6 @@
-# The API bots use. Every request carries `Authorization: Bearer <token>`.
+# The API bots use. Every request carries `Authorization: Bearer <token>`;
+# the `bearer` plug (App.Controllers.Application) has found the bot before
+# any of these run.
 #
 #   GET  /api/me
 #   GET  /api/:organization/channels
@@ -33,10 +35,8 @@
 # could, and tabs that are open see what it writes at once.
 module App.Controllers.Api
 
-using Harmat.Db, only: [Db]
-using Rodolfo
-using Metro.Live.Hub, only: [Hub]
-using Metro.Live.Presence, only: [Presence]
+using Metro.WebRequest, only: [WebRequest]
+using App.Controllers.Application, only: [databaseFor, hubFor, statusesFor, userFor]
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
@@ -49,174 +49,130 @@ using DB.Repositories.Users, only: [UserRepository]
 # The most messages one request is given.
 let MOST = 200
 
-whoami : Db -> Context -> Rodolfo.Reply
-foul whoami(database, env) do
-  match App.Services.Bots.bearer(database, env.request.headers.get("Authorization")) do
-    None => return refused()
-    Just(bot) => do
-      let mine : [Organization] = App.Live.Chat.organizations(database, bot)
-      let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
-      let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed}
-      return Response.JSON { body: JSON.stringify(answer) }
-    end
-  end
+# The longest a status stands without being said again, the longest it may
+# be asked to, and the longest it may be.
+let STATUS_SECONDS = 30
+let STATUS_MOST = 300
+let STATUS_LONGEST = 80
+
+whoami : WebRequest -> WebRequest
+foul whoami(request) do
+  let bot = userFor(request)
+  let mine : [Organization] = App.Live.Chat.organizations(databaseFor(request), bot)
+  let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
+  let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed}
+  return request.json(answer)
 end
 
-channelList : Db -> Context -> Rodolfo.Reply
-foul channelList(database, env) do
-  match App.Services.Bots.bearer(database, env.request.headers.get("Authorization")) do
-    None => return refused()
-    Just(bot) => do
-      let slug = env.param("organization").or("")
-      let tab = App.Live.Chat.arrived(database, bot, "/${slug}/channels/general")
-      return failed(404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
+channelList : WebRequest -> WebRequest
+foul channelList(request) do
+  let database = databaseFor(request)
+  let slug = request.param("organization").or("")
+  let tab = App.Live.Chat.arrived(database, userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
 
-      let found : [Conversation] = ConversationRepository { db: database }.channels(tab.organization).or([])
-      let listed : [Any] = found.map { |channel| {"id": channel.id, "name": channel.title, "topic": channel.topic} }
-      return Response.JSON { body: JSON.stringify(listed) }
-    end
-  end
+  let found : [Conversation] = ConversationRepository { db: database }.channels(tab.organization).or([])
+  let listed : [Any] = found.map { |channel| {"id": channel.id, "name": channel.title, "topic": channel.topic} }
+  return request.json(listed)
 end
 
-# The newest messages of a conversation, oldest first. `kind` is "channels"
-# or "dm": which of the two addresses the route was.
-history : Db -> Context -> String -> Rodolfo.Reply
-foul history(database, env, kind) do
-  match placed(database, env, kind, "") do
+# The newest messages of a conversation — a channel, or the private chat
+# with a person — oldest first.
+history : WebRequest -> WebRequest
+foul history(request) do
+  let database = databaseFor(request)
+  match placed(request, "") do
     Error(reply) => return reply
-    Ok((bot, tab, conversation)) => do
-      let asked = env.query("limit").or("50").to(Integer).or(50)
+    Ok((tab, conversation)) => do
+      let asked = request.query("limit").or("50").to(Integer).or(50)
       let limit = asked < 1 || asked > MOST then MOST else asked
-      let since = env.query("after").or("0").to(Integer).or(0)
+      let since = request.query("after").or("0").to(Integer).or(0)
       let people : [User] = UserRepository { db: database }.everyone.or([])
       let found : [Message] = MessageRepository { db: database }.latest(conversation.id, limit).or([])
       let listed : [Any] = found.filter { |message| message.sentAt > since }.map { |message| described(message, people) }
-      return Response.JSON { body: JSON.stringify(listed) }
+      return request.json(listed)
     end
   end
 end
 
 # Says something, in the conversation or — with `thread` — in a thread.
-posted : Db -> Server<Hub> -> Server<Presence> -> Context -> String -> Rodolfo.Reply
-foul posted(database, hub, statuses, env, kind) do
-  let thread = given(env, "thread")
-  let typed = given(env, "body")
-  let body = typed.empty? then App.Helpers.RichText.composed(listGiven(env, "blocks")) else typed
-  match placed(database, env, kind, thread) do
+posted : WebRequest -> WebRequest
+foul posted(request) do
+  let database = databaseFor(request)
+  let thread = request.field("thread").or("").trim
+  let typed = request.field("body").or("").trim
+  let body = typed.empty? then App.Helpers.RichText.composed(request.list("blocks")) else typed
+  match placed(request, thread) do
     Error(reply) => return reply
-    Ok((bot, tab, conversation)) => do
+    Ok((tab, conversation)) => do
       let event = thread.empty? then "send" else "reply"
-      let (_, changed) = App.Live.Chat.handled(database, statuses, bot, tab, [("event", Just(event)), ("body", Just(body))])
-      return failed(422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
+      let (_, changed) = App.Live.Chat.handled(database, statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
+      return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
-      hub.changed("api", "everyone")
+      hubFor(request).changed("api", "everyone")
       let people : [User] = UserRepository { db: database }.everyone.or([])
       let inChannel : [Message] = MessageRepository { db: database }.latest(conversation.id, 1).or([])
       let inThread : [Message] = MessageRepository { db: database }.answering(tab.thread).or([])
       let newest = thread.empty? then inChannel else inThread.reverse.take(1)
       let answer : {String: Any} = newest.first.map { |message| described(message, people) }.or({})
-      return Response.JSON { status: 201, body: JSON.stringify(answer) }
+      return request.json(201, answer)
     end
   end
 end
 
 # Puts an emoji on a message, or takes the bot's own one off again.
-reacting : Db -> Server<Hub> -> Server<Presence> -> Context -> String -> Rodolfo.Reply
-foul reacting(database, hub, statuses, env, kind) do
-  match placed(database, env, kind, "") do
+reacting : WebRequest -> WebRequest
+foul reacting(request) do
+  match placed(request, "") do
     Error(reply) => return reply
-    Ok((bot, tab, conversation)) => do
-      let (_, changed) = App.Live.Chat.handled(database, statuses, bot, tab, [("event", Just("react")), ("message", Just(given(env, "message"))), ("emoji", Just(given(env, "emoji")))])
-      return failed(422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
+    Ok((tab, conversation)) => do
+      let fields = [("event", Just("react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
+      let (_, changed) = App.Live.Chat.handled(databaseFor(request), statusesFor(request), userFor(request), tab, fields)
+      return failed(request, 422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
 
-      hub.changed("api", "everyone")
-      return Response.JSON { body: JSON.stringify({"ok": true}) }
+      hubFor(request).changed("api", "everyone")
+      return request.json({"ok": true})
     end
   end
 end
 
-# The longest a status stands without being said again, and the longest it
-# may be.
-let STATUS_SECONDS = 30
-let STATUS_MOST = 300
-let STATUS_LONGEST = 80
-
 # Says what the bot is doing in a conversation, or takes it back.
-statusSet : Db -> Server<Hub> -> Server<Presence> -> Context -> String -> Rodolfo.Reply
-foul statusSet(database, hub, statuses, env, kind) do
-  match placed(database, env, kind, "") do
+statusSet : WebRequest -> WebRequest
+foul statusSet(request) do
+  match placed(request, "") do
     Error(reply) => return reply
-    Ok((bot, tab, conversation)) => do
-      let text = given(env, "text").replace("\n", " ").take(STATUS_LONGEST)
-      let asked = given(env, "seconds").to(Integer).or(STATUS_SECONDS)
+    Ok((tab, conversation)) => do
+      let text = request.field("text").or("").trim.replace("\n", " ").take(STATUS_LONGEST)
+      let asked = request.field("seconds").or("").to(Integer).or(STATUS_SECONDS)
       let seconds = asked < 1 || asked > STATUS_MOST then STATUS_SECONDS else asked
-      App.Live.Chat.noting(database, statuses, bot, tab, text, text.empty? then 0 else seconds * 1000)
-      hub.changed("api", "everyone")
+      App.Live.Chat.noting(databaseFor(request), statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
+      hubFor(request).changed("api", "everyone")
       let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
-      return Response.JSON { body: JSON.stringify(answer) }
+      return request.json(answer)
     end
   end
 end
 
 private do
-  failed : Integer -> String -> Rodolfo.Reply
-  let failed(status, reason) = Response.JSON { status: status, body: JSON.stringify({"error": reason}) }
+  failed : WebRequest -> Integer -> String -> WebRequest
+  let failed(request, status, reason) = request.json(status, {"error": reason})
 
-  refused : Rodolfo.Reply
-  let refused() = failed(401, "Send a bot's token as: Authorization: Bearer <token>")
+  # The conversation the address names, and a tab showing it — if the bot
+  # may read it. A route with `:person` is the private chat with them; one
+  # with `:name` is a channel.
+  placed : WebRequest -> String -> Result<(Tab, Conversation), WebRequest>
+  foul placed(request, thread) do
+    let database = databaseFor(request)
+    let bot = userFor(request)
+    let slug = request.param("organization").or("")
+    let channel = App.Paths.channelPath.filled({"organization": slug, "name": request.param("name").or("")})
+    let direct = App.Paths.directPath.filled({"organization": slug, "person": request.param("person").or("")})
+    let tab = App.Live.Chat.arrived(database, bot, App.Paths.threaded(request.param("person").set? then direct else channel, thread))
+    return Error(failed(request, 404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
 
-  # The bot asking, and the conversation the address names — if there is
-  # such a bot, and it may read that conversation.
-  placed : Db -> Context -> String -> String -> Result<(User, Tab, Conversation), Rodolfo.Reply>
-  foul placed(database, env, kind, thread) do
-    match App.Services.Bots.bearer(database, env.request.headers.get("Authorization")) do
-      None => return Error(refused())
-      Just(bot) => do
-        let slug = env.param("organization").or("")
-        let subject = env.param("name").or("")
-        let suffix = thread.empty? then "" else "?thread=${thread}"
-        let tab = App.Live.Chat.arrived(database, bot, "/${slug}/${kind}/${subject}${suffix}")
-        return Error(failed(404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
-
-        match App.Live.Chat.visible(database, bot, tab) do
-          Just(conversation) => return Ok((bot, tab, conversation))
-          None => return Error(failed(404, "There is no such conversation, or this bot is not in it."))
-        end
-      end
-    end
-  end
-
-  # One field of what was sent: of a JSON object, or of a form.
-  given : Context -> String -> String
-  let given(env, name) do
-    let text = env.request.body.to(String).or("").trim
-    return env.form(name).or("").trim if text.take(1) != "{"
-
-    match JSON.parse(text) do
-      Ok(value) => do
-        let fields : {String: Any} = value
-        match fields.get(name) do
-          Just(found) => return "${found}".trim
-          None => return ""
-        end
-      end
-      Error(_) => return ""
-    end
-  end
-
-  # One field of a JSON object that was sent, when it is a list.
-  listGiven : Context -> String -> [Any]
-  let listGiven(env, name) do
-    let text = env.request.body.to(String).or("").trim
-    return [] if text.take(1) != "{"
-
-    match JSON.parse(text) do
-      Ok(value) => do
-        let fields : {String: Any} = value
-        let found : [Any] = fields.get(name).or([])
-        return found
-      end
-      Error(_) => return []
+    match App.Live.Chat.visible(database, bot, tab) do
+      Just(conversation) => return Ok((tab, conversation))
+      None => return Error(failed(request, 404, "There is no such conversation, or this bot is not in it."))
     end
   end
 

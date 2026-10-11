@@ -1,0 +1,42 @@
+# The chat page, and the socket that keeps it current.
+module App.Controllers.Chat
+
+using Metro.WebRequest, only: [WebRequest]
+using App.Controllers.Application, only: [databaseFor, hubFor, statusesFor, userFor, page]
+
+# The page, opened at the conversation its address names. The live view
+# takes over from there (`joined`) and keeps the address bar in step.
+show : WebRequest -> WebRequest
+foul show(request) do
+  let database = databaseFor(request)
+  let user = userFor(request)
+  let tab = App.Live.Chat.arrived(database, user, request.target)
+  return page(request, 200, App.Views.Chat.page(App.Live.Chat.markup(database, statusesFor(request), user, tab)))
+end
+
+# A tab's socket: events in, markup out, until it closes.
+#
+# Every tab is in one group: a message anywhere is news to every sidebar.
+# What a tab is then shown is still only what its person may read. The
+# socket is opened with `?at=<the page's address>`, and the live view starts
+# where the page was rendered.
+#
+# Having a tab open is being here: said on the way in, taken back on the way
+# out, and the others' pages are told both times.
+joined : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
+foul joined(request, socket) do
+  let database = databaseFor(request)
+  let hub = hubFor(request)
+  let statuses = statusesFor(request)
+  let user = userFor(request)
+  let seat = "${BEAM.erlang.unique_integer([:positive])}"
+  App.Live.Chat.arriving(statuses, user, seat)
+  hub.changed(seat, "everyone")
+  Metro.Live.Socket.attached(
+    socket, hub, "everyone", App.Live.Chat.arrived(database, user, request.query("at").or("/")),
+    do |tab, event| App.Live.Chat.handled(database, statuses, user, tab, event) end,
+    do |tab| App.Live.Chat.markup(database, statuses, user, tab) end
+  )
+  App.Live.Chat.leaving(statuses, user, seat)
+  hub.changed(seat, "everyone")
+end

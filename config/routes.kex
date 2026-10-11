@@ -1,227 +1,72 @@
-# Every URL the application answers. This is the one file that touches
-# Rodolfo's router.
+# Every address the application answers, and who gets as far as answering.
 #
-#   everything       Metro.Plugs.sameOrigin: no POST from another site
-#   signed in only   GET /   POST /signout
-#   signed out only  GET /signin   POST /signin   GET /register   POST /register
-#   WS /live         the chat kept current: events in, markup out
-#   GET /metro/live.js   the browser half of a live page, from Metro
-#   GET /*           files from public/
+#   :application   the database, the hub and the statuses board, on every request
+#   :browser       no request from another site; nothing kept by a cache
+#   :members       signed in, or sent to sign in
+#   :guests        signed out, or sent home
+#   :bots          a bot's token, or 401
 #
-# Who may reach what is said once, by the plug on each scope. Who is asking
-# is a session token in the `slick_session` cookie.
+# Who is asking is a session token in the `slick_session` cookie for a
+# person, and an `Authorization: Bearer` token for a bot. Each is looked up
+# once, by a plug, and the actions are handed who it was.
 module Config.Routes
 
-using Rodolfo
-using Net.HTTP.WebSocket, only: [Connection]
 using Metro.Live.Hub, only: [Hub]
-using App.Models.User, only: [User]
-using Harmat.Db, only: [Db]
+using Metro.Plugs, only: [providing]
+using Metro.Router, only: [pipeline, scope, get, post, live, static]
 using DB.Store, only: [Store]
+# Actions are named bare, and so imported by name: a reference through the
+# module (`~App.Controllers.Chat.show`) does not resolve when it is called.
+using App.Controllers.Accounts, only: [signInPage, signIn, signOut, registrationPage, register]
+using App.Controllers.Api, only: [whoami, channelList, history, posted, reacting, statusSet]
+using App.Controllers.Chat, only: [show]
 
-let COOKIE = "slick_session"
-
-routes : Server<Store> -> Server<Hub> -> Rodolfo.Router
+routes : Server<Store> -> Server<Hub> -> Metro.Router.Router
 foul routes(store, hub) do
   let database = Harmat.Db.over(DB.Store.gateway(store))
   # What people are in the middle of — typing, or what a bot says it is
   # doing. Remembered here and not in the database: it is only true for now.
   let statuses = Process.spawn(Metro.Live.Presence.Presence {})
-  Rodolfo.router do
-    # Bots, with a token on every request: no cookie is read here, so there
-    # is no request another site could forge, and no origin to check.
-    scope "/api" do
-      get "/me" do |env|
-        App.Controllers.Api.whoami(database, env)
-      end
+  Metro.Router.define do
+    pipeline(:application, [providing(:database, database), providing(:hub, hub), providing(:statuses, statuses)])
+    pipeline(:browser, [Metro.Plugs.sameOrigin, Metro.Plugs.unstored])
+    pipeline(:members, [App.Controllers.Application.signedIn()])
+    pipeline(:guests, [App.Controllers.Application.signedOut()])
+    pipeline(:bots, [App.Controllers.Application.bearer()])
 
-      get "/:organization/channels" do |env|
-        App.Controllers.Api.channelList(database, env)
-      end
-
-      get "/:organization/channels/:name/messages" do |env|
-        App.Controllers.Api.history(database, env, "channels")
-      end
-
-      post "/:organization/channels/:name/messages" do |env|
-        App.Controllers.Api.posted(database, hub, statuses, env, "channels")
-      end
-
-      post "/:organization/channels/:name/reactions" do |env|
-        App.Controllers.Api.reacting(database, hub, statuses, env, "channels")
-      end
-
-      post "/:organization/channels/:name/status" do |env|
-        App.Controllers.Api.statusSet(database, hub, statuses, env, "channels")
-      end
-
-      post "/:organization/dm/:name/status" do |env|
-        App.Controllers.Api.statusSet(database, hub, statuses, env, "dm")
-      end
-
-      get "/:organization/dm/:name/messages" do |env|
-        App.Controllers.Api.history(database, env, "dm")
-      end
-
-      post "/:organization/dm/:name/messages" do |env|
-        App.Controllers.Api.posted(database, hub, statuses, env, "dm")
-      end
-
-      post "/:organization/dm/:name/reactions" do |env|
-        App.Controllers.Api.reacting(database, hub, statuses, env, "dm")
-      end
+    scope "/api", via: [:application, :bots] do
+      get("/me", ~whoami)
+      get("/:organization/channels", ~channelList)
+      get("/:organization/channels/:name/messages", ~history)
+      post("/:organization/channels/:name/messages", ~posted)
+      post("/:organization/channels/:name/reactions", ~reacting)
+      post("/:organization/channels/:name/status", ~statusSet)
+      get("/:organization/dm/:person/messages", ~history)
+      post("/:organization/dm/:person/messages", ~posted)
+      post("/:organization/dm/:person/reactions", ~reacting)
+      post("/:organization/dm/:person/status", ~statusSet)
     end
 
-    scope "" do
-      plug(Metro.Plugs.sameOrigin)
-      plug(signedIn(database))
+    scope "/", via: [:application, :browser, :guests] do
+      get("/signin", ~signInPage)
+      post("/signin", ~signIn)
+      get("/register", ~registrationPage)
+      post("/register", ~register)
+    end
 
-      get "/" do |env|
-        chatting(database, statuses, env)
-      end
-
+    scope "/", via: [:application, :browser, :members] do
+      get("/", ~show)
       # A conversation has an address; the live view keeps the address bar
       # on the one it is showing, and a reload comes back here.
-      get "/:organization/channels/:name" do |env|
-        chatting(database, statuses, env)
-      end
-
-      get "/:organization/dm/:person" do |env|
-        chatting(database, statuses, env)
-      end
-
-      post "/signout" do |env|
-        App.Services.Authentication.signOut(database, token(env))
-        Response.Redirect { status: 303, location: "/signin", headers: cookie(Metro.Cookies.cleared(COOKIE)) }
-      end
-    end
-
-    scope "" do
-      plug(Metro.Plugs.sameOrigin)
-      plug(signedOut(database))
-
-      get "/signin" do
-        page(App.Views.Auth.signin("", []))
-      end
-
-      post "/signin" do |env|
-        let email = env.form("email").or("")
-        match App.Services.Authentication.signIn(database, email, env.form("password").or("")) do
-          Ok(token) => entered(env, token)
-          Error(problems) => Response.HTML { status: 422, body: stamped(App.Views.Auth.signin(email, problems)) }
-        end
-      end
-
-      get "/register" do
-        page(App.Views.Auth.register("", "", []))
-      end
-
-      post "/register" do |env|
-        let name = env.form("name").or("")
-        let email = env.form("email").or("")
-        match App.Services.Authentication.register(database, name, email, env.form("password").or("")) do
-          Ok(token) => entered(env, token)
-          Error(problems) => Response.HTML { status: 422, body: stamped(App.Views.Auth.register(name, email, problems)) }
-        end
-      end
-    end
-
-    # A `ws` route is outside the plug stack, so it asks the same two
-    # questions itself and closes the socket on a wrong answer.
-    ws "/live" do |env, socket|
-      let user = Metro.Plugs.trusted?(env) then visitor(database, env) else None
-      if user.none?
-        socket.close
-      else
-        served(database, hub, statuses, socket, user.try, env.query("at").or("/"))
-      end
+      get(App.Paths.channelPath.template, ~show)
+      get(App.Paths.directPath.template, ~show)
+      post("/signout", ~signOut)
+      # The chat kept current: events in, markup out. Behind the same plugs
+      # as the page, so a socket from another site, or from nobody, is refused.
+      live "/live" do |request, socket| App.Controllers.Chat.joined(request, socket) end
     end
 
     Metro.Live.Client.route()
-    publicFolder("public")
-  end
-end
-
-# --- Plugs ------------------------------------------------------------------
-
-# Lets a signed-in request through; sends anyone else to sign in.
-signedIn : Db -> Rodolfo.Plug
-foul signedIn(database) = Plug.around do |inner, env|
-  if visitor(database, env).set?
-    inner(env)
-  else
-    redirectTo("/signin")
-  end
-end
-
-# The reverse, for the sign-in and registration pages.
-signedOut : Db -> Rodolfo.Plug
-foul signedOut(database) = Plug.around do |inner, env|
-  if visitor(database, env).set?
-    redirectTo("/")
-  else
-    inner(env)
-  end
-end
-
-private do
-  # The session token a request carries, if any.
-  token : Context -> String?
-  let token(env) = Metro.Plugs.cookie(env, COOKIE)
-
-  # Who is signed in on this request.
-  visitor : Db -> Context -> User?
-  foul visitor(database, env) = App.Services.Authentication.current(database, token(env))
-
-  # The chat page, opened at the conversation the address names.
-  foul chatting(database: Db, statuses: Server<Presence>, env: Context) -> Rodolfo.Reply do
-    let user : User = visitor(database, env).try
-    let tab = App.Live.Chat.arrived(database, user, env.request.target.string)
-    page(App.Views.Chat.page(App.Live.Chat.markup(database, statuses, user, tab)))
-  end
-
-  # Every tab is in one group: a message anywhere is news to every sidebar.
-  # What a tab is then shown is still only what its person may read.
-  #
-  # `location` is the address of the page the socket was opened from: the
-  # live view starts where the page was rendered.
-  foul served(database: Db, hub: Server<Hub>, statuses: Server<Presence>, socket: Connection, user: User, location: String) -> Void do
-    # Having a tab open is being here: said on the way in, taken back on the
-    # way out, and the others' pages are told both times.
-    let seat = "${BEAM.erlang.unique_integer([:positive])}"
-    App.Live.Chat.arriving(statuses, user, seat)
-    hub.changed(seat, "everyone")
-    Metro.Live.Socket.attached(
-      socket, hub, "everyone", App.Live.Chat.arrived(database, user, location),
-      do |tab, event| App.Live.Chat.handled(database, statuses, user, tab, event) end,
-      do |tab| App.Live.Chat.markup(database, statuses, user, tab) end
-    )
-    App.Live.Chat.leaving(statuses, user, seat)
-    hub.changed(seat, "everyone")
-  end
-
-  # A page with its stylesheet and script addressed by what is in them
-  # (`/app.css?v=3f9a…`), so a browser that has kept an old copy asks again
-  # when either changes, and not otherwise.
-  foul stamped(body: String) -> String do
-    let sheet = Digest.sha256(FS.File.read("public/app.css").or("")).take(12)
-    let script = Digest.sha256(Metro.Live.Client.script).take(12)
-    return body.replace("href=\"/app.css\"", "href=\"/app.css?v=${sheet}\"").replace("src=\"/metro/live.js\"", "src=\"/metro/live.js?v=${script}\"")
-  end
-
-  # A page that must not be kept by a cache: it is one person's.
-  page : String -> Rodolfo.Reply
-  foul page(body) = Response.HTML { body: stamped(body), headers: Net.HTTP.Headers.empty.add("Cache-Control", "no-store").or(Net.HTTP.Headers.empty) }
-
-  cookie : String -> Net.HTTP.Headers
-  let cookie(value) = Net.HTTP.Headers.empty.add("Set-Cookie", value).or(Net.HTTP.Headers.empty)
-
-  # Signed in: hand the browser its session and send it home. `Secure` goes
-  # on the cookie when the request arrived over HTTPS, as a proxy reports it.
-  entered : Context -> String -> Rodolfo.Reply
-  let entered(env, token) do
-    let secure? = env.request.headers.get("X-Forwarded-Proto") == Just("https")
-    let issued = Metro.Cookies.issued(COOKIE, token, App.Services.Authentication.LIFETIME, secure?)
-    Response.Redirect { status: 303, location: "/", headers: cookie(issued) }
+    static("public")
   end
 end

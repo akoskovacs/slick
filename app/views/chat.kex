@@ -181,9 +181,15 @@ private do
   # and `App.Live.Chat.arrived` reads back.
   located : Organization -> Conversation -> User -> [Message] -> String
   let located(organization, conversation, user, thread) do
-    let base = conversation.channel? then "/${organization.slug}/channels/${conversation.title}" else "/${organization.slug}/dm/${conversation.counterpart(user.id)}"
-    thread.first.map { |opening| "${base}?thread=${opening.id}" }.or(base)
+    let channel = App.Paths.channelPath.filled({"organization": organization.slug, "name": conversation.title})
+    let direct = App.Paths.directPath.filled({"organization": organization.slug, "person": conversation.counterpart(user.id)})
+    App.Paths.threaded(conversation.channel? then channel else direct, opened(thread))
   end
+
+  # The id of the message an open thread starts with; "" when none is open.
+  opened : [Message] -> String
+  let opened([]) = ""
+  let opened([opening | replies]) = opening.id
 
   # The dialog a tab has open, if any.
   asking : Tab -> Organization -> [User] -> [User] -> User -> String

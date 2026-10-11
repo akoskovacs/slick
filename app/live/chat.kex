@@ -156,34 +156,40 @@ foul noting(database, statuses, user, tab, text, milliseconds) do
   end
 end
 
-# The tab for an address: `/acme/channels/general`, `/acme/dm/<person>`,
-# either with `?thread=<message>`. Anything else, or a place this person may
-# not be, is the tab everyone starts with. A private chat is started by
-# going to it.
+# The tab for an address (App.Paths): a channel or a private chat of an
+# organization, either with `?thread=<message>`. Anything else, or a place
+# this person may not be, is the tab everyone starts with. A private chat is
+# started by going to it.
 arrived : Db -> User -> String -> Tab
 foul arrived(database, user, location) do
-  let segments = location.split("?").first.or("").split("/").reject { |segment| segment.empty? }
-  let thread = location.split("thread=").drop(1).first.or("").split("&").first.or("")
-  let place = segments.drop(1).first.or("")
-  let subject = segments.drop(2).first.or("")
-  return Tab {} if segments.count != 3
-
-  match OrganizationRepository { db: database }.addressed(segments.first.or("")) do
-    Ok(Just(organization)) => do
-      return Tab {} if !MembershipRepository { db: database }.affiliated?(organization.id, user.id)
-
-      if place == "channels"
-        match ConversationRepository { db: database }.channelCalled(organization.id, subject) do
-          Ok(Just(channel)) => return Tab { organization: organization.id, conversation: channel.id, thread: thread }
-          _ => return Tab { organization: organization.id }
+  let thread = Metro.Path.query(location, "thread").or("")
+  match App.Paths.channelPath.captured(location) do
+    Just(parts) => match memberOrganization(database, user, parts.get("organization").or("")) do
+      None => return Tab {}
+      Just(organization) => match ConversationRepository { db: database }.channelCalled(organization.id, parts.get("name").or("")) do
+        Ok(Just(channel)) => return Tab { organization: organization.id, conversation: channel.id, thread: thread }
+        _ => return Tab { organization: organization.id }
+      end
+    end
+    None => match App.Paths.directPath.captured(location) do
+      None => return Tab {}
+      Just(parts) => match memberOrganization(database, user, parts.get("organization").or("")) do
+        None => return Tab {}
+        Just(organization) => do
+          let (chat, _) = whispered(database, user, Tab { organization: organization.id }, parts.get("person").or(""))
+          return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
         end
       end
-      return Tab { organization: organization.id } if place != "dm"
-
-      let (chat, _) = whispered(database, user, Tab { organization: organization.id }, subject)
-      return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
     end
-    _ => return Tab {}
+  end
+end
+
+# The organization at an address, if this person is in it.
+memberOrganization : Db -> User -> String -> Organization?
+foul memberOrganization(database, user, slug) do
+  match OrganizationRepository { db: database }.addressed(slug) do
+    Ok(Just(organization)) => return MembershipRepository { db: database }.affiliated?(organization.id, user.id) then Just(organization) else None
+    _ => return None
   end
 end
 

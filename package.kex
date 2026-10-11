@@ -14,8 +14,6 @@ package "slick" do
   command("rollback", run: "tey run rollback", description: "Undo the newest migration (or the newest N)")
   command("odbc", run: "sh script/setup-odbc.sh db/odbc", description: "Build Erlang's ODBC port program into db/odbc, once")
 
-  # Rodolfo's main, not its 0.2.0 tag: publicFolder is newer than the tag.
-  tey("rodolfo", git: "https://github.com/kexhq/rodolfo", branch: "main")
   tey("harmat", git: "https://github.com/kexhq/harmat", branch: "database-migrations-repositories")
   tey("metro", git: "https://github.com/akoskovacs/metro", branch: "main")
 end
