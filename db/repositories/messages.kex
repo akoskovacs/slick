@@ -3,13 +3,13 @@
 #   DB.Repositories.Messages.latest(conversation.id, 200)
 module DB.Repositories.Messages
 
-using Harmat.Db, as: Db
+using Harmat.Database, as: Database
 using App.Models.Message, only: [Message]
 
 # The newest `limit` messages of a conversation, oldest first. Replies are
 # not among them: they are read with the thread they belong to.
 foul latest(conversationId: String, limit: Integer) -> Result<[Message], String> do
-  return Db.select().from(DB.Schema.Messages)
+  return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.conversationId.eq(conversationId))
     .where(DB.Schema.Messages.parentId.eq(""))
     .orderBy(descending: [:sent_at, :id])
@@ -20,7 +20,7 @@ end
 
 # The replies to a message, oldest first.
 foul answering(rootId: String) -> Result<[Message], String> do
-  return Db.select().from(DB.Schema.Messages)
+  return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.parentId.eq(rootId))
     .orderBy([:sent_at, :id])
     .all
@@ -50,13 +50,13 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     sent_on: message.sentOn,
     parent_id: parent
   }
-  let stored = Db.insert(DB.Schema.Messages)
+  let stored = Database.insert(DB.Schema.Messages)
     .values(row)
     .run
   return stored.map { |_| message } if stored.error? || parent.empty?
 
   let replies = answering(parent).try
-  return Db.update(DB.Schema.Messages)
+  return Database.update(DB.Schema.Messages)
     .set({reply_count: replies.count})
     .where(DB.Schema.Messages.id.eq(parent))
     .run
@@ -65,7 +65,7 @@ end
 
 # One message, or `None`.
 foul single(id: String) -> Result<Message?, String> do
-  return Db.select().from(DB.Schema.Messages)
+  return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.id.eq(id))
     .first
     .map { |row| row.map { |found| decoded(found) } }

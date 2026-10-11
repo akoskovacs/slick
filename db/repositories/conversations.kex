@@ -6,12 +6,12 @@
 # and the live view's to ask; this only finds and stores them.
 module DB.Repositories.Conversations
 
-using Harmat.Db, as: Db
+using Harmat.Database, as: Database
 using App.Models.Conversation, only: [Conversation]
 
 # Every channel of an organization, by name.
 foul channels(organizationId: String) -> Result<[Conversation], String> do
-  return Db.select().from(DB.Schema.Conversations)
+  return Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.kind.eq("channel"))
     .where(DB.Schema.Conversations.organizationId.eq(organizationId))
     .orderBy([:title])
@@ -21,7 +21,7 @@ end
 
 # One conversation, or `None`.
 foul lookup(id: String) -> Result<Conversation?, String> do
-  return Db.select().from(DB.Schema.Conversations)
+  return Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.id.eq(id))
     .first
     .map { |row| row.map { |found| decoded(found) } }
@@ -29,7 +29,7 @@ end
 
 # An organization's channel of this name, or `None`.
 foul channelCalled(organizationId: String, title: String) -> Result<Conversation?, String> do
-  return Db.select().from(DB.Schema.Conversations)
+  return Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.slug.eq("${organizationId}#${title}"))
     .first
     .map { |row| row.map { |found| decoded(found) } }
@@ -54,7 +54,7 @@ foul founded(organizationId: String, title: String, by: String) -> Result<Conver
     created_by: by,
     created_at: "${DateTime.utcNow()}"
   }
-  return Db.insert(DB.Schema.Conversations)
+  return Database.insert(DB.Schema.Conversations)
     .values(row)
     .run
     .map { |_| channel }
@@ -64,7 +64,7 @@ end
 # first time it is asked for.
 foul between(organizationId: String, one: String, other: String) -> Result<Conversation, String> do
   let slug = "${organizationId}${App.Models.Conversation.pairing(one, other)}"
-  let existing = Db.select().from(DB.Schema.Conversations)
+  let existing = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.slug.eq(slug))
     .first
   match existing do
@@ -91,7 +91,7 @@ foul between(organizationId: String, one: String, other: String) -> Result<Conve
         created_by: one,
         created_at: "${DateTime.utcNow()}"
       }
-      return Db.insert(DB.Schema.Conversations)
+      return Database.insert(DB.Schema.Conversations)
         .values(row)
         .run
         .map { |_| chat }
@@ -102,7 +102,7 @@ end
 # Sets a channel's topic; whether there was such a channel. A private chat
 # has no topic, and the condition on `kind` keeps it that way.
 foul retitled(id: String, topic: String) -> Result<Bool, String> do
-  return Db.within(DB.Schema.Conversations.kind.eq("channel"))
+  return Database.within(DB.Schema.Conversations.kind.eq("channel"))
     .update(DB.Schema.Conversations)
     .set({topic: topic})
     .where(DB.Schema.Conversations.id.eq(id))

@@ -3,7 +3,7 @@
 #   DB.Repositories.Sessions.holder(digest)
 module DB.Repositories.Sessions
 
-using Harmat.Db, as: Db
+using Harmat.Database, as: Database
 
 foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<Integer, String> do
   let row = {
@@ -12,21 +12,21 @@ foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<In
     expires_at: expiresAt,
     created_at: "${DateTime.utcNow()}"
   }
-  return Db.insert(DB.Schema.Sessions)
+  return Database.insert(DB.Schema.Sessions)
     .values(row)
     .run
 end
 
 # Whose session a digest is, and when it expires (seconds since 1970).
 foul holder(tokenDigest: String) -> Result<(String, Integer)?, String> do
-  return Db.select().from(DB.Schema.Sessions)
+  return Database.select().from(DB.Schema.Sessions)
     .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
     .first
     .map { |row| row.map { |found| held(found) } }
 end
 
 foul revoke(tokenDigest: String) -> Result<Bool, String> do
-  return Db.delete(DB.Schema.Sessions)
+  return Database.delete(DB.Schema.Sessions)
     .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
     .run
     .map { |count| count > 0 }

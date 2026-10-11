@@ -3,13 +3,13 @@
 #   DB.Repositories.Reactions.flipped(message, user.id, "🎉")
 module DB.Repositories.Reactions
 
-using Harmat.Db, as: Db
+using Harmat.Database, as: Database
 using App.Models.Message, only: [Message]
 using App.Models.Reaction, only: [Reaction]
 
 # Every reaction in a conversation.
 foul throughout(conversationId: String) -> Result<[Reaction], String> do
-  return Db.select().from(DB.Schema.Reactions)
+  return Database.select().from(DB.Schema.Reactions)
     .where(DB.Schema.Reactions.conversationId.eq(conversationId))
     .all
     .map { |rows| rows.map { |row| decoded(row) } }
@@ -19,13 +19,13 @@ end
 # Whether it is on afterwards.
 foul flipped(message: Message, userId: String, emoji: String) -> Result<Bool, String> do
   let id = "${message.id}:${userId}:${emoji}"
-  let existing = Db.select([:id]).from(DB.Schema.Reactions)
+  let existing = Database.select([:id]).from(DB.Schema.Reactions)
     .where(DB.Schema.Reactions.id.eq(id))
     .first
   match existing do
     Error(reason) => return Error(reason)
     Ok(Just(_)) => do
-      return Db.delete(DB.Schema.Reactions)
+      return Database.delete(DB.Schema.Reactions)
         .where(DB.Schema.Reactions.id.eq(id))
         .run
         .map { |_| false }
@@ -38,7 +38,7 @@ foul flipped(message: Message, userId: String, emoji: String) -> Result<Bool, St
         user_id: userId,
         emoji: emoji
       }
-      return Db.insert(DB.Schema.Reactions)
+      return Database.insert(DB.Schema.Reactions)
         .values(row)
         .run
         .map { |_| true }

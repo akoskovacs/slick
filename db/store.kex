@@ -10,7 +10,7 @@
 # other — is installed as wherever requests are served (main.kex).
 module DB.Store
 
-using Harmat.Database, only: [Statement]
+using Harmat.Odbc, only: [Statement]
 
 record Store do
   connection : Any = :closed
@@ -27,8 +27,8 @@ serving Store do
     match sound() do
       Error(reason) => return { reply: Error(reason) }
       Ok(head) => do
-        Harmat.Database.sideload(ODBC)
-        match Harmat.Database.connect(dsn) do
+        Harmat.Odbc.sideload(ODBC)
+        match Harmat.Odbc.connect(dsn) do
           Error(reason) => return { reply: Error(reason) }
           Ok(connection) => do
             new.connection = connection
@@ -50,11 +50,11 @@ serving Store do
   end
 
   foul slot ran(statement: Statement) -> Reply<Result<Integer, String>> do
-    return { reply: Harmat.Database.execute(@connection, statement) }
+    return { reply: Harmat.Odbc.execute(@connection, statement) }
   end
 
   foul slot asked(statement: Statement) -> Reply<Result<[[String]], String>> do
-    return { reply: Harmat.Database.query(@connection, statement) }
+    return { reply: Harmat.Odbc.query(@connection, statement) }
   end
 end
 
@@ -77,11 +77,11 @@ record StoreConnection do
 end
 
 make StoreConnection, implement: Harmat.Connection do
-  foul run(statement: Harmat.Database.Statement) -> Result<Integer, String> do
+  foul run(statement: Harmat.Odbc.Statement) -> Result<Integer, String> do
     return flat(@store.ran(statement))
   end
 
-  foul ask(statement: Harmat.Database.Statement) -> Result<[[String]], String> do
+  foul ask(statement: Harmat.Odbc.Statement) -> Result<[[String]], String> do
     return flat(@store.asked(statement))
   end
 end

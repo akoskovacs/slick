@@ -3,7 +3,7 @@
 #   DB.Repositories.Organizations.addressed("acme")
 module DB.Repositories.Organizations
 
-using Harmat.Db, as: Db
+using Harmat.Database, as: Database
 using App.Models.Organization, only: [Organization]
 
 # Creates an organization. Fails when the address is taken: the unique
@@ -21,7 +21,7 @@ foul chartered(name: String, slug: String, by: String) -> Result<Organization, S
     created_by: by,
     created_at: "${DateTime.utcNow()}"
   }
-  return Db.insert(DB.Schema.Organizations)
+  return Database.insert(DB.Schema.Organizations)
     .values(row)
     .run
     .map { |_| organization }
@@ -29,7 +29,7 @@ end
 
 # The organization at this address, or `None`.
 foul addressed(slug: String) -> Result<Organization?, String> do
-  return Db.select().from(DB.Schema.Organizations)
+  return Database.select().from(DB.Schema.Organizations)
     .where(DB.Schema.Organizations.slug.eq(slug))
     .first
     .map { |row| row.map { |found| decoded(found) } }
@@ -37,7 +37,7 @@ end
 
 # The organization with this id, or `None`.
 foul identified(id: String) -> Result<Organization?, String> do
-  return Db.select().from(DB.Schema.Organizations)
+  return Database.select().from(DB.Schema.Organizations)
     .where(DB.Schema.Organizations.id.eq(id))
     .first
     .map { |row| row.map { |found| decoded(found) } }
