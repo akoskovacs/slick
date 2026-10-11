@@ -1,4 +1,5 @@
 using Metro.Live.Presence, only: [Presence]
+using Metro.Environment, only: [Development, Test, Production]
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.User, only: [User]
@@ -99,6 +100,24 @@ describe("Slick") do
       # Files of public/, and nothing else.
       Assert.equal(site.call(Metro.WebRequest.asked("GET", "/app.css")).code, 200)
       Assert.equal(site.call(Metro.WebRequest.asked("GET", "/../package.kex")).code, 404)
+    end
+    FS.File.delete(file)
+  end
+
+  it("seeds development with somewhere to sign in, once, and nothing elsewhere") do
+    let file = "db/spec_seeds_${BEAM.erlang.system_time(:millisecond)}.sqlite3"
+    let store = DB.Store.started(Config.Database.sqlite(file)).try
+    DB.Store.migrate(store).try
+    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+      Assert.equal(DB.Seeds.planted(Test), Ok([]))
+      Assert.equal(DB.Seeds.planted(Production), Ok([]))
+      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(3))
+      Assert.equal(DB.Seeds.planted(Development), Ok([]))
+
+      let token = App.Services.Authentication.signIn("ada@example.com", DB.Seeds.PASSWORD).try
+      let ada : User = App.Services.Authentication.current(Just(token)).try
+      let statuses = Process.spawn(Metro.Live.Presence.Presence {})
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("Welcome to Acme 👋"))
     end
     FS.File.delete(file)
   end

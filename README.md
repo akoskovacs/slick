@@ -13,7 +13,7 @@ Needs unixODBC and a SQLite ODBC driver (`brew install unixodbc sqliteodbc`).
 ## Layout
 
 ```
-main.kex            boot, and the server / migrate / rollback commands
+main.kex            boot, and the server / migrate / rollback / seed commands
 app/
   models/           records, no database code
   forms/            what a form's fields must satisfy
@@ -29,6 +29,7 @@ db/
   migrations.kex    the list of them, in order
   repositories/     the only code that knows rows
   store.kex         the process that owns the connection
+  seeds.kex         what a new database starts with, per environment
 public/             app.css
 spec/
 ```
@@ -44,4 +45,8 @@ spec/
 ```sh
 tey migrate
 tey rollback
+tey seed       # development: Acme, with ada@example.com / "correct horse"
 ```
+
+Seeds are apart from the migrations (`db/seeds.kex`), and planting them
+twice plants once. Only development has any.

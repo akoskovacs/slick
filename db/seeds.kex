@@ -1,0 +1,63 @@
+# What a database starts with, apart from its tables. Kept here and not in
+# the migrations: those change the schema and carry old rows across it, and
+# say nothing about what a new database should have in it.
+#
+#   tey seed     plant what this environment's database starts with
+#
+# Planting twice plants once: a seed looks for what it would make first.
+#
+# Only development has seeds — an organization to sign in to straight away,
+# as ada@example.com or bob@example.com with the password below. Test starts
+# empty, so a spec says what it relies on; production starts with whoever
+# registers.
+module DB.Seeds
+
+using Metro.Environment, only: [Environment, Development]
+using App.Models.User, only: [User]
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Memberships, as: Memberships
+using DB.Repositories.Messages, as: Messages
+using DB.Repositories.Organizations, as: Organizations
+using DB.Repositories.Users, as: Users
+
+# The password of every seeded person.
+let PASSWORD = "correct horse"
+
+# Plants an environment's seeds. What was planted, in words: nothing when it
+# was all there already.
+planted : Environment -> Result<[String], String>
+foul planted(Development) = demo()
+foul planted(environment) = Ok([])
+
+private do
+  # Acme: two people, #general, and a first message.
+  foul demo() -> Result<[String], String> do
+    let existing = Organizations.addressed("acme").try
+    return Ok([]) if existing.set?
+
+    let ada = person("Ada", "ada@example.com").try
+    let bob = person("Bob", "bob@example.com").try
+    let acme = Organizations.chartered("Acme", "acme", ada.id).try
+    Memberships.enlisted(acme.id, ada.id).try
+    Memberships.enlisted(acme.id, bob.id).try
+    let general = Conversations.founded(acme.id, App.Models.Conversation.GENERAL, ada.id).try
+    Conversations.retitled(general.id, "Company-wide announcements and chatter").try
+    Messages.said(general.id, ada.id, "Welcome to Acme :wave:", "").try
+    return Ok([
+      "the organization Acme, at /acme",
+      "${ada.email} and ${bob.email}, password \"${PASSWORD}\"",
+      "#general, with a first message"
+    ])
+  end
+
+  # The person registered under an email, made if there is none.
+  foul person(name: String, email: String) -> Result<User, String> do
+    match Users.credentials(email).try do
+      Just((found, _)) => return Ok(found)
+      None => do
+        let id = "u${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
+        return Users.enroll(User { id: id, email: email, name: name }, Metro.Auth.Password.hashed(PASSWORD))
+      end
+    end
+  end
+end
