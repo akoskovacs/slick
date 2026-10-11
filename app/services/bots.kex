@@ -1,0 +1,43 @@
+# Bots and their API tokens.
+#
+# A token is made here, handed back once, and stored only as its SHA-256:
+# whoever reads the database cannot act as a bot.
+module App.Services.Bots
+
+using Harmat.Db, only: [Db]
+using App.Models.User, only: [User]
+using DB.Repositories.Users, only: [UserRepository]
+
+# What every token starts with, so one found lying around can be recognised.
+let PREFIX = "slick_bot_"
+
+# Makes a bot for a person. The bot, and its token.
+built : Db -> User -> String -> Result<(User, String), String>
+foul built(database, owner, name) do
+  let id = "b${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
+  let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
+  let bot = User { id: id, email: "${id}@bots.invalid", name: name, kind: "bot", ownerId: owner.id }
+  return UserRepository { db: database }.automated(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }
+end
+
+# Gives one of a person's bots a new token; the old one stops working.
+renewed : Db -> User -> String -> Result<String, String>
+foul renewed(database, owner, botId) do
+  let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
+  match UserRepository { db: database }.rekeyed(botId, owner.id, Metro.Auth.Token.digest(token)) do
+    Ok(true) => return Ok(token)
+    _ => return Error("That is not one of your bots.")
+  end
+end
+
+# The bot an `Authorization: Bearer …` header speaks for, if any.
+bearer : Db -> String? -> User?
+foul bearer(database, header) do
+  let token = header.or("").split("Bearer ").drop(1).first.or("").trim
+  return None if token.empty?
+
+  match UserRepository { db: database }.bearing(Metro.Auth.Token.digest(token)) do
+    Ok(Just(bot)) => return Just(bot)
+    _ => return None
+  end
+end

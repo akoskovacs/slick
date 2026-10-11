@@ -1,0 +1,12 @@
+---
+params: [robot: Robot]
+---
+<li>
+  <strong><%= robot.caption %></strong>
+<% if robot.here? %>
+  <span class="hint">in <%= robot.spot %></span>
+<% else %>
+  <button type="button" class="quiet" data-event="bot-enlist" data-id="<%= robot.key %>">Add to <%= robot.spot %></button>
+<% end %>
+  <button type="button" class="quiet" data-event="bot-rekey" data-id="<%= robot.key %>">New token</button>
+</li>

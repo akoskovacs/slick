@@ -16,7 +16,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_organizations"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_bots"))
   end
 
   it("turns shortcodes into emoji") do
@@ -225,6 +225,43 @@ describe("Slick") do
     let (otherRandom, otherMade) = stepped(database, ada, adaInOther, [("event", "create"), ("title", "random")])
     Assert.truthy(otherMade)
     Assert.truthy(otherRandom.conversation != inRandom.conversation)
+
+    # Bots: a person's own, members like anyone, known by a token that is
+    # stored only as a digest.
+    let (botTab, botMade) = stepped(database, bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot")])
+    Assert.truthy(botMade)
+    Assert.truthy(botTab.secret.contains?("slick_bot_"))
+    let botsDialog = App.Live.Chat.markup(database, bob, botTab)
+    Assert.truthy(botsDialog.contains?(botTab.secret))
+    Assert.truthy(botsDialog.contains?("deploy-bot"))
+    Assert.falsy(App.Live.Chat.markup(database, ada, Tab {}).contains?(botTab.secret))
+    Assert.truthy(App.Live.Chat.markup(database, ada, Tab {}).contains?("class=\"flag\">BOT"))
+    let deployBot : User = App.Services.Bots.bearer(database, Just("Bearer ${botTab.secret}")).try
+    Assert.truthy(deployBot.bot?)
+    Assert.equal(deployBot.ownerId, bob.id)
+    Assert.equal(App.Services.Bots.bearer(database, Just("Bearer slick_bot_wrong")), None)
+    Assert.equal(App.Services.Bots.bearer(database, None), None)
+    Assert.equal(App.Services.Bots.bearer(database, Just("Bearer ")), None)
+    # It cannot sign in the way a person does.
+    Assert.truthy(App.Services.Authentication.signIn(database, deployBot.email, "").error?)
+    Assert.truthy(App.Services.Authentication.signIn(database, deployBot.email, botTab.secret).error?)
+    # It writes where its organization lets a member write, and nowhere else.
+    let (_, botSent) = stepped(database, deployBot, Tab {}, [("event", "send"), ("body", "deployed :rocket:")])
+    Assert.truthy(botSent)
+    Assert.truthy(App.Live.Chat.markup(database, ada, Tab {}).contains?("deployed 🚀"))
+    Assert.equal(App.Live.Chat.arrived(database, deployBot, "/other/channels/general"), Tab {})
+    Assert.equal(App.Live.Chat.visible(database, deployBot, adaPrivate), None)
+    # Only its owner gives it a new token, and the old one stops working.
+    let (adaTries, _) = stepped(database, ada, Tab {}, [("event", "bot-rekey"), ("id", deployBot.id)])
+    Assert.equal(adaTries.secret, "")
+    Assert.truthy(App.Services.Bots.bearer(database, Just("Bearer ${botTab.secret}")).set?)
+    let (renewed, _) = stepped(database, bob, Tab {}, [("event", "bot-rekey"), ("id", deployBot.id)])
+    Assert.truthy(renewed.secret != botTab.secret)
+    Assert.equal(App.Services.Bots.bearer(database, Just("Bearer ${botTab.secret}")), None)
+    Assert.truthy(App.Services.Bots.bearer(database, Just("Bearer ${renewed.secret}")).set?)
+    # Nor can somebody else bring it into their organization.
+    let (malBrings, malBrought) = stepped(database, mal, Tab {}, [("event", "bot-enlist"), ("id", deployBot.id)])
+    Assert.falsy(malBrought)
 
     App.Services.Authentication.signOut(database, Just(adaToken))
     Assert.equal(App.Services.Authentication.current(database, Just(adaToken)), None)

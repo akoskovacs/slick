@@ -42,7 +42,8 @@ foul signIn(database, email, password) do
       Metro.Auth.Password.wasted(password)
       return Error([REFUSED])
     end
-    Ok(Just((user, stored))) => Metro.Auth.Password.matches?(password, stored) then admitted(database, user.id) else Error([REFUSED])
+    # A bot has no password, and no way in through this door.
+    Ok(Just((user, stored))) => !user.bot? && Metro.Auth.Password.matches?(password, stored) then admitted(database, user.id) else Error([REFUSED])
   end
 end
 

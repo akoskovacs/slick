@@ -22,6 +22,17 @@ record Entry do
   key : String
   caption : String
   current? : Bool
+  # "BOT" beside a bot's name; "" beside a person's.
+  badged : String = ""
+end
+
+# One of my bots, in the bots dialog.
+record Robot do
+  key : String
+  caption : String
+  # Whether it is in the organization the tab is in, and what that is called.
+  here? : Bool
+  spot : String
 end
 
 # One organization in the rail.
@@ -39,6 +50,7 @@ record Bubble do
   # head of its thread is two elements.
   anchor : String
   author : String
+  badged : String = ""
   # The author's first letter and one of eight colours, for the avatar.
   initial : String
   tint : String
@@ -65,6 +77,8 @@ let entryPartial = Template.html(Kex.embed("chat/_entry.html.ket"))
 let foundingPartial = Template.html(Kex.embed("chat/_founding.html.ket"))
 let headingPartial = Template.html(Kex.embed("chat/_heading.html.ket"))
 let badgePartial = Template.html(Kex.embed("chat/_badge.html.ket"))
+let botPartial = Template.html(Kex.embed("chat/_bot.html.ket"))
+let botsPartial = Template.html(Kex.embed("chat/_bots.html.ket"))
 let dialogPartial = Template.html(Kex.embed("chat/_dialog.html.ket"))
 let welcomePartial = Template.html(Kex.embed("chat/_welcome.html.ket"))
 let bubblePartial = Template.html(Kex.embed("chat/_bubble.html.ket"))
@@ -86,8 +100,10 @@ let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProble
 # the tab is in, and the channels and people are its.
 # `thread` is the open thread — the message that started it, then the
 # replies — or empty.
-index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> String
-let index(tab, user, organizations, organization, channels, people, conversation, messages, reactions, thread) do
+#
+# `bots` are this person's own, and only asked for while their dialog is open.
+index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> String
+let index(tab, user, organizations, organization, channels, people, bots, conversation, messages, reactions, thread) do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
     badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id })
@@ -97,7 +113,7 @@ let index(tab, user, organizations, organization, channels, people, conversation
   }
   let personLines = people.reject { |person| person.id == user.id }.map { |person|
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting })
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "" })
   }
   let founding = tab.founding? then foundingPartial(tab.channelProblem) else ""
   let beside = thread.empty? then "" else threadPane(user, people, reactions, thread)
@@ -106,7 +122,7 @@ let index(tab, user, organizations, organization, channels, people, conversation
   frame(
     tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), founding, personLines.join("\n"),
     pane(tab, user, people, conversation, messages, reactions, thread.empty? && tab.dialog.empty?) + beside,
-    asking(tab, organization), place, caption
+    asking(tab, organization, people, bots), place, caption
   )
 end
 
@@ -120,8 +136,15 @@ private do
   end
 
   # The dialog a tab has open, if any.
-  asking : Tab -> Organization -> String
-  let asking(tab, organization) do
+  asking : Tab -> Organization -> [User] -> [User] -> String
+  let asking(tab, organization, people, bots) do
+    if tab.dialog == "bots"
+      let rows = bots.map { |bot|
+        botPartial(Robot { key: bot.id, caption: bot.shown, here?: people.any? { |person| person.id == bot.id }, spot: organization.name })
+      }
+      return botsPartial(organization.name, rows.join("\n"), tab.dialogProblem, tab.secret, tab.secretFor)
+    end
+
     return dialogPartial("Create an organization", "Its own channels and people, apart from every other.", "charter", "name", "Acme", tab.dialogProblem, "Create") if tab.dialog == "organization"
     return dialogPartial("Add people to ${organization.name}", "The email somebody registered with. They are in as soon as you add them.", "enlist", "email", "name@example.com", tab.dialogProblem, "Add") if tab.dialog == "invite"
 
@@ -172,7 +195,9 @@ private do
   # has its own element id and no way to open the thread it is already in.
   bubble : Message -> User -> [User] -> [Reaction] -> Bool -> String
   let bubble(message, user, people, reactions, inThread?) do
-    let author = people.find { |person| person.id == message.userId }.map { |person| person.shown }.or("Someone")
+    let writer = people.find { |person| person.id == message.userId }
+    let author = writer.map { |person| person.shown }.or("Someone")
+    let badged = writer.map { |person| person.bot? }.or(false) then "BOT" else ""
     let mine = reactions.filter { |reaction| reaction.messageId == message.id }
     let chips = mine.map { |reaction| reaction.emoji }.uniq.map { |glyph|
       let givers = mine.filter { |reaction| reaction.emoji == glyph }
@@ -180,7 +205,7 @@ private do
     }
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
-      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, author: author, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
+      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, author: author, badged: badged, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
       chips.join(""), offers.join("")
     )
   end

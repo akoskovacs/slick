@@ -25,9 +25,44 @@ routes : Server<Store> -> Server<Hub> -> Rodolfo.Router
 foul routes(store, hub) do
   let database = Harmat.Db.over(DB.Store.gateway(store))
   Rodolfo.router do
-    plug(Metro.Plugs.sameOrigin)
+    # Bots, with a token on every request: no cookie is read here, so there
+    # is no request another site could forge, and no origin to check.
+    scope "/api" do
+      get "/me" do |env|
+        App.Controllers.Api.whoami(database, env)
+      end
+
+      get "/:organization/channels" do |env|
+        App.Controllers.Api.channelList(database, env)
+      end
+
+      get "/:organization/channels/:name/messages" do |env|
+        App.Controllers.Api.history(database, env, "channels")
+      end
+
+      post "/:organization/channels/:name/messages" do |env|
+        App.Controllers.Api.posted(database, hub, env, "channels")
+      end
+
+      post "/:organization/channels/:name/reactions" do |env|
+        App.Controllers.Api.reacting(database, hub, env, "channels")
+      end
+
+      get "/:organization/dm/:name/messages" do |env|
+        App.Controllers.Api.history(database, env, "dm")
+      end
+
+      post "/:organization/dm/:name/messages" do |env|
+        App.Controllers.Api.posted(database, hub, env, "dm")
+      end
+
+      post "/:organization/dm/:name/reactions" do |env|
+        App.Controllers.Api.reacting(database, hub, env, "dm")
+      end
+    end
 
     scope "" do
+      plug(Metro.Plugs.sameOrigin)
       plug(signedIn(database))
 
       get "/" do |env|
@@ -51,6 +86,7 @@ foul routes(store, hub) do
     end
 
     scope "" do
+      plug(Metro.Plugs.sameOrigin)
       plug(signedOut(database))
 
       get "/signin" do

@@ -11,7 +11,7 @@ end
 
 # Words an organization's address cannot be, because the application's own
 # addresses start with them.
-let RESERVED = ["signin", "signout", "register", "live", "metro", "public", "channels", "dm"]
+let RESERVED = ["signin", "signout", "register", "live", "metro", "public", "channels", "dm", "api"]
 
 # The address form of a name: its letters and digits, lower case.
 slugged : String -> String

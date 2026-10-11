@@ -1,0 +1,15 @@
+# Bots: a bot is a user that belongs to the person who made it and signs in
+# with an API token instead of a password. `api_token_digest` is the SHA-256
+# of that token; the token itself is shown once and never stored.
+module DB.Migrate.N0009AddBots
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [addColumn, addIndex]
+
+let change = Migration.define :add_bots, follows: :create_organizations do
+  addColumn(:users) do |t| t.text(:kind, default: "person", oneOf: ["person", "bot"]) end
+  addColumn(:users) do |t| t.text(:owner_id, default: "") end
+  addColumn(:users) do |t| t.text(:api_token_digest, default: "") end
+  addIndex(:users, [:owner_id])
+  addIndex(:users, [:api_token_digest])
+end

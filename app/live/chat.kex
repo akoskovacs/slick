@@ -63,12 +63,13 @@ foul markup(database, user, tab) do
       let everyone : [User] = UserRepository { db: database }.everyone.or([])
       let people = everyone.filter { |person| roster.contains?(person.id) }
       let channels : [Conversation] = ConversationRepository { db: database }.channels(organization.id).or([])
+      let bots : [User] = tab.dialog == "bots" then UserRepository { db: database }.operated(user.id).or([]) else []
       match visible(database, user, tab) do
-        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, None, [], [], [])
+        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, bots, None, [], [], [])
         Just(conversation) => do
           let messages : [Message] = MessageRepository { db: database }.latest(conversation.id, WINDOW).or([])
           let reactions = ReactionRepository { db: database }.throughout(conversation.id).or([])
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, Just(conversation), messages, reactions, unfolded(database, conversation, tab.thread))
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, bots, Just(conversation), messages, reactions, unfolded(database, conversation, tab.thread))
         end
       end
     end
@@ -98,6 +99,10 @@ foul handled(database, user, tab, entries) do
     "charter" => organized(database, user, tab, field(entries, "name").trim)
     "invite" => (Tab { ...settled(tab), dialog: "invite" }, false)
     "enlist" => invited(database, user, tab, field(entries, "email").trim.lowerCase)
+    "bots" => (Tab { ...settled(tab), dialog: "bots" }, false)
+    "bot-create" => botMade(database, user, tab, field(entries, "name").trim)
+    "bot-rekey" => botRenewed(database, user, tab, field(entries, "id"))
+    "bot-enlist" => botBrought(database, user, tab, field(entries, "id"))
     _ => (tab, false)
   end
 end
@@ -167,24 +172,24 @@ foul visible(database, user, tab) do
   end
 end
 
+# The organizations a person is in, oldest membership first.
+organizations : Db -> User -> [Organization]
+foul organizations(database, user) do
+  let mine : [String] = MembershipRepository { db: database }.affiliations(user.id).or([])
+  let known = OrganizationRepository { db: database }
+  return mine.flatMap { |id|
+    match known.identified(id) do
+      Ok(Just(organization)) => [organization]
+      _ => []
+    end
+  }
+end
+
 private do
   # A tab with nothing open over the conversation: no form, no dialog, no
   # message left from the last thing tried.
   settled : Tab -> Tab
   let settled(tab) = Tab { organization: tab.organization, conversation: tab.conversation, thread: tab.thread }
-
-  # The organizations a person is in, oldest membership first.
-  organizations : Db -> User -> [Organization]
-  foul organizations(database, user) do
-    let mine : [String] = MembershipRepository { db: database }.affiliations(user.id).or([])
-    let known = OrganizationRepository { db: database }
-    return mine.flatMap { |id|
-      match known.identified(id) do
-        Ok(Just(organization)) => [organization]
-        _ => []
-      end
-    }
-  end
 
   switched : Db -> User -> Tab -> String -> (Tab, Bool)
   foul switched(database, user, tab, id) do
@@ -229,6 +234,57 @@ private do
           Error(_) => return (Tab { ...refused, dialogProblem: "${person.shown} is already in ${organization.name}." }, false)
         end
         _ => return (Tab { ...refused, dialogProblem: "Nobody has registered with ${email}. They need an account first." }, false)
+      end
+    end
+  end
+
+  let botRules = rules do
+    validates("name", "A bot's name", [present, sized(2, 40)])
+  end
+
+  # Makes a bot of this person's, in the tab's organization. Its token is
+  # kept in the tab, to be shown until the dialog is closed, and nowhere else.
+  botMade : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul botMade(database, user, tab, name) do
+    let refused = Tab { ...settled(tab), dialog: "bots" }
+    let problems = Metro.Validation.checked(botRules, {"name": name}).messages
+    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
+
+    match home(database, user, tab) do
+      None => return (tab, false)
+      Just(organization) => match App.Services.Bots.built(database, user, name) do
+        Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        Ok((bot, token)) => do
+          MembershipRepository { db: database }.enlisted(organization.id, bot.id)
+          return (Tab { ...refused, secret: token, secretFor: bot.name }, true)
+        end
+      end
+    end
+  end
+
+  botRenewed : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul botRenewed(database, user, tab, id) do
+    let refused = Tab { ...settled(tab), dialog: "bots" }
+    let owned : [User] = UserRepository { db: database }.operated(user.id).or([])
+    let named = owned.find { |bot| bot.id == id }.map { |bot| bot.name }.or("your bot")
+    match App.Services.Bots.renewed(database, user, id) do
+      Ok(token) => return (Tab { ...refused, secret: token, secretFor: named }, false)
+      Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+    end
+  end
+
+  # Puts one of this person's bots into the tab's organization.
+  botBrought : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul botBrought(database, user, tab, id) do
+    let refused = Tab { ...settled(tab), dialog: "bots" }
+    let owned : [User] = UserRepository { db: database }.operated(user.id).or([])
+    return (Tab { ...refused, dialogProblem: "That is not one of your bots." }, false) if !owned.any? { |bot| bot.id == id }
+
+    match home(database, user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        MembershipRepository { db: database }.enlisted(organization.id, id)
+        return (refused, true)
       end
     end
   end

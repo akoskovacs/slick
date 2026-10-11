@@ -25,6 +25,10 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
     <ul class="entries"><%== channels %></ul>
     <div class="sidebar-head"><h2>Direct messages</h2></div>
     <ul class="entries people"><%== people %></ul>
+    <div class="sidebar-head">
+      <h2>Bots</h2>
+      <button type="button" class="quiet" data-event="bots" title="Your bots and their API tokens">⚙</button>
+    </div>
   </nav>
   <%== pane %>
 </div>

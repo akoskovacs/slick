@@ -21,5 +21,9 @@ record Tab do
   dialog : String = ""
   dialogProblem : String = ""
   notice : String = ""
+  # A bot's new token and whose it is: shown while the dialog stays open,
+  # and gone with it.
+  secret : String = ""
+  secretFor : String = ""
   failure : String = ""
 end

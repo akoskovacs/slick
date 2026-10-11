@@ -11,7 +11,10 @@ let definition = Table.define :users do |t|
     t.text(:email),
     t.text(:password_hash),
     t.text(:created_at),
-    t.text(:name, default: "")
+    t.text(:name, default: ""),
+    t.text(:kind, default: "person", oneOf: ["person", "bot"]),
+    t.text(:owner_id, default: ""),
+    t.text(:api_token_digest, default: "")
   ]
 end
 
@@ -22,3 +25,6 @@ let email = DB.Schema.Users.definition.textColumn(:email)
 let passwordHash = DB.Schema.Users.definition.textColumn(:password_hash)
 let createdAt = DB.Schema.Users.definition.textColumn(:created_at)
 let name = DB.Schema.Users.definition.textColumn(:name)
+let kind = DB.Schema.Users.definition.textColumn(:kind)
+let ownerId = DB.Schema.Users.definition.textColumn(:owner_id)
+let apiTokenDigest = DB.Schema.Users.definition.textColumn(:api_token_digest)

@@ -1,13 +1,21 @@
-# Someone who can sign in. `name` is what they are called in a conversation.
+# Someone who takes part: a person, who signs in with a password, or a bot,
+# which belongs to a person and uses the API with a token. `name` is what
+# they are called in a conversation.
 module App.Models.User
 
 record User do
   id : String
   email : String
   name : String = ""
+  # "person" or "bot".
+  kind : String = "person"
+  # Whose bot it is; "" for a person.
+  ownerId : String = ""
 end
 
 make User do
+  let bot? -> Bool = @kind == "bot"
+
   # What to call them: their name, or the front of their email until they
   # have one.
   let shown -> String = @name.empty? then @email.split("@").first.or(@email) else @name

@@ -24,6 +24,34 @@ make UserRepository do
       .map { |row| row.map { |found| (decoded(found), found.get("password_hash").or("")) } }
   end
 
+  # Stores a bot. It has no password: `tokenDigest` is how it is known.
+  foul automated(bot: User, tokenDigest: String) -> Result<User, String> do
+    let row = {
+      id: bot.id, email: bot.email, name: bot.name, password_hash: "", created_at: "${DateTime.utcNow()}",
+      kind: "bot", owner_id: bot.ownerId, api_token_digest: tokenDigest
+    }
+    return @db.insert(DB.Schema.Users.definition).values(row).run.map { |_| bot }
+  end
+
+  # A person's bots, by name.
+  foul operated(owner: String) -> Result<[User], String> do
+    return @db.select([:id, :email, :name, :kind, :owner_id]).from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.ownerId, owner)).orderBy([:name, :id]).all
+      .map { |rows| rows.map { |row| decoded(row) } }
+  end
+
+  # The bot an API token's digest belongs to, or `None`.
+  foul bearing(tokenDigest: String) -> Result<User?, String> do
+    return @db.select([:id, :email, :name, :kind, :owner_id]).from(DB.Schema.Users.definition)
+      .where(eq(DB.Schema.Users.apiTokenDigest, tokenDigest)).where(eq(DB.Schema.Users.kind, "bot")).first
+      .map { |row| row.map { |found| decoded(found) } }
+  end
+
+  # Replaces a bot's token; whether it was this owner's bot to change.
+  foul rekeyed(botId: String, owner: String, tokenDigest: String) -> Result<Bool, String> do
+    return @db.within(eq(DB.Schema.Users.ownerId, owner)).update(DB.Schema.Users.definition)
+      .set({api_token_digest: tokenDigest}).where(eq(DB.Schema.Users.id, botId)).run.map { |changed| changed > 0 }
+  end
+
   foul member(id: String) -> Result<User?, String> do
     return @db.select().from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.id, id)).first
       .map { |row| row.map { |found| decoded(found) } }
@@ -31,12 +59,15 @@ make UserRepository do
 
   # Everyone, by name: who can be written to, and whose name goes on a message.
   foul everyone -> Result<[User], String> do
-    return @db.select([:id, :email, :name]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
+    return @db.select([:id, :email, :name, :kind, :owner_id]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 end
 
 private do
   decoded : {String: String} -> User
-  let decoded(row) = User { id: row.get("id").or(""), email: row.get("email").or(""), name: row.get("name").or("") }
+  let decoded(row) = User {
+    id: row.get("id").or(""), email: row.get("email").or(""), name: row.get("name").or(""),
+    kind: row.get("kind").or("person"), ownerId: row.get("owner_id").or("")
+  }
 end
