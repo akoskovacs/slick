@@ -19,16 +19,16 @@ let LIFETIME = 2592000
 let REFUSED = "That email and password do not match an account."
 
 # Creates an account and signs it in. The session token, or what was wrong.
-register : Db -> String -> String -> Result<String, [String]>
-foul register(database, email, password) do
-  let problems = App.Forms.Credentials.problems(email, password)
+register : Db -> String -> String -> String -> Result<String, [String]>
+foul register(database, name, email, password) do
+  let problems = App.Forms.Credentials.problems(name, email, password)
   return Error(problems) if !problems.empty?
 
   let address = App.Forms.Credentials.normalized(email)
   match UserRepository { db: database }.credentials(address) do
     Error(reason) => Error([reason])
     Ok(Just(_)) => Error(["An account with that email already exists. Sign in instead."])
-    Ok(None) => enrolled(database, User { id: "u${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", email: address }, password)
+    Ok(None) => enrolled(database, User { id: "u${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", email: address, name: name.trim }, password)
   end
 end
 

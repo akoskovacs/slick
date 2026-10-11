@@ -1,0 +1,32 @@
+# The `conversations` table: channels and private chats. See
+# db/migrate/N0004_create_conversations.kex.
+module DB.Schema.Conversations
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :conversations do |t|
+  [
+    t.text(:id, primaryKey: true),
+    t.text(:kind, oneOf: ["channel", "direct"]),
+    t.text(:slug),
+    t.text(:title, default: ""),
+    t.text(:topic, default: ""),
+    t.text(:first_user, default: ""),
+    t.text(:second_user, default: ""),
+    t.text(:created_by, default: ""),
+    t.text(:created_at)
+  ]
+end
+
+let table = DB.Schema.Conversations.definition.table
+
+let id = DB.Schema.Conversations.definition.textColumn(:id)
+let kind = DB.Schema.Conversations.definition.textColumn(:kind)
+let slug = DB.Schema.Conversations.definition.textColumn(:slug)
+let title = DB.Schema.Conversations.definition.textColumn(:title)
+let topic = DB.Schema.Conversations.definition.textColumn(:topic)
+let firstUser = DB.Schema.Conversations.definition.textColumn(:first_user)
+let secondUser = DB.Schema.Conversations.definition.textColumn(:second_user)
+let createdBy = DB.Schema.Conversations.definition.textColumn(:created_by)
+let createdAt = DB.Schema.Conversations.definition.textColumn(:created_at)

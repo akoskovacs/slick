@@ -1,17 +1,32 @@
-# TODO: say what this migration is for.
+# Where messages go: a channel everyone can read, or a private chat between
+# two people. `slug` is what makes one unique — "#general" for a channel,
+# "@<user>:<user>" (ids sorted) for a private chat.
+#
+# The first channel is created here, so that a new workspace has somewhere
+# to talk.
 module DB.Migrate.N0004CreateConversations
 
 using Harmat.Migration, as: Migration
-using Harmat.Migration, only: [createTable, addColumn, addIndex]
+using Harmat.Migration, only: [createTable, addIndex, runSql]
 
 let change = Migration.define :create_conversations, follows: :add_user_names do
-  # createTable(:things) do |t|
-  #   [
-  #     t.text(:id, primaryKey: true),
-  #     t.text(:name, default: ""),
-  #     t.bigint(:count, default: 0)
-  #   ]
-  # end
-  # addColumn(:things) do |t| t.text(:note, default: :null, nullable: true) end
-  # addIndex(:things, [:name], unique: true)
+  createTable(:conversations) do |t|
+    [
+      t.text(:id, primaryKey: true),
+      t.text(:kind, oneOf: ["channel", "direct"]),
+      t.text(:slug),
+      t.text(:title, default: ""),
+      t.text(:topic, default: ""),
+      t.text(:first_user, default: ""),
+      t.text(:second_user, default: ""),
+      t.text(:created_by, default: ""),
+      t.text(:created_at)
+    ]
+  end
+  addIndex(:conversations, [:slug], unique: true)
+  addIndex(:conversations, [:kind, :title])
+  runSql(
+    "INSERT INTO conversations (id, kind, slug, title, topic, created_at) VALUES ('general', 'channel', '#general', 'general', 'Company-wide announcements and chatter', '1970-01-01T00:00:00Z')",
+    undo: "DELETE FROM conversations WHERE id = 'general'"
+  )
 end

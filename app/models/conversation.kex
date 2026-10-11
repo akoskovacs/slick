@@ -1,0 +1,33 @@
+# Where messages go: a channel everyone can read, or a private chat between
+# two people.
+module App.Models.Conversation
+
+record Conversation do
+  id : String
+  # "channel" or "direct".
+  kind : String = "channel"
+  slug : String = ""
+  title : String = ""
+  topic : String = ""
+  firstUser : String = ""
+  secondUser : String = ""
+end
+
+# The channel every workspace starts with.
+let GENERAL = "general"
+
+# The slug of the private chat between two people, whichever way round they
+# are given.
+pairing : String -> String -> String
+let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:${one}"
+
+make Conversation do
+  let channel? -> Bool = @kind == "channel"
+
+  # Whether this person may read and write here: anyone in a channel, and
+  # only the two people of a private chat.
+  let admits?(userId: String) -> Bool = @kind == "channel" || @firstUser == userId || @secondUser == userId
+
+  # The other person of a private chat.
+  let counterpart(userId: String) -> String = @firstUser == userId then @secondUser else @firstUser
+end

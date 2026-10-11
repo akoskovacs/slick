@@ -1,17 +1,20 @@
-# TODO: say what this migration is for.
+# An emoji one person put on one message. The id is the three of them
+# together, so the same reaction cannot be given twice; the conversation is
+# carried along so that a conversation's reactions are one query.
 module DB.Migrate.N0006CreateReactions
 
 using Harmat.Migration, as: Migration
-using Harmat.Migration, only: [createTable, addColumn, addIndex]
+using Harmat.Migration, only: [createTable, addIndex]
 
 let change = Migration.define :create_reactions, follows: :create_messages do
-  # createTable(:things) do |t|
-  #   [
-  #     t.text(:id, primaryKey: true),
-  #     t.text(:name, default: ""),
-  #     t.bigint(:count, default: 0)
-  #   ]
-  # end
-  # addColumn(:things) do |t| t.text(:note, default: :null, nullable: true) end
-  # addIndex(:things, [:name], unique: true)
+  createTable(:reactions) do |t|
+    [
+      t.text(:id, primaryKey: true),
+      t.text(:conversation_id),
+      t.text(:message_id),
+      t.text(:user_id),
+      t.text(:emoji)
+    ]
+  end
+  addIndex(:reactions, [:conversation_id])
 end

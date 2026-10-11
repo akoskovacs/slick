@@ -5,4 +5,10 @@ module DB.Schema
 using Harmat.Table, only: [Definition]
 
 tables : [Definition]
-let tables = [DB.Schema.Users.definition, DB.Schema.Sessions.definition]
+let tables = [
+  DB.Schema.Users.definition,
+  DB.Schema.Sessions.definition,
+  DB.Schema.Conversations.definition,
+  DB.Schema.Messages.definition,
+  DB.Schema.Reactions.definition
+]

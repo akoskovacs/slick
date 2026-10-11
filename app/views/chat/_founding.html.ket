@@ -1,0 +1,11 @@
+---
+params: [problem: String]
+---
+<form class="founding" data-live="create" data-live-quiet>
+  <input name="title" placeholder="new-channel" maxlength="30" autocomplete="off" autofocus>
+  <button type="submit" class="primary">Create</button>
+  <button type="button" class="quiet" data-event="cancel">Cancel</button>
+<% if !problem.empty? %>
+  <span class="problem"><%= problem %></span>
+<% end %>
+</form>

@@ -1,0 +1,25 @@
+# The `messages` table.
+module DB.Schema.Messages
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :messages do |t|
+  [
+    t.text(:id, primaryKey: true),
+    t.text(:conversation_id),
+    t.text(:user_id),
+    t.text(:body),
+    t.bigint(:sent_at),
+    t.text(:sent_on)
+  ]
+end
+
+let table = DB.Schema.Messages.definition.table
+
+let id = DB.Schema.Messages.definition.textColumn(:id)
+let conversationId = DB.Schema.Messages.definition.textColumn(:conversation_id)
+let userId = DB.Schema.Messages.definition.textColumn(:user_id)
+let body = DB.Schema.Messages.definition.textColumn(:body)
+let sentAt = DB.Schema.Messages.definition.wholeColumn(:sent_at)
+let sentOn = DB.Schema.Messages.definition.textColumn(:sent_on)

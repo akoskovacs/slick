@@ -1,0 +1,168 @@
+# The whole of Slick as one live view: what each browser event does to a
+# tab's state and to what is stored, and the markup that results.
+# `Metro.Live.Socket` runs these two functions against a WebSocket
+# (config/routes.kex).
+#
+# Every event is checked here against who sent it. A tab only ever names a
+# conversation by id, and an id is not a permission: `visible` is asked
+# before anything is read from or written to one, so the id of somebody
+# else's private chat gets a tab nothing.
+module App.Live.Chat
+
+using Harmat.Db, only: [Db]
+using Metro.Live.Socket, only: [field]
+using Metro.Validation, only: [rules, validates, present, sized, passing]
+using App.Live.Tab, only: [Tab]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Message, only: [Message]
+using App.Models.User, only: [User]
+using DB.Repositories.Conversations, only: [ConversationRepository]
+using DB.Repositories.Messages, only: [MessageRepository]
+using DB.Repositories.Reactions, only: [ReactionRepository]
+using DB.Repositories.Users, only: [UserRepository]
+
+# How many messages of a conversation a tab is shown.
+let WINDOW = 200
+
+let channelRules = rules do
+  validates("title", "A channel name", [
+    present, sized(2, 30),
+    passing("may only have lower-case letters, digits and dashes.") { |text| text.chars.all? { |char| char.lower? || char.digit? || "${char}" == "-" } }
+  ])
+end
+
+let messageRules = rules do
+  validates("body", "A message", [present, sized(1, App.Models.Message.LONGEST)])
+end
+
+let topicRules = rules do
+  validates("topic", "A topic", [sized(0, 250)])
+end
+
+# The live region for one person's tab, as things are stored right now.
+markup : Db -> User -> Tab -> String
+foul markup(database, user, tab) do
+  let conversations = ConversationRepository { db: database }
+  let people : [User] = UserRepository { db: database }.everyone.or([])
+  let channels : [Conversation] = conversations.channels.or([])
+  match visible(database, user, tab.conversation) do
+    None => return App.Views.Chat.index(tab, user, channels, people, None, [], [])
+    Just(conversation) => do
+      let messages : [Message] = MessageRepository { db: database }.latest(conversation.id, WINDOW).or([])
+      let reactions = ReactionRepository { db: database }.throughout(conversation.id).or([])
+      return App.Views.Chat.index(tab, user, channels, people, Just(conversation), messages, reactions)
+    end
+  end
+end
+
+# Applies one event: the tab's next state, and whether something other tabs
+# show was changed — in which case they are told to refresh.
+handled : Db -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
+foul handled(database, user, tab, entries) do
+  match field(entries, "event") do
+    "open" => opened(database, user, tab, field(entries, "id"))
+    "direct" => whispered(database, user, tab, field(entries, "user"))
+    "found" => (Tab { conversation: tab.conversation, founding?: true }, false)
+    "create" => founded(database, user, tab, field(entries, "title").trim.lowerCase)
+    "send" => sent(database, user, tab, field(entries, "body").trim)
+    "retitle" => (Tab { conversation: tab.conversation, retitling?: true }, false)
+    "topic" => retitled(database, user, tab, field(entries, "topic").trim)
+    "react" => reacted(database, user, tab, field(entries, "message"), field(entries, "emoji"))
+    "cancel" => (Tab { conversation: tab.conversation }, false)
+    _ => (tab, false)
+  end
+end
+
+# The conversation with this id, if this person may read it.
+visible : Db -> User -> String -> Conversation?
+foul visible(database, user, id) do
+  match ConversationRepository { db: database }.lookup(id) do
+    Ok(Just(conversation)) => return conversation.admits?(user.id) then Just(conversation) else None
+    _ => return None
+  end
+end
+
+private do
+  opened : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul opened(database, user, tab, id) do
+    match visible(database, user, id) do
+      Just(conversation) => (Tab { conversation: conversation.id }, false)
+      None => (tab, false)
+    end
+  end
+
+  # Opens the private chat with another person, starting it if need be.
+  whispered : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul whispered(database, user, tab, other) do
+    let known = match UserRepository { db: database }.member(other) do
+      Ok(Just(_)) => true
+      _ => false
+    end
+    return (tab, false) if !known || other == user.id
+
+    match ConversationRepository { db: database }.between(user.id, other) do
+      Ok(conversation) => (Tab { conversation: conversation.id }, false)
+      Error(reason) => (Tab { conversation: tab.conversation, failure: reason }, false)
+    end
+  end
+
+  founded : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul founded(database, user, tab, title) do
+    let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
+    return (Tab { conversation: tab.conversation, founding?: true, channelProblem: problems.first.or("") }, false) if !problems.empty?
+
+    match ConversationRepository { db: database }.founded(title, user.id) do
+      Ok(channel) => (Tab { conversation: channel.id }, true)
+      Error(_) => (Tab { conversation: tab.conversation, founding?: true, channelProblem: "There is already a channel called ${title}." }, false)
+    end
+  end
+
+  sent : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul sent(database, user, tab, body) do
+    let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
+    return (tab, false) if !problems.empty?
+
+    match visible(database, user, tab.conversation) do
+      None => (tab, false)
+      Just(conversation) => match MessageRepository { db: database }.said(conversation.id, user.id, body) do
+        Ok(_) => (Tab { conversation: conversation.id }, true)
+        Error(reason) => (Tab { conversation: conversation.id, failure: "Not sent: ${reason}" }, false)
+      end
+    end
+  end
+
+  retitled : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul retitled(database, user, tab, topic) do
+    let problems = Metro.Validation.checked(topicRules, {"topic": topic}).messages
+    return (Tab { conversation: tab.conversation, retitling?: true, failure: problems.first.or("") }, false) if !problems.empty?
+
+    match visible(database, user, tab.conversation) do
+      None => (tab, false)
+      Just(conversation) => match ConversationRepository { db: database }.retitled(conversation.id, topic) do
+        Ok(changed) => (Tab { conversation: conversation.id }, changed)
+        Error(reason) => (Tab { conversation: conversation.id, failure: reason }, false)
+      end
+    end
+  end
+
+  # A reaction goes on a message of the conversation the tab is showing, and
+  # nowhere else: the message is looked up, and has to belong to it.
+  reacted : Db -> User -> Tab -> String -> String -> (Tab, Bool)
+  foul reacted(database, user, tab, messageId, emoji) do
+    return (tab, false) if !App.Models.Emoji.reaction?(emoji)
+
+    match visible(database, user, tab.conversation) do
+      None => (tab, false)
+      Just(conversation) => match MessageRepository { db: database }.single(messageId) do
+        Ok(Just(message)) => do
+          return (tab, false) if message.conversationId != conversation.id
+          match ReactionRepository { db: database }.flipped(message, user.id, emoji) do
+            Ok(_) => (tab, true)
+            Error(reason) => (Tab { conversation: tab.conversation, failure: reason }, false)
+          end
+        end
+        _ => (tab, false)
+      end
+    end
+  end
+end

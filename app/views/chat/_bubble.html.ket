@@ -1,0 +1,8 @@
+---
+params: [bubble: Bubble, chips: String, offers: String]
+---
+<article class="message<% if bubble.own? %> own<% end %>" id="message-<%= bubble.key %>">
+  <p class="byline"><strong><%= bubble.author %></strong> <time><%= bubble.stamp %></time></p>
+  <p class="body"><%= bubble.content %></p>
+  <div class="reactions"><%== chips %><span class="offers"><%== offers %></span></div>
+</article>

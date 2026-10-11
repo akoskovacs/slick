@@ -3,7 +3,12 @@
 module App.Live.Tab
 
 record Tab do
-  # How many times the button has been pressed in this tab.
-  presses : Integer = 0
-  notice : String = ""
+  # The conversation the tab is showing, by id.
+  conversation : String = "general"
+  # Whether the new-channel form is open, and what was wrong with its last try.
+  founding? : Bool = false
+  channelProblem : String = ""
+  # Whether the topic is being edited.
+  retitling? : Bool = false
+  failure : String = ""
 end

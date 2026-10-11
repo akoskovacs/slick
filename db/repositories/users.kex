@@ -14,7 +14,7 @@ make UserRepository do
   # Stores a new user. Fails when the email is taken: the table's unique
   # index decides, so two registrations racing for one address cannot both win.
   foul enroll(user: User, passwordHash: String) -> Result<User, String> do
-    let row = {id: user.id, email: user.email, password_hash: passwordHash, created_at: "${DateTime.utcNow()}"}
+    let row = {id: user.id, email: user.email, name: user.name, password_hash: passwordHash, created_at: "${DateTime.utcNow()}"}
     return @db.insert(DB.Schema.Users.definition).values(row).run.map { |_| user }
   end
 
@@ -29,13 +29,14 @@ make UserRepository do
       .map { |row| row.map { |found| decoded(found) } }
   end
 
-  # How many users there are.
-  foul headcount -> Result<Integer, String> do
-    return @db.select([:id]).from(DB.Schema.Users.definition).all.map { |rows| rows.count }
+  # Everyone, by name: who can be written to, and whose name goes on a message.
+  foul everyone -> Result<[User], String> do
+    return @db.select([:id, :email, :name]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
+      .map { |rows| rows.map { |row| decoded(row) } }
   end
 end
 
 private do
   decoded : {String: String} -> User
-  let decoded(row) = User { id: row.get("id").or(""), email: row.get("email").or("") }
+  let decoded(row) = User { id: row.get("id").or(""), email: row.get("email").or(""), name: row.get("name").or("") }
 end

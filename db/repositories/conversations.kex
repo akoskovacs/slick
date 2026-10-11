@@ -1,0 +1,74 @@
+# Channels and private chats.
+#
+#   ConversationRepository { db: db }.channels
+#
+# Who may read a conversation is the model's to say (`Conversation.admits?`)
+# and the live view's to ask; this only finds and stores them.
+module DB.Repositories.Conversations
+
+using Harmat.Db, only: [Db, eq]
+using App.Models.Conversation, only: [Conversation]
+
+record ConversationRepository do
+  db : Db
+end
+
+make ConversationRepository do
+  # Every channel, by name.
+  foul channels -> Result<[Conversation], String> do
+    return @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.kind, "channel")).orderBy([:title]).all
+      .map { |rows| rows.map { |row| decoded(row) } }
+  end
+
+  # One conversation, or `None`.
+  foul lookup(id: String) -> Result<Conversation?, String> do
+    return @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.id, id)).first
+      .map { |row| row.map { |found| decoded(found) } }
+  end
+
+  # Creates a channel. Fails when one of that name exists: the unique index
+  # on `slug` decides.
+  foul founded(title: String, by: String) -> Result<Conversation, String> do
+    let channel = Conversation { id: "c${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", kind: "channel", slug: "#${title}", title: title }
+    let row = {id: channel.id, kind: "channel", slug: channel.slug, title: title, created_by: by, created_at: "${DateTime.utcNow()}"}
+    return @db.insert(DB.Schema.Conversations.definition).values(row).run.map { |_| channel }
+  end
+
+  # The private chat between two people, created the first time it is asked
+  # for.
+  foul between(one: String, other: String) -> Result<Conversation, String> do
+    let slug = App.Models.Conversation.pairing(one, other)
+    let existing = @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.slug, slug)).first
+    match existing do
+      Error(reason) => return Error(reason)
+      Ok(Just(row)) => return Ok(decoded(row))
+      Ok(None) => do
+        let first = one <= other then one else other
+        let second = one <= other then other else one
+        let chat = Conversation { id: "d${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", kind: "direct", slug: slug, firstUser: first, secondUser: second }
+        let row = {id: chat.id, kind: "direct", slug: slug, first_user: first, second_user: second, created_by: one, created_at: "${DateTime.utcNow()}"}
+        return @db.insert(DB.Schema.Conversations.definition).values(row).run.map { |_| chat }
+      end
+    end
+  end
+
+  # Sets a channel's topic; whether there was such a channel. A private chat
+  # has no topic, and the condition on `kind` keeps it that way.
+  foul retitled(id: String, topic: String) -> Result<Bool, String> do
+    return @db.within(eq(DB.Schema.Conversations.kind, "channel")).update(DB.Schema.Conversations.definition)
+      .set({topic: topic}).where(eq(DB.Schema.Conversations.id, id)).run.map { |changed| changed > 0 }
+  end
+end
+
+private do
+  decoded : {String: String} -> Conversation
+  let decoded(row) = Conversation {
+    id: row.get("id").or(""),
+    kind: row.get("kind").or("channel"),
+    slug: row.get("slug").or(""),
+    title: row.get("title").or(""),
+    topic: row.get("topic").or(""),
+    firstUser: row.get("first_user").or(""),
+    secondUser: row.get("second_user").or("")
+  }
+end

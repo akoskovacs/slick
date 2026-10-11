@@ -1,0 +1,16 @@
+# Something somebody said.
+module App.Models.Message
+
+record Message do
+  id : String
+  conversationId : String
+  userId : String
+  body : String
+  # Milliseconds since 1970: the order of a conversation.
+  sentAt : Integer = 0
+  # The same moment as ISO text, for showing.
+  sentOn : String = ""
+end
+
+# The longest message accepted.
+let LONGEST = 4000

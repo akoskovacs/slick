@@ -1,0 +1,24 @@
+# The emoji Slick knows by name. `:tada:` typed in a message is shown as 🎉,
+# and the palette is what can be put on a message as a reaction.
+module App.Models.Emoji
+
+# Shortcode and emoji, in the order the message box offers them.
+let KNOWN = [
+  ("smile", "😄"), ("joy", "😂"), ("heart", "❤️"), ("thumbsup", "👍"), ("thumbsdown", "👎"),
+  ("tada", "🎉"), ("eyes", "👀"), ("pray", "🙏"), ("fire", "🔥"), ("rocket", "🚀"),
+  ("wave", "👋"), ("thinking", "🤔"), ("cry", "😢"), ("100", "💯"), ("check", "✅")
+]
+
+# What a message can be reacted with.
+let PALETTE = ["👍", "❤️", "😂", "🎉", "👀", "🙏"]
+
+# A message with its shortcodes turned into emoji. A name that is not known
+# is left as typed.
+shown : String -> String
+let shown(body) = KNOWN.reduce(body) { |text, entry|
+  match entry do (code, emoji) => text.replace(":${code}:", emoji) end
+}
+
+# Whether an emoji is one a reaction may be.
+reaction? : String -> Bool
+let reaction?(emoji) = PALETTE.contains?(emoji)

@@ -1,0 +1,8 @@
+# An emoji one person put on one message.
+module App.Models.Reaction
+
+record Reaction do
+  messageId : String
+  userId : String
+  emoji : String
+end

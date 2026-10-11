@@ -1,5 +1,5 @@
 # The `users` table. `password_hash` is a `Metro.Auth.Password` line, never a
-# password.
+# password; `name` is what a person is called in a conversation.
 module DB.Schema.Users
 
 using Harmat.Table, as: Table
@@ -10,7 +10,8 @@ let definition = Table.define :users do |t|
     t.text(:id, primaryKey: true),
     t.text(:email),
     t.text(:password_hash),
-    t.text(:created_at)
+    t.text(:created_at),
+    t.text(:name, default: "")
   ]
 end
 
@@ -20,3 +21,4 @@ let id = DB.Schema.Users.definition.textColumn(:id)
 let email = DB.Schema.Users.definition.textColumn(:email)
 let passwordHash = DB.Schema.Users.definition.textColumn(:password_hash)
 let createdAt = DB.Schema.Users.definition.textColumn(:created_at)
+let name = DB.Schema.Users.definition.textColumn(:name)

@@ -1,18 +1,30 @@
+using Harmat.Db, only: [Db]
 using App.Live.Tab, only: [Tab]
+using App.Models.Conversation, only: [Conversation]
 using App.Models.User, only: [User]
 
-# The application as it is linked for serving: the routes are built, so
-# Rodolfo and Net.HTTP are part of the program, and every repository method
-# is called through the sign-in flow. Some names only stop resolving once the
-# HTTP stack is linked in (kexhq/kex#451); this spec is the tripwire.
+# Slick as it is linked for serving: the routes are built, so Rodolfo and
+# Net.HTTP are part of the program, and the live view is driven the way a
+# browser drives it — one event at a time. Some names only stop resolving
+# once the HTTP stack is linked in (kexhq/kex#451); this is the tripwire.
+
+foul stepped(database: Db, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
+  App.Live.Chat.handled(database, user, tab, fields.map { |pair| match pair do (key, value) => (key, Just(value)) end })
+end
+
 describe("Slick") do
-  it("has one migration history that matches db/schema") do
+  it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_sessions"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_reactions"))
   end
 
-  it("registers, signs in and out") do
+  it("turns shortcodes into emoji") do
+    Assert.equal(App.Models.Emoji.shown("ship it :rocket: :tada:"), "ship it 🚀 🎉")
+    Assert.equal(App.Models.Emoji.shown("10:30 :nope:"), "10:30 :nope:")
+  end
+
+  it("lets people register, chat in channels and in private, react and set topics") do
     let file = "db/spec_${BEAM.erlang.system_time(:millisecond)}.sqlite3"
     let store = DB.Store.started(Config.Database.sqlite(file)).try
     DB.Store.migrate(store).try
@@ -20,25 +32,92 @@ describe("Slick") do
     Assert.truthy(site.entries.count > 0)
     let database = Harmat.Db.over(DB.Store.gateway(store))
 
-    Assert.truthy(App.Services.Authentication.register(database, "ada", "short").error?)
-    let token = App.Services.Authentication.register(database, "Ada@Example.com", "correct horse battery").try
-    let ada : User = App.Services.Authentication.current(database, Just(token)).try
-    Assert.equal(ada.email, "ada@example.com")
-    Assert.truthy(App.Services.Authentication.register(database, "ada@example.com", "correct horse battery").error?)
-    Assert.truthy(App.Services.Authentication.signIn(database, "ada@example.com", "wrong password!").error?)
+    # Registration needs a name; sign-in works afterwards.
+    Assert.truthy(App.Services.Authentication.register(database, "", "ada@example.com", "correct horse battery").error?)
+    Assert.truthy(App.Services.Authentication.register(database, "Ada", "ada@example.com", "7 chars").error?)
+    Assert.truthy(App.Services.Authentication.register(database, "Zed", "zed@example.com", "8 chars!").ok?)
+    let adaToken = App.Services.Authentication.register(database, "Ada", "ada@example.com", "correct horse battery").try
+    let bobToken = App.Services.Authentication.register(database, "Bob", "bob@example.com", "another long phrase").try
+    let eveToken = App.Services.Authentication.register(database, "Eve", "eve@example.com", "a third long phrase").try
+    let ada : User = App.Services.Authentication.current(database, Just(adaToken)).try
+    let bob : User = App.Services.Authentication.current(database, Just(bobToken)).try
+    let eve : User = App.Services.Authentication.current(database, Just(eveToken)).try
+    Assert.equal(ada.shown, "Ada")
+    Assert.truthy(App.Services.Authentication.signIn(database, "ada@example.com", "correct horse battery").ok?)
 
-    let again = App.Services.Authentication.signIn(database, "ada@example.com", "correct horse battery").try
-    App.Services.Authentication.signOut(database, Just(again))
-    Assert.equal(App.Services.Authentication.current(database, Just(again)), None)
-    Assert.truthy(App.Services.Authentication.current(database, Just(token)).set?)
+    # Everyone starts in #general, which the migration created.
+    let first = App.Live.Chat.markup(database, ada, Tab {})
+    Assert.truthy(first.contains?("# general"))
+    Assert.truthy(first.contains?("Company-wide announcements"))
+    Assert.truthy(first.contains?("Bob"))
+
+    # A message, with an emoji, seen by somebody else.
+    let (afterSend, sendChanged) = stepped(database, ada, Tab {}, [("event", "send"), ("body", "hello <b>world</b> :wave:")])
+    Assert.truthy(sendChanged)
+    let bobSees = App.Live.Chat.markup(database, bob, Tab {})
+    Assert.truthy(bobSees.contains?("hello &lt;b&gt;world&lt;/b&gt; 👋"))
+    Assert.truthy(bobSees.contains?("<strong>Ada</strong>"))
+    let (_, emptyChanged) = stepped(database, ada, Tab {}, [("event", "send"), ("body", "   ")])
+    Assert.falsy(emptyChanged)
+
+    # A channel: created, refused when malformed or taken, visible to all.
+    let (refused, _) = stepped(database, ada, Tab {}, [("event", "create"), ("title", "Bad Name!")])
+    Assert.truthy(refused.founding?)
+    Assert.truthy(!refused.channelProblem.empty?)
+    let (inRandom, created) = stepped(database, ada, Tab {}, [("event", "create"), ("title", "random")])
+    Assert.truthy(created)
+    Assert.truthy(inRandom.conversation != "general")
+    let (taken, _) = stepped(database, bob, Tab {}, [("event", "create"), ("title", "random")])
+    Assert.truthy(taken.channelProblem.contains?("already"))
+    Assert.truthy(App.Live.Chat.markup(database, bob, Tab {}).contains?("# random"))
+
+    # A topic, on a channel.
+    let (_, topicChanged) = stepped(database, bob, inRandom, [("event", "topic"), ("topic", "Anything goes :tada:")])
+    Assert.truthy(topicChanged)
+    Assert.truthy(App.Live.Chat.markup(database, ada, inRandom).contains?("Anything goes 🎉"))
+
+    # A private chat between Ada and Bob: the same one from either side.
+    let (adaPrivate, _) = stepped(database, ada, Tab {}, [("event", "direct"), ("user", bob.id)])
+    let (bobPrivate, _) = stepped(database, bob, Tab {}, [("event", "direct"), ("user", ada.id)])
+    Assert.equal(adaPrivate.conversation, bobPrivate.conversation)
+    Assert.truthy(adaPrivate.conversation != "general")
+    stepped(database, ada, adaPrivate, [("event", "send"), ("body", "between us")])
+    Assert.truthy(App.Live.Chat.markup(database, bob, bobPrivate).contains?("between us"))
+    Assert.truthy(App.Live.Chat.markup(database, ada, adaPrivate).contains?("only the two of you"))
+
+    # Eve cannot read it, open it, write into it or change it, id in hand.
+    let eveTries = Tab { conversation: adaPrivate.conversation }
+    Assert.falsy(App.Live.Chat.markup(database, eve, eveTries).contains?("between us"))
+    let (eveOpened, _) = stepped(database, eve, Tab {}, [("event", "open"), ("id", adaPrivate.conversation)])
+    Assert.equal(eveOpened.conversation, "general")
+    let (_, eveSent) = stepped(database, eve, eveTries, [("event", "send"), ("body", "let me in")])
+    Assert.falsy(eveSent)
+    Assert.falsy(App.Live.Chat.markup(database, ada, adaPrivate).contains?("let me in"))
+    let (_, eveTopic) = stepped(database, eve, eveTries, [("event", "topic"), ("topic", "mine now")])
+    Assert.falsy(eveTopic)
+    Assert.equal(App.Live.Chat.visible(database, eve, adaPrivate.conversation), None)
+
+    # A private chat has no topic to set, even for its own people.
+    let (_, privateTopic) = stepped(database, ada, adaPrivate, [("event", "topic"), ("topic", "x")])
+    Assert.falsy(privateTopic)
+
+    # Reactions: on, counted, off again; not from outside the conversation.
+    let general = App.Live.Chat.markup(database, bob, Tab {})
+    let messageId = general.split("id=\"message-").drop(1).first.or("").split("\"").first.or("")
+    Assert.truthy(!messageId.empty?)
+    let (_, reacted) = stepped(database, bob, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+    Assert.truthy(reacted)
+    stepped(database, ada, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+    Assert.truthy(App.Live.Chat.markup(database, eve, Tab {}).contains?("🎉 <span>2</span>"))
+    stepped(database, bob, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+    Assert.truthy(App.Live.Chat.markup(database, eve, Tab {}).contains?("🎉 <span>1</span>"))
+    let (_, wrongEmoji) = stepped(database, bob, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "<script>")])
+    Assert.falsy(wrongEmoji)
+    let (_, wrongPlace) = stepped(database, bob, inRandom, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+    Assert.falsy(wrongPlace)
+
+    App.Services.Authentication.signOut(database, Just(adaToken))
+    Assert.equal(App.Services.Authentication.current(database, Just(adaToken)), None)
     FS.File.delete(file)
-  end
-
-  it("renders the home page and steps it") do
-    let user = User { id: "u1", email: "ada@example.com" }
-    Assert.truthy(App.Live.Home.markup(user, Tab {}).contains?("ada@example.com"))
-    let (pressed, changed?) = App.Live.Home.handled(Tab {}, [("event", Just("press"))])
-    Assert.equal(pressed.presses, 1)
-    Assert.falsy(changed?)
   end
 end

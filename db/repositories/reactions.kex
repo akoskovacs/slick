@@ -1,0 +1,35 @@
+# Emoji on messages.
+#
+#   ReactionRepository { db: db }.flipped(message, user.id, "🎉")
+module DB.Repositories.Reactions
+
+using Harmat.Db, only: [Db, eq]
+using App.Models.Message, only: [Message]
+using App.Models.Reaction, only: [Reaction]
+
+record ReactionRepository do
+  db : Db
+end
+
+make ReactionRepository do
+  # Every reaction in a conversation.
+  foul throughout(conversationId: String) -> Result<[Reaction], String> do
+    return @db.select().from(DB.Schema.Reactions.definition).where(eq(DB.Schema.Reactions.conversationId, conversationId)).all
+      .map { |rows| rows.map { |row| Reaction { messageId: row.get("message_id").or(""), userId: row.get("user_id").or(""), emoji: row.get("emoji").or("") } } }
+  end
+
+  # Puts a person's emoji on a message, or takes it off if it is there.
+  # Whether it is on afterwards.
+  foul flipped(message: Message, userId: String, emoji: String) -> Result<Bool, String> do
+    let id = "${message.id}:${userId}:${emoji}"
+    let existing = @db.select([:id]).from(DB.Schema.Reactions.definition).where(eq(DB.Schema.Reactions.id, id)).first
+    match existing do
+      Error(reason) => return Error(reason)
+      Ok(Just(_)) => return @db.delete(DB.Schema.Reactions.definition).where(eq(DB.Schema.Reactions.id, id)).run.map { |_| false }
+      Ok(None) => do
+        let row = {id: id, conversation_id: message.conversationId, message_id: message.id, user_id: userId, emoji: emoji}
+        return @db.insert(DB.Schema.Reactions.definition).values(row).run.map { |_| true }
+      end
+    end
+  end
+end

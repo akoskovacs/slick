@@ -1,0 +1,4 @@
+---
+params: [entry: Entry]
+---
+<li><button type="button" class="entry<% if entry.current? %> current<% end %>" data-event="<%= entry.action %>" data-<%= entry.subject %>="<%= entry.key %>"><%= entry.caption %></button></li>

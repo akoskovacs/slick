@@ -1,0 +1,19 @@
+---
+params: [failure: String, channels: String, founding: String, people: String, pane: String]
+---
+<% if !failure.empty? %>
+<p class="failure" role="alert"><%= failure %></p>
+<% end %>
+<div class="workspace">
+  <nav class="sidebar">
+    <div class="sidebar-head">
+      <h2>Channels</h2>
+      <button type="button" class="quiet" data-event="found" title="New channel">+</button>
+    </div>
+    <%== founding %>
+    <ul class="entries"><%== channels %></ul>
+    <div class="sidebar-head"><h2>People</h2></div>
+    <ul class="entries"><%== people %></ul>
+  </nav>
+  <%== pane %>
+</div>

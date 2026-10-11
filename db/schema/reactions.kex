@@ -1,0 +1,23 @@
+# The `reactions` table.
+module DB.Schema.Reactions
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :reactions do |t|
+  [
+    t.text(:id, primaryKey: true),
+    t.text(:conversation_id),
+    t.text(:message_id),
+    t.text(:user_id),
+    t.text(:emoji)
+  ]
+end
+
+let table = DB.Schema.Reactions.definition.table
+
+let id = DB.Schema.Reactions.definition.textColumn(:id)
+let conversationId = DB.Schema.Reactions.definition.textColumn(:conversation_id)
+let messageId = DB.Schema.Reactions.definition.textColumn(:message_id)
+let userId = DB.Schema.Reactions.definition.textColumn(:user_id)
+let emoji = DB.Schema.Reactions.definition.textColumn(:emoji)

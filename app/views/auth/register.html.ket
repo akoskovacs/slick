@@ -1,12 +1,16 @@
 ---
-params: [email: String, problems: [String], shortest: String]
+params: [who: String, email: String, problems: [String], shortest: String]
 ---
 <% if !problems.empty? %>
 <ul class="failure" role="alert"><% problems.map do |problem| %><li><%= problem %></li><% end %></ul>
 <% end %>
 <form method="post" action="/register" class="credentials">
+  <label class="field"><span class="label">Name</span>
+    <input name="name" value="<%= who %>" autocomplete="name" maxlength="40" required autofocus>
+    <span class="hint">What people see next to your messages.</span>
+  </label>
   <label class="field"><span class="label">Email</span>
-    <input type="email" name="email" value="<%= email %>" autocomplete="username" required autofocus>
+    <input type="email" name="email" value="<%= email %>" autocomplete="username" required>
   </label>
   <label class="field"><span class="label">Password</span>
     <input type="password" name="password" autocomplete="new-password" minlength="<%= shortest %>" required>

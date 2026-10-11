@@ -1,0 +1,106 @@
+# Slick's markup: a layout, and the live region inside it — a sidebar of
+# channels and people, and the conversation that is open. The templates are
+# the `.ket` files beside this module; `<%= %>` escapes what it prints.
+#
+# The records here are what the templates print. Their field names are
+# chosen not to match any function in the program, because a template reads
+# `item.name` as a call to `name(item)` when one exists (kexhq/kex#448).
+module App.Views.Chat
+
+using App.Live.Tab, only: [Tab]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Message, only: [Message]
+using App.Models.Reaction, only: [Reaction]
+using App.Models.User, only: [User]
+
+# One line of the sidebar.
+record Entry do
+  # The event the line sends, and the field it sends it with.
+  action : String
+  subject : String
+  key : String
+  caption : String
+  current? : Bool
+end
+
+# One message.
+record Bubble do
+  key : String
+  author : String
+  stamp : String
+  content : String
+  own? : Bool
+end
+
+# One emoji under a message: how many put it there, and whether I did.
+record Chip do
+  key : String
+  glyph : String
+  tally : String
+  own? : Bool
+end
+
+let layout = Template.html(Kex.embed("layouts/application.html.ket"))
+let frame = Template.html(Kex.embed("chat/index.html.ket"))
+let entryPartial = Template.html(Kex.embed("chat/_entry.html.ket"))
+let foundingPartial = Template.html(Kex.embed("chat/_founding.html.ket"))
+let headingPartial = Template.html(Kex.embed("chat/_heading.html.ket"))
+let bubblePartial = Template.html(Kex.embed("chat/_bubble.html.ket"))
+let chipPartial = Template.html(Kex.embed("chat/_chip.html.ket"))
+let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
+
+# The document: head, who is signed in, the live region, and Metro's script.
+page : String -> String -> String
+let page(who, live) = layout(who, live)
+
+# The live region.
+index : Tab -> User -> [Conversation] -> [User] -> Conversation? -> [Message] -> [Reaction] -> String
+let index(tab, user, channels, people, conversation, messages, reactions) do
+  let channelLines = channels.map { |channel|
+    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == tab.conversation })
+  }
+  let personLines = people.reject { |person| person.id == user.id }.map { |person|
+    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting })
+  }
+  let founding = tab.founding? then foundingPartial(tab.channelProblem) else ""
+  frame(tab.failure, channelLines.join("\n"), founding, personLines.join("\n"), pane(tab, user, people, conversation, messages, reactions))
+end
+
+private do
+  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> String
+  let pane(tab, user, people, None, messages, reactions) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
+  let pane(tab, user, people, Just(conversation), messages, reactions) do
+    let title = titled(conversation, user, people)
+    let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
+    let bubbles = messages.map { |message| bubble(message, user, people, reactions) }
+    let emptied = messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
+    let picks = App.Models.Emoji.KNOWN.map { |entry| match entry do (code, glyph) => "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\" data-target=\"#message-box\" title=\":${code}:\">${glyph}</button>" end }
+    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div>${composerPartial(title, picks.join(""))}</section>"
+  end
+
+  # What a conversation is called for this person: `# name` for a channel,
+  # the other person for a private chat.
+  titled : Conversation -> User -> [User] -> String
+  let titled(conversation, user, people) do
+    return "# ${conversation.title}" if conversation.channel?
+
+    let other = conversation.counterpart(user.id)
+    people.find { |person| person.id == other }.map { |person| person.shown }.or("Private chat")
+  end
+
+  bubble : Message -> User -> [User] -> [Reaction] -> String
+  let bubble(message, user, people, reactions) do
+    let author = people.find { |person| person.id == message.userId }.map { |person| person.shown }.or("Someone")
+    let mine = reactions.filter { |reaction| reaction.messageId == message.id }
+    let chips = mine.map { |reaction| reaction.emoji }.uniq.map { |glyph|
+      let givers = mine.filter { |reaction| reaction.emoji == glyph }
+      chipPartial(Chip { key: message.id, glyph: glyph, tally: "${givers.count}", own?: givers.any? { |reaction| reaction.userId == user.id } })
+    }
+    let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
+    bubblePartial(
+      Bubble { key: message.id, author: author, stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
+      chips.join(""), offers.join("")
+    )
+  end
+end

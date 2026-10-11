@@ -1,7 +1,14 @@
-# Someone who can sign in.
+# Someone who can sign in. `name` is what they are called in a conversation.
 module App.Models.User
 
 record User do
   id : String
   email : String
+  name : String = ""
+end
+
+make User do
+  # What to call them: their name, or the front of their email until they
+  # have one.
+  let shown -> String = @name.empty? then @email.split("@").first.or(@email) else @name
 end

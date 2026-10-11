@@ -11,7 +11,7 @@ let registerForm = Template.html(Kex.embed("auth/register.html.ket"))
 signin : String -> [String] -> String
 let signin(email, problems) = frame("Sign in", signinForm(email, problems))
 
-register : String -> [String] -> String
-let register(email, problems) do
-  frame("Create your account", registerForm(email, problems, "${App.Forms.Credentials.SHORTEST_PASSWORD}"))
+register : String -> String -> [String] -> String
+let register(name, email, problems) do
+  frame("Create your account", registerForm(name, email, problems, "${App.Forms.Credentials.SHORTEST_PASSWORD}"))
 end

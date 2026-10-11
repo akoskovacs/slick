@@ -1,0 +1,49 @@
+# What was said.
+#
+#   MessageRepository { db: db }.latest(conversation.id, 200)
+module DB.Repositories.Messages
+
+using Harmat.Db, only: [Db, eq]
+using App.Models.Message, only: [Message]
+
+record MessageRepository do
+  db : Db
+end
+
+make MessageRepository do
+  # The newest `limit` messages of a conversation, oldest first.
+  foul latest(conversationId: String, limit: Integer) -> Result<[Message], String> do
+    return @db.select().from(DB.Schema.Messages.definition).where(eq(DB.Schema.Messages.conversationId, conversationId))
+      .orderByDescending([:sent_at, :id]).limit(limit).all
+      .map { |rows| rows.map { |row| decoded(row) }.reverse }
+  end
+
+  # Stores a message, stamped now.
+  foul said(conversationId: String, userId: String, body: String) -> Result<Message, String> do
+    let moment = BEAM.erlang.system_time(:millisecond)
+    let message = Message {
+      id: "m${moment}-${BEAM.erlang.unique_integer([:positive])}", conversationId: conversationId,
+      userId: userId, body: body, sentAt: moment, sentOn: "${DateTime.now()}"
+    }
+    let row = {id: message.id, conversation_id: conversationId, user_id: userId, body: body, sent_at: moment, sent_on: message.sentOn}
+    return @db.insert(DB.Schema.Messages.definition).values(row).run.map { |_| message }
+  end
+
+  # One message, or `None`.
+  foul single(id: String) -> Result<Message?, String> do
+    return @db.select().from(DB.Schema.Messages.definition).where(eq(DB.Schema.Messages.id, id)).first
+      .map { |row| row.map { |found| decoded(found) } }
+  end
+end
+
+private do
+  decoded : {String: String} -> Message
+  let decoded(row) = Message {
+    id: row.get("id").or(""),
+    conversationId: row.get("conversation_id").or(""),
+    userId: row.get("user_id").or(""),
+    body: row.get("body").or(""),
+    sentAt: row.get("sent_at").or("").trim.to(Integer).or(0),
+    sentOn: row.get("sent_on").or("")
+  }
+end
