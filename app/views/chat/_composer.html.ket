@@ -3,7 +3,14 @@ params: [verb: String, boxId: String, hint: String, picks: String, focused?: Boo
 ---
 <form class="composer" data-live="<%= verb %>" data-live-reset data-live-quiet>
   <div class="composer-box">
-    <input id="<%= boxId %>" name="body" placeholder="<%= hint %>" maxlength="4000" autocomplete="off"<% if focused? %> autofocus<% end %>>
+    <div class="formats">
+      <button type="button" class="quiet" data-wrap="*" data-target="#<%= boxId %>" title="Bold: *text*"><strong>B</strong></button>
+      <button type="button" class="quiet" data-wrap="_" data-target="#<%= boxId %>" title="Italic: _text_"><em>I</em></button>
+      <button type="button" class="quiet" data-wrap="~" data-target="#<%= boxId %>" title="Strikethrough: ~text~"><s>S</s></button>
+      <button type="button" class="quiet" data-wrap="`" data-target="#<%= boxId %>" title="Code: `text`"><code>&lt;/&gt;</code></button>
+      <span class="hint">Shift+Enter for a new line · # heading · - list · &gt; quote · ``` code</span>
+    </div>
+    <textarea id="<%= boxId %>" name="body" rows="1" placeholder="<%= hint %>" maxlength="4000" autocomplete="off" data-live-enter<% if focused? %> autofocus<% end %>></textarea>
     <div class="composer-row">
       <div class="picks"><%== picks %></div>
       <button type="submit" class="send" title="Send">Send</button>

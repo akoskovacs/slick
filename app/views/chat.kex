@@ -55,6 +55,7 @@ record Bubble do
   initial : String
   tint : String
   stamp : String
+  # The message as markup, already escaped: `App.Helpers.RichText.html`.
   content : String
   own? : Bool
   # "3 replies", or "" when there are none or it is shown inside the thread.
@@ -205,7 +206,7 @@ private do
     }
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
-      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, author: author, badged: badged, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
+      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, author: author, badged: badged, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.html(message.body), own?: message.userId == user.id },
       chips.join(""), offers.join("")
     )
   end

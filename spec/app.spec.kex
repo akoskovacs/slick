@@ -24,6 +24,34 @@ describe("Slick") do
     Assert.equal(App.Models.Emoji.shown("10:30 :nope:"), "10:30 :nope:")
   end
 
+  it("reads a message as blocks of rich text, and nothing typed as markup") do
+    Assert.equal(App.Helpers.RichText.html("hello"), "<p>hello</p>")
+    Assert.equal(App.Helpers.RichText.html("*bold* _it_ ~gone~ `co*de*`"), "<p><strong>bold</strong> <em>it</em> <s>gone</s> <code>co*de*</code></p>")
+    Assert.equal(App.Helpers.RichText.html("*bold and _both_*"), "<p><strong>bold and <em>both</em></strong></p>")
+    # Marks only count around a word.
+    Assert.equal(App.Helpers.RichText.html("snake_case_name and 2 * 3 * 4"), "<p>snake_case_name and 2 * 3 * 4</p>")
+    Assert.equal(App.Helpers.RichText.html("a lone * star"), "<p>a lone * star</p>")
+    Assert.equal(App.Helpers.RichText.html("ship it :rocket:"), "<p>ship it 🚀</p>")
+    # Nothing typed is markup.
+    Assert.equal(App.Helpers.RichText.html("<script>alert(1)</script> *<b>*"), "<p>&lt;script&gt;alert(1)&lt;/script&gt; <strong>&lt;b&gt;</strong></p>")
+    # Only http and https addresses are links; the sentence's full stop is not part of one.
+    Assert.equal(App.Helpers.RichText.html("see https://kex.dev/a_b_c."), "<p>see <a href=\"https://kex.dev/a_b_c\" target=\"_blank\" rel=\"noopener noreferrer nofollow\">https://kex.dev/a_b_c</a>.</p>")
+    Assert.falsy(App.Helpers.RichText.html("javascript:alert(1) data:text/html,x").contains?("<a"))
+    Assert.truthy(App.Helpers.RichText.html("https://a.b/?q=\"><script>").contains?("href=\"https://a.b/?q=&quot;&gt;&lt;script&gt;\""))
+    # Blocks.
+    let message = "# Release 1.2\nTwo lines\nof text\n\n- one\n- *two*\n> quoted\n---\n```\nlet x = <1>\n*not bold*\n```\nafter"
+    Assert.equal(
+      App.Helpers.RichText.html(message),
+      "<h3>Release 1.2</h3><p>Two lines<br>of text</p><ul><li>one</li><li><strong>two</strong></li></ul><blockquote>quoted</blockquote><hr><pre><code>let x = &lt;1&gt;\n*not bold*</code></pre><p>after</p>"
+    )
+    Assert.equal(App.Helpers.RichText.html("```\nnever closed"), "<pre><code>never closed</code></pre>")
+    # The API's form of the same blocks, and back.
+    let listed = App.Helpers.RichText.described(message)
+    Assert.equal(listed.count, 7)
+    Assert.equal(JSON.stringify(listed.take(1)), "[{\"text\":\"Release 1.2\",\"type\":\"heading\"}]")
+    Assert.equal(App.Helpers.RichText.html(App.Helpers.RichText.composed(listed)), App.Helpers.RichText.html(message))
+  end
+
   it("lets people register, chat in channels and in private, react and set topics") do
     let file = "db/spec_${BEAM.erlang.system_time(:millisecond)}.sqlite3"
     let store = DB.Store.started(Config.Database.sqlite(file)).try

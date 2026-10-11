@@ -1,0 +1,224 @@
+# What a message says, as blocks of rich text.
+#
+# A message is stored as the text that was typed. Read a line at a time, it
+# is a list of blocks:
+#
+#   # Release notes          a heading
+#   - one                    a list, for as many lines as start that way
+#   > as she said            a quote, likewise
+#   ```                      code, up to the closing fence, shown as typed
+#   ---                      a divider
+#   anything else            a paragraph, up to the next empty line
+#
+# and inside a block's text: *bold*, _italic_, ~struck~, `code`, :emoji:
+# names, and addresses starting http:// or https://, which become links.
+#
+# Nothing typed is ever markup: every piece of text is escaped on its way
+# into the page, a mark only counts when it hugs a word (so `snake_case` and
+# `2 * 3` stay as they are), and only those two kinds of address are linked.
+#
+# The API gives and takes the same blocks as JSON (`described`, `composed`).
+module App.Helpers.RichText
+
+# One block of a message. The strings are text as typed, not yet read for
+# what is bold in them.
+type ContentBlock = Paragraph([String]) | Heading(String) | Bullets([String]) | Quote([String]) | Listing(String) | Divider
+
+# One run of a block's text.
+type Span = Words(String) | Bold([Span]) | Italic([Span]) | Struck([Span]) | Mono(String) | Anchor(String)
+
+let FENCE = "```"
+
+# The blocks of a message.
+blocks : String -> [ContentBlock]
+let blocks(body) = gathered(body.replace("\r", "").split("\n"))
+
+# A message as markup for the page.
+html : String -> String
+let html(body) = blocks(body).map { |block| rendered(block) }.join("")
+
+# A message's blocks as the API shows them.
+described : String -> [Any]
+let described(body) = blocks(body).map { |block| listed(block) }
+
+# The text of a message made of blocks the API was sent: the same shapes
+# `described` gives. A block of a kind that is not known is a section.
+composed : [Any] -> String
+let composed(given) = given.map { |each| written(each) }.reject { |text| text.empty? }.join("\n\n")
+
+private do
+  # --- Blocks ---------------------------------------------------------------
+
+  gathered : [String] -> [ContentBlock]
+  let gathered([]) = []
+  let gathered(lines) do
+    let line = lines.first.or("").trim
+    let rest = lines.drop(1)
+    return gathered(rest) if line.empty?
+    return [Divider] + gathered(rest) if line == "---"
+    return [Heading(line.drop(2).trim)] + gathered(rest) if line.startsWith?("# ")
+
+    if line.startsWith?(FENCE)
+      let opening = line.drop(3).trim
+      let inside = rest.takeWhile { |each| !each.trim.startsWith?(FENCE) }
+      let shown = opening.empty? then inside else [opening] + inside
+      return [Listing(shown.join("\n"))] + gathered(rest.drop(inside.count + 1))
+    end
+    if item?(line)
+      let items = lines.takeWhile { |each| item?(each.trim) }
+      return [Bullets(items.map { |each| each.trim.drop(2).trim })] + gathered(lines.drop(items.count))
+    end
+    if quoted?(line)
+      let said = lines.takeWhile { |each| quoted?(each.trim) }
+      return [Quote(said.map { |each| each.trim.drop(1).trim })] + gathered(lines.drop(said.count))
+    end
+
+    let plain = lines.takeWhile { |each| ordinary?(each.trim) }
+    return [Paragraph(plain.map { |each| each.trim })] + gathered(lines.drop(plain.count))
+  end
+
+  item? : String -> Bool
+  let item?(line) = line.startsWith?("- ") || line.startsWith?("• ")
+
+  quoted? : String -> Bool
+  let quoted?(line) = line.startsWith?("> ") || line == ">"
+
+  # A line that carries on a paragraph: not empty, and not the start of
+  # another kind of block.
+  ordinary? : String -> Bool
+  let ordinary?(line) = !line.empty? && line != "---" && !line.startsWith?("# ") && !line.startsWith?(FENCE) && !item?(line) && !quoted?(line)
+
+  rendered : ContentBlock -> String
+  let rendered(Paragraph(lines)) = tagged("p", broken(lines))
+  let rendered(Heading(text)) = tagged("h3", inline(text))
+  let rendered(Bullets(items)) = tagged("ul", items.map { |item| tagged("li", inline(item)) }.join(""))
+  let rendered(Quote(lines)) = tagged("blockquote", broken(lines))
+  let rendered(Listing(text)) = tagged("pre", tagged("code", Template.escapeHtml(text)))
+  let rendered(Divider) = "<hr>"
+
+  tagged : String -> String -> String
+  let tagged(element, inner) = "<${element}>${inner}</${element}>"
+
+  # Lines of one block, each read for its marks, one under the other.
+  broken : [String] -> String
+  let broken(lines) = lines.map { |line| inline(line) }.join("<br>")
+
+  listed : ContentBlock -> {String: Any}
+  let listed(Paragraph(lines)) = {"type": "section", "text": lines.join("\n")}
+  let listed(Heading(text)) = {"type": "heading", "text": text}
+  let listed(Bullets(items)) = {"type": "list", "items": items}
+  let listed(Quote(lines)) = {"type": "quote", "text": lines.join("\n")}
+  let listed(Listing(text)) = {"type": "code", "text": text}
+  let listed(Divider) = {"type": "divider"}
+
+  written : Any -> String
+  let written(given) do
+    let fields : {String: Any} = given
+    let kind = fields.get("type").map { |found| "${found}" }.or("section")
+    let text = fields.get("text").map { |found| "${found}" }.or("").replace("\r", "").trim
+    let single = text.replace("\n", " ")
+    return "---" if kind == "divider"
+    return "# ${single}" if kind == "heading" && !single.empty?
+    return [FENCE, text.replace(FENCE, "'''"), FENCE].join("\n") if kind == "code" && !text.empty?
+    return text.split("\n").map { |line| "> ${line}" }.join("\n") if kind == "quote" && !text.empty?
+
+    if kind == "list"
+      let items : [Any] = fields.get("items").or([])
+      return items.map { |item| bulleted("${item}") }.join("\n")
+    end
+    text
+  end
+
+  bulleted : String -> String
+  let bulleted(item) do
+    let single = item.replace("\n", " ").trim
+    "- ${single}"
+  end
+
+  # --- Text inside a block ----------------------------------------------------
+
+  inline : String -> String
+  let inline(text) = linked(text.split(" "), "", true).map { |span| marked(span) }.join("")
+
+  marked : Span -> String
+  let marked(Words(text)) = Template.escapeHtml(App.Models.Emoji.shown(text))
+  let marked(Bold(inner)) = tagged("strong", inner.map { |span| marked(span) }.join(""))
+  let marked(Italic(inner)) = tagged("em", inner.map { |span| marked(span) }.join(""))
+  let marked(Struck(inner)) = tagged("s", inner.map { |span| marked(span) }.join(""))
+  let marked(Mono(text)) = tagged("code", Template.escapeHtml(text))
+  let marked(Anchor(address)) do
+    let safe = Template.escapeHtml(address)
+    "<a href=\"${safe}\" target=\"_blank\" rel=\"noopener noreferrer nofollow\">${safe}</a>"
+  end
+
+  # Words one at a time: an address becomes a link, and everything between
+  # two addresses is read for marks together. `pending` is the text since
+  # the last address.
+  linked : [String] -> String -> Bool -> [Span]
+  let linked([], pending, first?) = coded(pending)
+  let linked(words, pending, first?) do
+    let word = words.first.or("")
+    let gap = first? then "" else " "
+    return linked(words.drop(1), "${pending}${gap}${word}", false) if !address?(word)
+
+    let address = bare(word)
+    coded("${pending}${gap}") + [Anchor(address)] + linked(words.drop(1), word.drop(address.count), false)
+  end
+
+  address? : String -> Bool
+  let address?(word) = (word.startsWith?("http://") && word.count > 7) || (word.startsWith?("https://") && word.count > 8)
+
+  # An address without the full stop or bracket that ends the sentence it
+  # was typed in.
+  bare : String -> String
+  let bare(word) do
+    let ending = word.last.map { |char| ".,;:!?)".contains?("${char}") }.or(false)
+    ending then bare(word.take(word.count - 1)) else word
+  end
+
+  # `code` first: what is inside it is not read for anything else.
+  coded : String -> [Span]
+  let coded("") = []
+  let coded(text) = paired(text.split("`"), "`")
+
+  # The pieces of a text split at one mark. Odd pieces are inside a pair of
+  # marks, if the pair is a real one; a mark that opens nothing is put back.
+  paired : [String] -> String -> [Span]
+  let paired([], mark) = []
+  let paired(pieces, mark) do
+    let before = pieces.first.or("")
+    let inner = pieces.drop(1).first.or("")
+    let following = pieces.drop(2)
+    return styled(before, mark) if pieces.count == 1
+    return styled("${before}${mark}${inner}", mark) if pieces.count == 2
+    return paired(["${before}${mark}${inner}"] + following, mark) if !hugging?(before, inner, following.first.or(""), mark)
+
+    styled(before, mark) + [wrapped(inner, mark)] + paired(following, mark)
+  end
+
+  # Whether marks around `inner` are a pair: something is between them, it
+  # touches both, and neither is in the middle of a word.
+  hugging? : String -> String -> String -> String -> Bool
+  let hugging?(before, inner, following, mark) do
+    return !inner.empty? if mark == "`"
+
+    let inside = !inner.empty? && !inner.startsWith?(" ") && inner.trim == inner
+    let opens = before.last.map { |char| !char.letter? && !char.digit? }.or(true)
+    let closes = following.first.map { |char| !char.letter? && !char.digit? }.or(true)
+    inside && opens && closes
+  end
+
+  wrapped : String -> String -> Span
+  let wrapped(inner, "`") = Mono(inner)
+  let wrapped(inner, "*") = Bold(styled(inner, "*"))
+  let wrapped(inner, "_") = Italic(styled(inner, "_"))
+  let wrapped(inner, mark) = Struck(styled(inner, mark))
+
+  # Text outside the pairs of one mark, read for the next mark in turn.
+  styled : String -> String -> [Span]
+  let styled("", mark) = []
+  let styled(text, "`") = paired(text.split("*"), "*")
+  let styled(text, "*") = paired(text.split("_"), "_")
+  let styled(text, "_") = paired(text.split("~"), "~")
+  let styled(text, mark) = [Words(text)]
+end

@@ -4,9 +4,22 @@
 #   GET  /api/:organization/channels
 #   GET  /api/:organization/channels/:name/messages?limit=50&after=<sentAt>
 #   POST /api/:organization/channels/:name/messages    {"body": "…", "thread": "<message id>"}
+#                                                      or {"blocks": […]} in place of "body"
 #   POST /api/:organization/channels/:name/reactions   {"message": "<id>", "emoji": "🎉"}
 #   GET  /api/:organization/dm/:person/messages
 #   POST /api/:organization/dm/:person/messages
+#
+# A message is rich text (app/helpers/rich_text.kex). It can be sent as the
+# text a person would type — "*done* in `4s`" — or as blocks:
+#
+#   {"blocks": [
+#     {"type": "heading", "text": "Deploy finished"},
+#     {"type": "section", "text": "*api* is on `v1.4`"},
+#     {"type": "list", "items": ["migrated", "restarted"]},
+#     {"type": "quote", "text": "…"}, {"type": "code", "text": "…"}, {"type": "divider"}
+#   ]}
+#
+# and every message read back carries both: "body" and "blocks".
 #
 # A bot is a member like any other, and what it does goes through the same
 # two functions a browser tab's events do (`App.Live.Chat.arrived` and
@@ -80,7 +93,8 @@ end
 posted : Db -> Server<Hub> -> Context -> String -> Rodolfo.Reply
 foul posted(database, hub, env, kind) do
   let thread = given(env, "thread")
-  let body = given(env, "body")
+  let typed = given(env, "body")
+  let body = typed.empty? then App.Helpers.RichText.composed(listGiven(env, "blocks")) else typed
   match placed(database, env, kind, thread) do
     Error(reply) => return reply
     Ok((bot, tab, conversation)) => do
@@ -160,12 +174,28 @@ private do
     end
   end
 
+  # One field of a JSON object that was sent, when it is a list.
+  listGiven : Context -> String -> [Any]
+  let listGiven(env, name) do
+    let text = env.request.body.to(String).or("").trim
+    return [] if text.take(1) != "{"
+
+    match JSON.parse(text) do
+      Ok(value) => do
+        let fields : {String: Any} = value
+        let found : [Any] = fields.get(name).or([])
+        return found
+      end
+      Error(_) => return []
+    end
+  end
+
   described : Message -> [User] -> {String: Any}
   let described(message, people) do
     let author = people.find { |person| person.id == message.userId }
     {
       "id": message.id, "user": message.userId, "author": author.map { |person| person.shown }.or("Someone"),
-      "bot": author.map { |person| person.bot? }.or(false), "body": message.body, "sentAt": message.sentAt,
+      "bot": author.map { |person| person.bot? }.or(false), "body": message.body, "blocks": App.Helpers.RichText.described(message.body), "sentAt": message.sentAt,
       "sentOn": message.sentOn, "thread": message.parentId, "replies": message.replyCount
     }
   end

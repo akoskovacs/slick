@@ -97,7 +97,7 @@ foul routes(store, hub) do
         let email = env.form("email").or("")
         match App.Services.Authentication.signIn(database, email, env.form("password").or("")) do
           Ok(token) => entered(env, token)
-          Error(problems) => Response.HTML { status: 422, body: App.Views.Auth.signin(email, problems) }
+          Error(problems) => Response.HTML { status: 422, body: stamped(App.Views.Auth.signin(email, problems)) }
         end
       end
 
@@ -110,7 +110,7 @@ foul routes(store, hub) do
         let email = env.form("email").or("")
         match App.Services.Authentication.register(database, name, email, env.form("password").or("")) do
           Ok(token) => entered(env, token)
-          Error(problems) => Response.HTML { status: 422, body: App.Views.Auth.register(name, email, problems) }
+          Error(problems) => Response.HTML { status: 422, body: stamped(App.Views.Auth.register(name, email, problems)) }
         end
       end
     end
@@ -182,9 +182,18 @@ private do
     )
   end
 
+  # A page with its stylesheet and script addressed by what is in them
+  # (`/app.css?v=3f9a…`), so a browser that has kept an old copy asks again
+  # when either changes, and not otherwise.
+  foul stamped(body: String) -> String do
+    let sheet = Digest.sha256(FS.File.read("public/app.css").or("")).take(12)
+    let script = Digest.sha256(Metro.Live.Client.script).take(12)
+    return body.replace("href=\"/app.css\"", "href=\"/app.css?v=${sheet}\"").replace("src=\"/metro/live.js\"", "src=\"/metro/live.js?v=${script}\"")
+  end
+
   # A page that must not be kept by a cache: it is one person's.
   page : String -> Rodolfo.Reply
-  let page(body) = Response.HTML { body: body, headers: Net.HTTP.Headers.empty.add("Cache-Control", "no-store").or(Net.HTTP.Headers.empty) }
+  foul page(body) = Response.HTML { body: stamped(body), headers: Net.HTTP.Headers.empty.add("Cache-Control", "no-store").or(Net.HTTP.Headers.empty) }
 
   cookie : String -> Net.HTTP.Headers
   let cookie(value) = Net.HTTP.Headers.empty.add("Set-Cookie", value).or(Net.HTTP.Headers.empty)
