@@ -1,0 +1,19 @@
+# What one person answered one form in a message with. It belongs to the
+# message, and is not a message: it is made by using the form, and by
+# nothing that can be typed.
+module App.Models.Answer
+
+record Answer do
+  messageId : String
+  conversationId : String = ""
+  # Who wrote the message that asked.
+  askerId : String = ""
+  # Who answered.
+  userId : String
+  # Which of the message's blocks the form is.
+  form : Integer = 0
+  # The answer, a line for each field: "Deploy to: staging".
+  answer : String = ""
+  # When, in milliseconds since 1970.
+  answeredAt : Integer = 0
+end

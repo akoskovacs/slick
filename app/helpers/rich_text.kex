@@ -8,6 +8,9 @@
 #   > as she said            a quote, likewise
 #   ```                      code, up to the closing fence, shown as typed
 #   ---                      a divider
+#   [?] Notes                a form field to type in
+#   [?] Where: here | there  a form field to choose in; lines like these,
+#                            one under the other, are one form
 #   anything else            a paragraph, up to the next empty line
 #
 # and inside a block's text: *bold*, _italic_, ~struck~, `code`, :emoji:
@@ -17,25 +20,83 @@
 # into the page, a mark only counts when it hugs a word (so `snake_case` and
 # `2 * 3` stay as they are), and only those two kinds of address are linked.
 #
+# A form is how a message asks something back — a bot's question, mostly.
+# One field that is a choice is shown as a button for each option, and one
+# click answers; anything more is fields and a Send button. An answer is not
+# a message: it is kept with the message that asked (App.Models.Answer),
+# shown under the form it answers, and can only be given by using the form —
+# `answer` reads what a form sent and refuses what the form did not offer.
+#
 # The API gives and takes the same blocks as JSON (`described`, `composed`).
 module App.Helpers.RichText
 
 # One block of a message. The strings are text as typed, not yet read for
 # what is bold in them.
-type ContentBlock = Paragraph([String]) | Heading(String) | Bullets([String]) | Quote([String]) | Listing(String) | Divider
+type ContentBlock = Paragraph([String]) | Heading(String) | Bullets([String]) | Quote([String]) | Listing(String) | Divider | Form([Field])
+
+# One thing a form asks: something to type, or one of some options.
+type Field = Asked(String) | Choice(String, [String])
+
+# An answer as a form shows it: which of the message's blocks it answers,
+# whose it is, whether that is whoever is looking, and what it says.
+record Given do
+  form : Integer
+  who : String
+  mine? : Bool = false
+  answer : String
+end
 
 # One run of a block's text.
 type Span = Words(String) | Bold([Span]) | Italic([Span]) | Struck([Span]) | Mono(String) | Anchor(String)
 
 let FENCE = "```"
 
+# What starts a line that is a form's field.
+let FIELD = "[?] "
+
+# The longest thing typed into a form's field that is kept.
+let LONGEST_ANSWER = 500
+
 # The blocks of a message.
 blocks : String -> [ContentBlock]
 let blocks(body) = gathered(body.replace("\r", "").split("\n"))
 
-# A message as markup for the page.
+# A message as markup for the page. Its forms cannot be answered: there is
+# no message to answer them in.
 html : String -> String
-let html(body) = blocks(body).map { |block| rendered(block) }.join("")
+let html(body) = shown(body, "", [])
+
+# A stored message as markup for the page: `key` is its id, which its forms
+# send back with an answer, and `given` the answers its forms have had.
+shown : String -> String -> [Given] -> String
+let shown(body, key, given) do
+  blocks(body).mapIndexed { |block, index|
+    rendered(block, key, index) + answers(block, given.filter { |each| each.form == index })
+  }.join("")
+end
+
+# What a form sent, as an answer to one of a message's forms: which block
+# the form is, and what the answer says — "Label: value", a line for each
+# field answered. A click on an option sends `form`, `label` and `value`; a
+# form with fields sends `form` and `f0`, `f1`, … for them. `None` when
+# nothing in it answers the form: an option that was never offered, every
+# field left empty, a block that is not a form.
+answer : String -> [(String, String?)] -> (Integer, String)?
+let answer(body, entries) do
+  let asked = blocks(body)
+  # A block that is not there, when no number was sent.
+  let index = sent(entries, "form").to(Integer).or(asked.count)
+  let label = sent(entries, "label")
+  match asked.at(index) do
+    Just(Form(fields)) => do
+      let typed = fields.mapIndexed { |field, position| filled(field, sent(entries, "f${position}")) }
+      let clicked = fields.map { |field| picked(field, label, sent(entries, "value")) }
+      let lines = (label.empty? then typed else clicked).reject { |line| line.empty? }
+      lines.empty? then None else Just((index, lines.join("\n")))
+    end
+    _ => None
+  end
+end
 
 # A message's blocks as the API shows them.
 described : String -> [Any]
@@ -64,6 +125,10 @@ private do
       let shown = opening.empty? then inside else [opening] + inside
       return [Listing(shown.join("\n"))] + gathered(rest.drop(inside.count + 1))
     end
+    if field?(line)
+      let asked = lines.takeWhile { |each| field?(each.trim) }
+      return [Form(asked.map { |each| field(each.trim.drop(FIELD.count).trim) })] + gathered(lines.drop(asked.count))
+    end
     if item?(line)
       let items = lines.takeWhile { |each| item?(each.trim) }
       return [Bullets(items.map { |each| each.trim.drop(2).trim })] + gathered(lines.drop(items.count))
@@ -83,18 +148,119 @@ private do
   quoted? : String -> Bool
   let quoted?(line) = line.startsWith?("> ") || line == ">"
 
+  field? : String -> Bool
+  let field?(line) = line.startsWith?(FIELD) && !line.drop(FIELD.count).trim.empty?
+
+  # A field as it was written after the mark: "Where: here | there" is a
+  # choice between two, and anything else is something to type.
+  field : String -> Field
+  let field(written) do
+    let label = written.split(": ").first.or(written).trim
+    let options = written.drop(label.count).trim.drop(1).split("|").map { |option| option.trim }.reject { |option| option.empty? }
+    return Choice(label, options) if written.contains?(": ") && options.count > 1
+
+    Asked(written.endsWith?(":") then written.take(written.count - 1).trim else written)
+  end
+
   # A line that carries on a paragraph: not empty, and not the start of
   # another kind of block.
   ordinary? : String -> Bool
-  let ordinary?(line) = !line.empty? && line != "---" && !line.startsWith?("# ") && !line.startsWith?(FENCE) && !item?(line) && !quoted?(line)
+  let ordinary?(line) do
+    let marked = line == "---" || line.startsWith?("# ") || line.startsWith?(FENCE)
+    !line.empty? && !marked && !item?(line) && !quoted?(line) && !field?(line)
+  end
 
-  rendered : ContentBlock -> String
-  let rendered(Paragraph(lines)) = tagged("p", broken(lines))
-  let rendered(Heading(text)) = tagged("h3", inline(text))
-  let rendered(Bullets(items)) = tagged("ul", items.map { |item| tagged("li", inline(item)) }.join(""))
-  let rendered(Quote(lines)) = tagged("blockquote", broken(lines))
-  let rendered(Listing(text)) = tagged("pre", tagged("code", Template.escapeHtml(text)))
-  let rendered(Divider) = "<hr>"
+  # A block as markup. `key` is the message it is in and `index` which of
+  # its blocks it is: what a form sends back to be answered.
+  rendered : ContentBlock -> String -> Integer -> String
+  let rendered(Paragraph(lines), key, index) = tagged("p", broken(lines))
+  let rendered(Heading(text), key, index) = tagged("h3", inline(text))
+  let rendered(Bullets(items), key, index) = tagged("ul", items.map { |item| tagged("li", inline(item)) }.join(""))
+  let rendered(Quote(lines), key, index) = tagged("blockquote", broken(lines))
+  let rendered(Listing(text), key, index) = tagged("pre", tagged("code", Template.escapeHtml(text)))
+  let rendered(Divider, key, index) = "<hr>"
+  let rendered(Form([Choice(label, options)]), key, index) do
+    let buttons = options.map { |option| offered(key, index, label, option) }.join("")
+    "<div class=\"asking-form choices\"><p class=\"asked\">${inline(label)}</p><div class=\"options\">${buttons}</div></div>"
+  end
+  let rendered(Form(fields), key, index) do
+    let inputs = fields.mapIndexed { |each, position| input(each, position) }.join("")
+    let hidden = "<input type=\"hidden\" name=\"message\" value=\"${Template.escapeHtml(key)}\"><input type=\"hidden\" name=\"form\" value=\"${index}\">"
+    let send = "<button type=\"submit\" class=\"primary\"${disabled(key)}>Send</button>"
+    "<form class=\"asking-form\" data-live=\"answer\" data-live-quiet data-live-reset data-live-keep>${hidden}${inputs}${send}</form>"
+  end
+
+  # One option of a choice, as the button that answers with it.
+  offered : String -> Integer -> String -> String -> String
+  let offered(key, index, label, option) do
+    let which = "data-message=\"${Template.escapeHtml(key)}\" data-form=\"${index}\""
+    let what = "data-label=\"${Template.escapeHtml(label)}\" data-value=\"${Template.escapeHtml(option)}\""
+    "<button type=\"button\" class=\"option\" data-event=\"answer\" ${which} ${what}${disabled(key)}>${inline(option)}</button>"
+  end
+
+  # The answers a form has had, under it: whose, and what. Nothing for a
+  # block that is not a form, or a form nobody has answered.
+  answers : ContentBlock -> [Given] -> String
+  let answers(Form(fields), []) = ""
+  let answers(Form(fields), given) do
+    let lines = given.map { |each|
+      let said = Template.escapeHtml(told(fields, each.answer))
+      let whose = each.mine? then "response mine" else "response"
+      "<li class=\"${whose}\"><strong>${Template.escapeHtml(each.who)}</strong> <span>${said}</span></li>"
+    }
+    "<ul class=\"responses\" aria-label=\"Answers\">${lines.join("")}</ul>"
+  end
+  let answers(block, given) = ""
+
+  # An answer as one line under its form. A form that asks one thing does
+  # not have its question said again in every answer.
+  told : [Field] -> String -> String
+  let told(fields, answer) do
+    let single = fields.count == 1 && answer.contains?(": ")
+    single then answer.drop(answer.split(": ").first.or("").count + 2) else answer.replace("\n", " · ")
+  end
+
+  # One field of a form with several, under its label.
+  input : Field -> Integer -> String
+  let input(Asked(label), position) do
+    "<label class=\"field\"><span>${inline(label)}</span><input name=\"f${position}\" maxlength=\"${LONGEST_ANSWER}\" autocomplete=\"off\"></label>"
+  end
+  let input(Choice(label, options), position) do
+    let choices = options.map { |option| tagged("option", Template.escapeHtml(option)) }.join("")
+    "<label class=\"field\"><span>${inline(label)}</span><select name=\"f${position}\">${choices}</select></label>"
+  end
+
+  # A form shown where there is no message to answer it in cannot be used.
+  disabled : String -> String
+  let disabled(key) = key.empty? then " disabled" else ""
+
+  # --- Answers --------------------------------------------------------------
+
+  # One named thing a form sent; "" when it did not.
+  sent : [(String, String?)] -> String -> String
+  let sent(entries, name) do
+    match entries.find { |entry| match entry do (key, _) => key == name end } do
+      Just((_, Just(value))) => value.trim
+      _ => ""
+    end
+  end
+
+  # What clicking an option answers a field with: the field has to be the
+  # choice that was clicked in, and the option one it offers.
+  picked : Field -> String -> String -> String
+  let picked(Choice(label, options), clicked, value) do
+    label == clicked && options.contains?(value) then "${label}: ${value}" else ""
+  end
+  let picked(Asked(label), clicked, value) = ""
+
+  # One field's line of an answer; "" when it was left empty, or answered
+  # with something that was not offered.
+  filled : Field -> String -> String
+  let filled(Asked(label), value) do
+    let single = value.replace("\r", "").replace("\n", " ").trim.take(LONGEST_ANSWER)
+    single.empty? then "" else "${label}: ${single}"
+  end
+  let filled(Choice(label, options), value) = options.contains?(value) then "${label}: ${value}" else ""
 
   tagged : String -> String -> String
   let tagged(element, inner) = "<${element}>${inner}</${element}>"
@@ -110,6 +276,14 @@ private do
   let listed(Quote(lines)) = {"type": "quote", "text": lines.join("\n")}
   let listed(Listing(text)) = {"type": "code", "text": text}
   let listed(Divider) = {"type": "divider"}
+  let listed(Form(fields)) do
+    let described : [Any] = fields.map { |each| fieldListed(each) }
+    {"type": "form", "fields": described}
+  end
+
+  fieldListed : Field -> {String: Any}
+  let fieldListed(Asked(label)) = {"label": label}
+  let fieldListed(Choice(label, options)) = {"label": label, "options": options}
 
   written : Any -> String
   let written(given) do
@@ -126,7 +300,24 @@ private do
       let items : [Any] = fields.get("items").or([])
       return items.map { |item| bulleted("${item}") }.join("\n")
     end
+    if kind == "form"
+      let asked : [Any] = fields.get("fields").or([])
+      return asked.map { |each| fieldWritten(each) }.reject { |line| line.empty? }.join("\n")
+    end
     text
+  end
+
+  # A form's field the API was sent, as the line it is stored as. A label
+  # cannot hold what would make it read as something else.
+  fieldWritten : Any -> String
+  let fieldWritten(given) do
+    let fields : {String: Any} = given
+    let label = "${fields.get("label").or("")}".replace("\n", " ").replace(": ", " ").replace("|", " ").trim
+    let offered : [Any] = fields.get("options").or([])
+    let options = offered.map { |option| "${option}".replace("\n", " ").replace("|", " ").trim }.reject { |option| option.empty? }
+    return "" if label.empty?
+
+    options.count > 1 then "${FIELD}${label}: ${options.join(" | ")}" else "${FIELD}${label}"
   end
 
   bulleted : String -> String

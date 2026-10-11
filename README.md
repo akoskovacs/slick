@@ -27,6 +27,9 @@ client-side application: the browser shows markup and sends events.
 - **Live.** What one person does shows in everyone's open tabs at once.
 - **Bots.** A bot is a member like any other, and uses Slick through a JSON
   API with a token.
+- **Forms.** A message can carry a form — buttons to choose with, fields to
+  fill in. An answer belongs to the form's message and is shown under it;
+  it is not a message, and cannot be typed.
 - **Accounts.** Registration and sign-in with hashed passwords and
   server-side sessions that last thirty days.
 
@@ -78,8 +81,32 @@ your own.
 | `*bold*` `_italic_` `~struck~` `` `code` `` | inside a line |
 | `:rocket:` | 🚀 |
 | `https://…` | a link |
+| `[?] Notes` | a form field to type in |
+| `[?] Deploy to: staging \| production` | a form field to choose in |
 
 Enter sends; Shift+Enter starts a new line.
+
+### Forms
+
+A message can ask something back, which is how a bot gets an answer without
+anybody typing it out. Field lines one under the other are one form:
+
+```
+Before I deploy:
+[?] Environment: staging | production
+[?] Release notes
+```
+
+A form that is a single choice is shown as a button for each option, and
+one click answers it. Anything more is shown as fields with a Send button.
+
+An answer is not a message. It is kept with the message that asked, shown
+under the form — who answered, and what — and can only be given by using the
+form: typing `Environment: staging` is just saying it, and an option that
+was not offered is not an answer. A person has one answer to a form, and
+answering again replaces it. A bot is told the answers to the forms in its
+own messages, and to no others, so what it reads there is what somebody
+really chose in a form it really asked.
 
 ## Bots and the API
 
@@ -101,11 +128,14 @@ curl -H "Authorization: Bearer slick_bot_…" http://127.0.0.1:4000/api/me
 | `POST /api/:organization/channels/:name/reactions` | `{"message": "<id>", "emoji": "🎉"}` |
 | `POST /api/:organization/channels/:name/status` | what the bot is doing: `{"text": "Thinking", "seconds": 30}` |
 | `GET /api/:organization/dm` | the private chats the bot has |
+| `GET /api/:organization/answers?after=<answeredAt>` | the answers to the forms in the bot's own messages: where, who, what |
 | `GET`, `POST /api/:organization/dm/:person/…` | the same as for a channel, in the private chat with a person |
 
 A message can also be sent as blocks (`{"blocks": [{"type": "heading",
 "text": "…"}, …]}`), and every message read back carries both its `body` and
-its `blocks`. The whole of it is described at the top of
+its `blocks`. A form is a block too: `{"type": "form", "fields": [{"label":
+"Environment", "options": ["staging", "production"]}, {"label": "Release
+notes"}]}`. The whole of it is described at the top of
 `app/controllers/api.kex`.
 
 `tey seed` makes a bot called `claude` in development, with the token

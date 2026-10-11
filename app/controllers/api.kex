@@ -11,6 +11,9 @@
 #   POST /api/:organization/channels/:name/reactions   {"message": "<id>", "emoji": "🎉"}
 #   POST /api/:organization/channels/:name/status      {"text": "Deploying", "seconds": 30}
 #   GET  /api/:organization/dm                         the private chats it has
+#   GET  /api/:organization/answers?after=<answeredAt>
+#                                                      the answers to the forms in
+#                                                      its own messages
 #   GET  /api/:organization/dm/:person/messages
 #   POST /api/:organization/dm/:person/messages
 #
@@ -25,6 +28,12 @@
 #   ]}
 #
 # and every message read back carries both: "body" and "blocks".
+#
+# A form in a message is answered by using it, and an answer is not a
+# message: it is kept with the message that asked. `answers` gives a bot
+# the answers to the forms it asked itself — who answered, in which
+# conversation, and what — and nothing can make one appear there but
+# somebody using the bot's own form.
 #
 # A status is what the bot is in the middle of — "Thinking", "Deploying" —
 # shown under the conversation the way "is typing" is for a person. It
@@ -46,6 +55,7 @@ using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Messages, as: Messages
+using DB.Repositories.Answers, as: Answers
 using DB.Repositories.Users, as: Users
 
 # The most messages one request is given.
@@ -99,6 +109,24 @@ foul chatList(request) do
       "bot": person.map { |each| each.bot? }.or(false)
     }
   }
+  return request.json(listed)
+end
+
+# The answers to the forms in the bot's own messages, oldest first: each
+# says which message, where that is — a channel or the private chat with a
+# person, and the thread if it is in one — who answered, and what. `after`
+# leaves out the ones a bot has already had.
+answerList : WebRequest -> WebRequest
+foul answerList(request) do
+  let bot = userFor(request)
+  let slug = request.param("organization").or("")
+  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
+
+  let since = request.query("after").or("0").to(Integer).or(0)
+  let people : [User] = Users.everyone.or([])
+  let found = Answers.addressedTo(tab.organization, bot.id).or([]).filter { |each| each.answeredAt > since }
+  let listed : [Any] = found.flatMap { |each| placedAnswer(bot, people, each) }
   return request.json(listed)
 end
 
@@ -182,6 +210,36 @@ foul statusSet(request) do
 end
 
 private do
+  # A response as the API tells it, with where its message is. Nothing for
+  # one whose message or conversation is gone.
+  foul placedAnswer(bot: User, people: [User], given: App.Models.Answer.Answer) -> [Any] do
+    match Messages.single(given.messageId) do
+      Ok(Just(message)) => match Conversations.lookup(given.conversationId) do
+        Ok(Just(conversation)) => return [toldAnswer(bot, people, given, message, conversation)]
+        _ => return []
+      end
+      _ => return []
+    end
+  end
+
+  toldAnswer : User -> [User] -> App.Models.Answer.Answer -> Message -> Conversation -> {String: Any}
+  let toldAnswer(bot, people, given, message, conversation) do
+    let author = people.find { |person| person.id == given.userId }.map { |person| person.shown }.or("Someone")
+    let channel = conversation.channel? then conversation.title else ""
+    let person = conversation.channel? then "" else conversation.counterpart(bot.id)
+    {
+      "message": message.id,
+      "thread": message.parentId,
+      "channel": channel,
+      "person": person,
+      "user": given.userId,
+      "author": author,
+      "form": given.form,
+      "answer": given.answer,
+      "answeredAt": given.answeredAt
+    }
+  end
+
   # A thread as the API tells it: the message it hangs from, then the
   # replies, oldest first. Nothing, when the message is not one of this
   # conversation's.

@@ -455,6 +455,35 @@ body.chat .editor { width: min(28rem, 100%); background: var(--pane); color: var
 .body blockquote { padding-left: 0.75rem; border-left: 4px solid var(--line); color: var(--muted); }
 .body hr { border: 0; border-top: 1px solid var(--line); margin: 0.5rem 0; }
 .body a { color: var(--link); }
+
+/* A form a message asks: one choice as a row of buttons, or fields and Send. */
+.body .asking-form {
+  display: flex; flex-direction: column; gap: 0.45rem; max-width: 30rem;
+  padding: 0.6rem 0.75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--hover);
+}
+.body .asking-form .asked { margin: 0; font-weight: 700; }
+.body .asking-form .options { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.body .asking-form .option { font-weight: 600; }
+.body .asking-form .option:hover:not(:disabled) { border-color: var(--link); color: var(--link); }
+.body .asking-form .field { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.85rem; color: var(--muted); }
+.body .asking-form .field input, .body .asking-form .field select {
+  padding: 0.4rem 0.5rem; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--pane); font: inherit; font-size: 0.95rem; color: var(--ink);
+}
+.body .asking-form button.primary { align-self: flex-start; }
+
+/* The answers a form has had, under it: not messages, and not shown as one. */
+.body .responses {
+  list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem; max-width: 30rem;
+  margin: 0.3rem 0 0; padding: 0;
+}
+.body .response {
+  padding: 0.15rem 0.55rem; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--pane); font-size: 0.82rem; color: var(--muted);
+}
+.body .response strong { color: var(--ink); }
+.body .response.mine { border-color: var(--link); background: var(--link-soft); }
+.body .response::before { content: "✓ "; color: var(--accent); }
 .body code { padding: 0.05rem 0.3rem; border: 1px solid var(--line); border-radius: 4px; background: var(--hover); font-size: 0.85em; color: #c0144e; }
 .body pre { padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--hover); overflow-x: auto; white-space: pre; }
 .body pre code { padding: 0; border: 0; background: transparent; color: inherit; }

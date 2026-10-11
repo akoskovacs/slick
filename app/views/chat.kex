@@ -12,6 +12,8 @@ using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
+using App.Models.Answer, only: [Answer]
+using App.Helpers.RichText, only: [Given]
 using App.Models.User, only: [User]
 using Metro.Live.Presence, only: [Note]
 
@@ -133,8 +135,8 @@ let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProble
 # `doing` is what other people there are in the middle of right now.
 #
 # `online` are the ids of the people with a tab open.
-index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> [Note] -> String
-let index(tab, user, organizations, organization, channels, people, online, bots, conversation, messages, reactions, thread, doing) do
+index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
+let index(tab, user, organizations, organization, channels, people, online, bots, conversation, messages, reactions, responses, thread, doing) do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
     badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id })
@@ -152,7 +154,7 @@ let index(tab, user, organizations, organization, channels, people, online, bots
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
     entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
   }
-  let beside = thread.empty? then "" else threadPane(user, people, reactions, thread)
+  let beside = thread.empty? then "" else threadPane(user, people, reactions, responses, thread)
   let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
   let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
   # This person as stored now: the `user` a tab was opened with does not
@@ -160,7 +162,7 @@ let index(tab, user, organizations, organization, channels, people, online, bots
   let me = people.find { |person| person.id == user.id }.or(user)
   frame(
     tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), personLines.join("\n"), robotLines.join("\n"), topbar(me),
-    pane(tab, user, people, conversation, messages, reactions, thread.empty? && tab.dialog.empty?, doing) + beside,
+    pane(tab, user, people, conversation, messages, reactions, responses, thread.empty? && tab.dialog.empty?, doing) + beside,
     asking(tab, organization, people, bots, me), place, caption
   )
 end
@@ -188,6 +190,16 @@ private do
   opened : [Message] -> String
   let opened([]) = ""
   let opened([opening | replies]) = opening.id
+
+  # The answers a message's forms have had, as the forms show them: whose
+  # each is, by the name they go by.
+  answered : Message -> User -> [User] -> [Answer] -> [Given]
+  let answered(message, user, people, responses) do
+    responses.filter { |each| each.messageId == message.id }.map { |each|
+      let who = people.find { |person| person.id == each.userId }.map { |person| person.shown }.or("Someone")
+      Given { form: each.form, who: who, mine?: each.userId == user.id, answer: each.answer }
+    }
+  end
 
   # The dialog a tab has open, if any.
   asking : Tab -> Organization -> [User] -> [User] -> User -> String
@@ -250,20 +262,20 @@ private do
   let tallied(replies) = "${replies} replies"
 
   # The thread beside the conversation: its first message, then the replies.
-  threadPane : User -> [User] -> [Reaction] -> [Message] -> String
-  let threadPane(user, people, reactions, thread) do
-    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, true, false) }.join("")
-    let followups = sequence(thread.drop(1), "", 0, user, people, reactions, true)
+  threadPane : User -> [User] -> [Reaction] -> [Answer] -> [Message] -> String
+  let threadPane(user, people, reactions, responses, thread) do
+    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, responses, true, false) }.join("")
+    let followups = sequence(thread.drop(1), "", 0, user, people, reactions, responses, true)
     let summary = followups.empty? then "No replies yet" else tallied(followups.count)
     threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true))
   end
 
-  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> Bool -> [Note] -> String
-  let pane(tab, user, people, None, messages, reactions, alone?, doing) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
-  let pane(tab, user, people, Just(conversation), messages, reactions, alone?, doing) do
+  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> Bool -> [Note] -> String
+  let pane(tab, user, people, None, messages, reactions, responses, alone?, doing) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
+  let pane(tab, user, people, Just(conversation), messages, reactions, responses, alone?, doing) do
     let title = titled(conversation, user, people)
     let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
-    let bubbles = sequence(messages, "", 0, user, people, reactions, false)
+    let bubbles = sequence(messages, "", 0, user, people, reactions, responses, false)
     let emptied = messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
     "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div><p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">${statuses(doing, people)}</p>${composerPartial("send", "message-box", "Message ${title}", picked("#message-box"), alone?)}</section>"
   end
@@ -295,17 +307,17 @@ private do
   # Messages in order, each knowing whether it carries on from the one
   # before: consecutive messages of one person are shown as one block, under
   # one name. `lastUser` and `lastAt` are the message before.
-  sequence : [Message] -> String -> Integer -> User -> [User] -> [Reaction] -> Bool -> [String]
-  let sequence([], lastUser, lastAt, user, people, reactions, inThread?) = []
-  let sequence([message | rest], lastUser, lastAt, user, people, reactions, inThread?) do
+  sequence : [Message] -> String -> Integer -> User -> [User] -> [Reaction] -> [Answer] -> Bool -> [String]
+  let sequence([], lastUser, lastAt, user, people, reactions, responses, inThread?) = []
+  let sequence([message | rest], lastUser, lastAt, user, people, reactions, responses, inThread?) do
     let carries = message.userId == lastUser && message.sentAt - lastAt < RUN
-    [bubble(message, user, people, reactions, inThread?, carries)] + sequence(rest, message.userId, message.sentAt, user, people, reactions, inThread?)
+    [bubble(message, user, people, reactions, responses, inThread?, carries)] + sequence(rest, message.userId, message.sentAt, user, people, reactions, responses, inThread?)
   end
 
   # `inThread?` is whether it is shown in the thread pane, where a message
   # has its own element id and no way to open the thread it is already in.
-  bubble : Message -> User -> [User] -> [Reaction] -> Bool -> Bool -> String
-  let bubble(message, user, people, reactions, inThread?, carries) do
+  bubble : Message -> User -> [User] -> [Reaction] -> [Answer] -> Bool -> Bool -> String
+  let bubble(message, user, people, reactions, responses, inThread?, carries) do
     let writer = people.find { |person| person.id == message.userId }
     let author = writer.map { |person| person.shown }.or("Someone")
     let badged = writer.map { |person| person.bot? }.or(false) then "BOT" else ""
@@ -318,7 +330,7 @@ private do
     }
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
-      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, continued?: carries, author: author, badged: badged, emblem: emblem, emblemNote: emblemNote, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.html(message.body), own?: message.userId == user.id },
+      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, continued?: carries, author: author, badged: badged, emblem: emblem, emblemNote: emblemNote, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.shown(message.body, message.id, answered(message, user, people, responses)), own?: message.userId == user.id },
       chips.join(""), offers.join("")
     )
   end

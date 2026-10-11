@@ -1,0 +1,79 @@
+# Answers to the forms in messages.
+#
+#   DB.Repositories.Answers.recorded(organization.id, message, 1, user.id, "Deploy to: staging")
+module DB.Repositories.Answers
+
+using Harmat.Database, as: Database
+
+# An answer, and not a response: a record called `Response` is taken for
+# the HTTP library's own once the whole application is linked, and reading
+# a field of one then fails.
+using App.Models.Message, only: [Message]
+using App.Models.Answer, only: [Answer]
+
+# Every answer in a conversation.
+foul collected(conversationId: String) -> Result<[Answer], String> do
+  return Database.select().from(DB.Schema.Answers)
+    .where(DB.Schema.Answers.conversationId.eq(conversationId))
+    .orderBy([:answered_at, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
+# Every answer, in an organization, to the forms somebody asked — a bot
+# reading what its own messages were answered with. Oldest first.
+foul addressedTo(organizationId: String, askerId: String) -> Result<[Answer], String> do
+  return Database.select().from(DB.Schema.Answers)
+    .where(DB.Schema.Answers.organizationId.eq(organizationId))
+    .where(DB.Schema.Answers.askerId.eq(askerId))
+    .orderBy([:answered_at, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
+# Records a person's answer to one form of a message. An earlier answer of
+# theirs to that form is replaced: a person has one.
+foul recorded(organizationId: String, message: Message, form: Integer, userId: String, answer: String) -> Result<Answer, String> do
+  let id = "${message.id}:${form}:${userId}"
+  let answered = Answer {
+    messageId: message.id,
+    conversationId: message.conversationId,
+    askerId: message.userId,
+    userId: userId,
+    form: form,
+    answer: answer,
+    answeredAt: Metro.Clock.milliseconds()
+  }
+  let row = {
+    id: id,
+    message_id: message.id,
+    conversation_id: message.conversationId,
+    organization_id: organizationId,
+    asker_id: message.userId,
+    user_id: userId,
+    form: form,
+    answer: answer,
+    answered_at: answered.answeredAt
+  }
+  Database.delete(DB.Schema.Answers)
+    .where(DB.Schema.Answers.id.eq(id))
+    .run
+    .try
+  return Database.insert(DB.Schema.Answers)
+    .values(row)
+    .run
+    .map { |_| answered }
+end
+
+private do
+  decoded : {String: String} -> Answer
+  let decoded(row) = Answer {
+    messageId: row.get("message_id").or(""),
+    conversationId: row.get("conversation_id").or(""),
+    askerId: row.get("asker_id").or(""),
+    userId: row.get("user_id").or(""),
+    form: row.get("form").or("").trim.to(Integer).or(0),
+    answer: row.get("answer").or(""),
+    answeredAt: row.get("answered_at").or("").trim.to(Integer).or(0)
+  }
+end

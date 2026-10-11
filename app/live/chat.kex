@@ -25,6 +25,7 @@ using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Organizations, as: Organizations
 using DB.Repositories.Reactions, as: Reactions
+using DB.Repositories.Answers, as: Answers
 using DB.Repositories.Users, as: Users
 
 # How many messages of a conversation a tab is shown.
@@ -70,12 +71,13 @@ foul markup(statuses, user, tab) do
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
       match visible(user, tab) do
-        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, None, [], [], [], [])
+        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, None, [], [], [], [], [])
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
           let reactions = Reactions.throughout(conversation.id).or([])
+          let responses = Answers.collected(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, Just(conversation), messages, reactions, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, Just(conversation), messages, reactions, responses, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
         end
       end
     end
@@ -96,6 +98,7 @@ foul handled(statuses, user, tab, entries) do
     "retitle" => (Tab { ...settled(tab), retitling?: true }, false)
     "topic" => retitled(user, tab, field(entries, "topic").trim)
     "react" => reacted(user, tab, field(entries, "message"), field(entries, "emoji"))
+    "answer" => answered(user, tab, entries)
     "cancel" => (settled(tab), false)
     "thread" => threaded(user, tab, field(entries, "message"))
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
@@ -499,6 +502,30 @@ private do
           return (settled(tab), true)
         end
         Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
+      end
+    end
+  end
+
+  # Answers a form a message asks. The answer is kept with that message —
+  # it is not a message of its own — and replaces an earlier one this person
+  # gave to the same form. The tab stays as it is.
+  answered : User -> Tab -> [(String, String?)] -> (Tab, Bool)
+  foul answered(user, tab, entries) do
+    match visible(user, tab) do
+      None => return (tab, false)
+      Just(conversation) => match Messages.single(field(entries, "message")) do
+        Ok(Just(message)) => do
+          return (tab, false) if message.conversationId != conversation.id
+
+          match App.Helpers.RichText.answer(message.body, entries) do
+            None => return (tab, false)
+            Just((form, said)) => match Answers.recorded(conversation.organizationId, message, form, user.id, said) do
+              Ok(_) => return (tab, true)
+              Error(reason) => return (Tab { ...tab, failure: "Not answered: ${reason}" }, false)
+            end
+          end
+        end
+        _ => return (tab, false)
       end
     end
   end

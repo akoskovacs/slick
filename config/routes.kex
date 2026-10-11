@@ -17,7 +17,7 @@ using Metro.Router, only: [pipeline, scope, get, post, live, static]
 # Actions are named bare, and so imported by name: a reference through the
 # module (`~App.Controllers.Chat.show`) does not resolve when it is called.
 using App.Controllers.Accounts, only: [signInPage, signIn, signOut, registrationPage, register]
-using App.Controllers.Api, only: [whoami, channelList, chatList, history, posted, reacting, statusSet]
+using App.Controllers.Api, only: [whoami, channelList, chatList, answerList, history, posted, reacting, statusSet]
 using App.Controllers.Chat, only: [show]
 
 # Built where the database is installed (main.kex): an action reaches the
@@ -43,6 +43,7 @@ foul routes(hub) do
       post("/:organization/channels/:name/reactions", ~reacting)
       post("/:organization/channels/:name/status", ~statusSet)
       get("/:organization/dm", ~chatList)
+      get("/:organization/answers", ~answerList)
       get("/:organization/dm/:person/messages", ~history)
       post("/:organization/dm/:person/messages", ~posted)
       post("/:organization/dm/:person/reactions", ~reacting)

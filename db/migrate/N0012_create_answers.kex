@@ -1,0 +1,28 @@
+# What somebody answered a form in a message with. An answer belongs to
+# the message that asked, and is not a message itself: nobody can type one.
+# The id is the message, which of its forms, and the person together, so a
+# person has one answer to a form, and answering again replaces it. The
+# conversation is carried along so that a conversation's answers are one
+# query, and the asker — whoever wrote the message — so that a bot's are.
+module DB.Migrate.N0012CreateAnswers
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_answers, follows: :add_user_statuses do
+  createTable(:answers) do |t|
+    [
+      t.text(:id, primaryKey: true),
+      t.text(:message_id),
+      t.text(:conversation_id),
+      t.text(:organization_id),
+      t.text(:asker_id),
+      t.text(:user_id),
+      t.int(:form),
+      t.text(:answer),
+      t.bigint(:answered_at)
+    ]
+  end
+  addIndex(:answers, [:conversation_id])
+  addIndex(:answers, [:asker_id])
+end

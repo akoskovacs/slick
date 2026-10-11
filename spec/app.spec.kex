@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_user_statuses"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_answers"))
   end
 
   it("turns shortcodes into emoji") do
@@ -46,6 +46,46 @@ describe("Slick") do
       "<h3>Release 1.2</h3><p>Two lines<br>of text</p><ul><li>one</li><li><strong>two</strong></li></ul><blockquote>quoted</blockquote><hr><pre><code>let x = &lt;1&gt;\n*not bold*</code></pre><p>after</p>"
     )
     Assert.equal(App.Helpers.RichText.html("```\nnever closed"), "<pre><code>never closed</code></pre>")
+
+    # A form: one choice is buttons, anything more is fields and Send.
+    let poll = App.Helpers.RichText.shown("[?] Deploy to: staging | production", "m1", [])
+    Assert.truthy(poll.contains?("<p class=\"asked\">Deploy to</p>"))
+    Assert.truthy(poll.contains?("data-event=\"answer\" data-message=\"m1\" data-form=\"0\" data-label=\"Deploy to\" data-value=\"staging\""))
+    let form = "Please say:\n[?] Where: here | there\n[?] Notes"
+    let asked = App.Helpers.RichText.shown(form, "m2", [])
+    Assert.truthy(asked.contains?("<p>Please say:</p><form class=\"asking-form\" data-live=\"answer\""))
+    Assert.truthy(asked.contains?("name=\"message\" value=\"m2\"") && asked.contains?("name=\"form\" value=\"1\""))
+    Assert.truthy(asked.contains?("<select name=\"f0\"><option>here</option><option>there</option></select>"))
+    Assert.truthy(asked.contains?("<span>Notes</span><input name=\"f1\""))
+    Assert.falsy(asked.contains?("class=\"responses\""))
+    # Where there is no message to answer in, a form cannot be used.
+    Assert.truthy(App.Helpers.RichText.html("[?] Deploy to: staging | production").contains?(" disabled>"))
+    # A label and an option are text like any other.
+    Assert.truthy(App.Helpers.RichText.shown("[?] <b>: \"x\" | <i>", "m", []).contains?("data-value=\"&quot;x&quot;\""))
+
+    # The answers a form has had are shown under it, and are text too.
+    let given = [
+      App.Helpers.RichText.Given { form: 1, who: "Ada", mine?: true, answer: "Where: here\nNotes: <soon>" },
+      App.Helpers.RichText.Given { form: 0, who: "Bob", answer: "not a form" }
+    ]
+    Assert.truthy(App.Helpers.RichText.shown(form, "m2", given).contains?("<li class=\"response mine\"><strong>Ada</strong> <span>Where: here · Notes: &lt;soon&gt;</span></li>"))
+    Assert.falsy(App.Helpers.RichText.shown(form, "m2", given).contains?("Bob"))
+    let voted = [App.Helpers.RichText.Given { form: 0, who: "Bob", answer: "Deploy to: staging" }]
+    Assert.truthy(App.Helpers.RichText.shown("[?] Deploy to: staging | production", "m1", voted).contains?("<strong>Bob</strong> <span>staging</span>"))
+
+    # An answer is what the form sent, when the form offered it.
+    Assert.equal(App.Helpers.RichText.answer(form, [("form", Just("1")), ("label", Just("Where")), ("value", Just("there"))]), Just((1, "Where: there")))
+    Assert.equal(App.Helpers.RichText.answer(form, [("form", Just("1")), ("label", Just("Where")), ("value", Just("elsewhere"))]), None)
+    Assert.equal(App.Helpers.RichText.answer(form, [("form", Just("1")), ("label", Just("Notes")), ("value", Just("there"))]), None)
+    Assert.equal(App.Helpers.RichText.answer(form, [("form", Just("1")), ("f0", Just("here")), ("f1", Just(" soon\nplease "))]), Just((1, "Where: here\nNotes: soon please")))
+    Assert.equal(App.Helpers.RichText.answer(form, [("form", Just("1")), ("f0", Just("nowhere")), ("f1", Just(""))]), None)
+    Assert.equal(App.Helpers.RichText.answer(form, [("form", Just("0")), ("f0", Just("here"))]), None)
+    Assert.equal(App.Helpers.RichText.answer(form, [("label", Just("Where")), ("value", Just("there"))]), None)
+
+    # The API tells a form as a block, and takes one back as the same text.
+    let told = App.Helpers.RichText.described(form)
+    Assert.equal(JSON.stringify(told.drop(1)), "[{\"fields\":[{\"label\":\"Where\",\"options\":[\"here\",\"there\"]},{\"label\":\"Notes\"}],\"type\":\"form\"}]")
+    Assert.equal(App.Helpers.RichText.composed(told), "Please say:\n\n[?] Where: here | there\n[?] Notes")
     # The API's form of the same blocks, and back.
     let listed = App.Helpers.RichText.described(message)
     Assert.equal(listed.count, 7)
@@ -135,6 +175,24 @@ describe("Slick") do
       Assert.truthy(thread.payload.to(String).or("").contains?("I can take the migration."))
       let elsewhere = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/random/messages?thread=${rootId}", asBot, ""))
       Assert.equal(elsewhere.payload.to(String).or(""), "[]")
+
+      # It is told the answers to the forms in its own messages — and those
+      # only: where each was asked, who answered, and what.
+      let asBotJson = asBot + [("Content-Type", "application/json")]
+      let none = site.call(Metro.WebRequest.asked("GET", "/api/acme/answers", asBot, ""))
+      Assert.equal(none.payload.to(String).or(""), "[]")
+      let question = site.call(Metro.WebRequest.asked("POST", "/api/acme/channels/general/messages", asBotJson, "{\"body\":\"[?] Ship it: yes | no\"}"))
+      Assert.equal(question.code, 201)
+      let questionId = question.payload.to(String).or("").split("\"id\":\"").second.or("").split("\"").first.or("")
+      let inGeneral = App.Live.Chat.arrived(ada, "/acme/channels/general")
+      stepped(statuses, ada, inGeneral, [("event", "answer"), ("message", questionId), ("form", "0"), ("label", "Ship it"), ("value", "yes")])
+      stepped(statuses, ada, inGeneral, [("event", "send"), ("body", "[?] Ship it: yes | no")])
+      let answers = site.call(Metro.WebRequest.asked("GET", "/api/acme/answers", asBot, "")).payload.to(String).or("")
+      Assert.truthy(answers.contains?("\"answer\":\"Ship it: yes\"") && answers.contains?("\"channel\":\"general\""))
+      Assert.truthy(answers.contains?("\"user\":\"${ada.id}\"") && answers.contains?("\"message\":\"${questionId}\""))
+      Assert.equal(answers.split("\"answer\":").count, 2)
+      let later = site.call(Metro.WebRequest.asked("GET", "/api/acme/answers?after=99999999999999", asBot, ""))
+      Assert.equal(later.payload.to(String).or(""), "[]")
 
       # It is told which private chats it has, once somebody has opened one.
       let before = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, ""))
@@ -275,6 +333,34 @@ describe("Slick") do
       let (taken, _) = stepped(statuses, bob, Tab {}, [("event", "create"), ("title", "random")])
       Assert.truthy(taken.dialogProblem.contains?("already"))
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("# random"))
+
+      # A form in a message is answered by using it. The answer is kept with
+      # the message and shown under its form: it is not a message, and
+      # typing what an answer says is not an answer.
+      stepped(statuses, bob, inRandom, [("event", "send"), ("body", "[?] Lunch: pizza | soup")])
+      let asking = App.Live.Chat.markup(statuses, ada, inRandom)
+      Assert.truthy(asking.contains?("data-label=\"Lunch\" data-value=\"soup\""))
+      let lunchId = asking.split("data-form=\"0\" data-label=\"Lunch\"").first.or("").split("data-message=\"").last.or("").split("\"").first.or("")
+      let lunch = [("event", "answer"), ("message", lunchId), ("form", "0"), ("label", "Lunch")]
+      let (afterAnswer, answerGiven) = stepped(statuses, ada, inRandom, lunch + [("value", "soup")])
+      Assert.truthy(answerGiven)
+      Assert.equal(afterAnswer.conversation, inRandom.conversation)
+      let answered = App.Live.Chat.markup(statuses, bob, inRandom)
+      Assert.truthy(answered.contains?("<li class=\"response\"><strong>Ada</strong> <span>soup</span></li>"))
+      Assert.falsy(answered.contains?("<p>Lunch: soup</p>"))
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("<li class=\"response mine\"><strong>Ada</strong> <span>soup</span></li>"))
+      # Answering again replaces the answer; she has one.
+      stepped(statuses, ada, inRandom, lunch + [("value", "pizza")])
+      let changed = App.Live.Chat.markup(statuses, bob, inRandom)
+      Assert.truthy(changed.contains?("<strong>Ada</strong> <span>pizza</span>") && !changed.contains?("<span>soup</span>"))
+      let (_, wrongAnswer) = stepped(statuses, ada, inRandom, lunch + [("value", "cake")])
+      Assert.falsy(wrongAnswer)
+      # Not from another conversation, where the message is not.
+      let (_, answeredElsewhere) = stepped(statuses, ada, Tab {}, lunch + [("value", "soup")])
+      Assert.falsy(answeredElsewhere)
+      # Saying it is only saying it.
+      stepped(statuses, eve, inRandom, [("event", "send"), ("body", "Lunch: soup")])
+      Assert.falsy(App.Live.Chat.markup(statuses, bob, inRandom).contains?("<strong>Eve</strong> <span>soup</span>"))
 
       # A topic, on a channel.
       let (_, topicChanged) = stepped(statuses, bob, inRandom, [("event", "topic"), ("topic", "Anything goes :tada:")])
