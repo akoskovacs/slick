@@ -3,7 +3,7 @@
 #   SessionRepository { db: db }.holder(digest)
 module DB.Repositories.Sessions
 
-using Harmat.Db, only: [Db, eq]
+using Harmat.Db, only: [Db]
 
 record SessionRepository do
   db : Db
@@ -14,17 +14,38 @@ end
 # served application though its spec passes (kexhq/kex#451).
 make SessionRepository do
   foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<Integer, String> do
-    let row = {token_digest: tokenDigest, user_id: userId, expires_at: expiresAt, created_at: "${DateTime.utcNow()}"}
-    return @db.insert(DB.Schema.Sessions.definition).values(row).run
+    let row = {
+      token_digest: tokenDigest,
+      user_id: userId,
+      expires_at: expiresAt,
+      created_at: "${DateTime.utcNow()}"
+    }
+    return @db.insert(DB.Schema.Sessions)
+      .values(row)
+      .run
   end
 
   # Whose session a digest is, and when it expires (seconds since 1970).
   foul holder(tokenDigest: String) -> Result<(String, Integer)?, String> do
-    return @db.select().from(DB.Schema.Sessions.definition).where(eq(DB.Schema.Sessions.tokenDigest, tokenDigest)).first
-      .map { |row| row.map { |found| (found.get("user_id").or(""), found.get("expires_at").or("").trim.to(Integer).or(0)) } }
+    return @db.select().from(DB.Schema.Sessions)
+      .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
+      .first
+      .map { |row| row.map { |found| held(found) } }
   end
 
   foul revoke(tokenDigest: String) -> Result<Bool, String> do
-    return @db.delete(DB.Schema.Sessions.definition).where(eq(DB.Schema.Sessions.tokenDigest, tokenDigest)).run.map { |count| count > 0 }
+    return @db.delete(DB.Schema.Sessions)
+      .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
+      .run
+      .map { |count| count > 0 }
   end
+end
+
+private do
+  # A session row as whose it is and when it expires.
+  held : {String: String} -> (String, Integer)
+  let held(row) = (
+    row.get("user_id").or(""),
+    row.get("expires_at").or("").trim.to(Integer).or(0)
+  )
 end

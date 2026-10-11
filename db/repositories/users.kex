@@ -3,7 +3,7 @@
 #   UserRepository { db: db }.credentials(email)
 module DB.Repositories.Users
 
-using Harmat.Db, only: [Db, eq]
+using Harmat.Db, only: [Db]
 using App.Models.User, only: [User]
 
 record UserRepository do
@@ -14,81 +14,141 @@ make UserRepository do
   # Stores a new user. Fails when the email is taken: the table's unique
   # index decides, so two registrations racing for one address cannot both win.
   foul enroll(user: User, passwordHash: String) -> Result<User, String> do
-    let row = {id: user.id, email: user.email, name: user.name, password_hash: passwordHash, created_at: "${DateTime.utcNow()}"}
-    return @db.insert(DB.Schema.Users.definition).values(row).run.map { |_| user }
+    let row = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      password_hash: passwordHash,
+      created_at: "${DateTime.utcNow()}"
+    }
+    return @db.insert(DB.Schema.Users)
+      .values(row)
+      .run
+      .map { |_| user }
   end
 
   # The user registered under an email, with their stored password line.
   foul credentials(email: String) -> Result<(User, String)?, String> do
-    return @db.select().from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.email, email)).first
+    return @db.select().from(DB.Schema.Users)
+      .where(DB.Schema.Users.email.eq(email))
+      .first
       .map { |row| row.map { |found| (decoded(found), found.get("password_hash").or("")) } }
   end
 
   # Stores a bot. It has no password: `tokenDigest` is how it is known.
   foul automated(bot: User, tokenDigest: String) -> Result<User, String> do
     let row = {
-      id: bot.id, email: bot.email, name: bot.name, password_hash: "", created_at: "${DateTime.utcNow()}",
-      kind: "bot", owner_id: bot.ownerId, owner_organization_id: bot.ownerOrganizationId, api_token_digest: tokenDigest
+      id: bot.id,
+      email: bot.email,
+      name: bot.name,
+      password_hash: "",
+      created_at: "${DateTime.utcNow()}",
+      kind: "bot",
+      owner_id: bot.ownerId,
+      owner_organization_id: bot.ownerOrganizationId,
+      api_token_digest: tokenDigest
     }
-    return @db.insert(DB.Schema.Users.definition).values(row).run.map { |_| bot }
+    return @db.insert(DB.Schema.Users)
+      .values(row)
+      .run
+      .map { |_| bot }
   end
 
   # A person's bots, by name.
   foul operated(owner: String) -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.ownerId, owner)).orderBy([:name, :id]).all
+    return @db.select(SHOWN).from(DB.Schema.Users)
+      .where(DB.Schema.Users.ownerId.eq(owner))
+      .orderBy([:name, :id])
+      .all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 
   # An organization's bots, by name.
   foul maintained(organizationId: String) -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition)
-      .where(eq(DB.Schema.Users.ownerOrganizationId, organizationId)).orderBy([:name, :id]).all
+    return @db.select(SHOWN).from(DB.Schema.Users)
+      .where(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
+      .orderBy([:name, :id])
+      .all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 
   # Replaces the token of an organization's bot; whether it was that
   # organization's to change.
   foul rekeyedFor(botId: String, organizationId: String, tokenDigest: String) -> Result<Bool, String> do
-    return @db.within(eq(DB.Schema.Users.ownerOrganizationId, organizationId)).update(DB.Schema.Users.definition)
-      .set({api_token_digest: tokenDigest}).where(eq(DB.Schema.Users.id, botId)).run.map { |changed| changed > 0 }
+    return @db.within(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
+      .update(DB.Schema.Users)
+      .set({api_token_digest: tokenDigest})
+      .where(DB.Schema.Users.id.eq(botId))
+      .run
+      .map { |changed| changed > 0 }
   end
 
   # The bot an API token's digest belongs to, or `None`.
   foul bearing(tokenDigest: String) -> Result<User?, String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition)
-      .where(eq(DB.Schema.Users.apiTokenDigest, tokenDigest)).where(eq(DB.Schema.Users.kind, "bot")).first
+    return @db.select(SHOWN).from(DB.Schema.Users)
+      .where(DB.Schema.Users.apiTokenDigest.eq(tokenDigest))
+      .where(DB.Schema.Users.kind.eq("bot"))
+      .first
       .map { |row| row.map { |found| decoded(found) } }
   end
 
   # Replaces a bot's token; whether it was this owner's bot to change.
   foul rekeyed(botId: String, owner: String, tokenDigest: String) -> Result<Bool, String> do
-    return @db.within(eq(DB.Schema.Users.ownerId, owner)).update(DB.Schema.Users.definition)
-      .set({api_token_digest: tokenDigest}).where(eq(DB.Schema.Users.id, botId)).run.map { |changed| changed > 0 }
+    return @db.within(DB.Schema.Users.ownerId.eq(owner))
+      .update(DB.Schema.Users)
+      .set({api_token_digest: tokenDigest})
+      .where(DB.Schema.Users.id.eq(botId))
+      .run
+      .map { |changed| changed > 0 }
   end
 
   # Sets what somebody says about themselves; "" and "" takes it back.
   foul restyled(id: String, emoji: String, saying: String) -> Result<Integer, String> do
-    return @db.update(DB.Schema.Users.definition).set({status_emoji: emoji, status_text: saying}).where(eq(DB.Schema.Users.id, id)).run
+    return @db.update(DB.Schema.Users)
+      .set({status_emoji: emoji, status_text: saying})
+      .where(DB.Schema.Users.id.eq(id))
+      .run
   end
 
   foul member(id: String) -> Result<User?, String> do
-    return @db.select().from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.id, id)).first
+    return @db.select().from(DB.Schema.Users)
+      .where(DB.Schema.Users.id.eq(id))
+      .first
       .map { |row| row.map { |found| decoded(found) } }
   end
 
   # Everyone, by name: who can be written to, and whose name goes on a message.
   foul everyone -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
+    return @db.select(SHOWN).from(DB.Schema.Users)
+      .orderBy([:name, :email])
+      .all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 end
 
 private do
+  # What is read of a user when nobody is signing in: everything but the
+  # password line and the token digest.
+  let SHOWN = [
+    :id,
+    :email,
+    :name,
+    :kind,
+    :owner_id,
+    :owner_organization_id,
+    :status_emoji,
+    :status_text
+  ]
+
   decoded : {String: String} -> User
   let decoded(row) = User {
-    id: row.get("id").or(""), email: row.get("email").or(""), name: row.get("name").or(""),
-    kind: row.get("kind").or("person"), ownerId: row.get("owner_id").or(""),
+    id: row.get("id").or(""),
+    email: row.get("email").or(""),
+    name: row.get("name").or(""),
+    kind: row.get("kind").or("person"),
+    ownerId: row.get("owner_id").or(""),
     ownerOrganizationId: row.get("owner_organization_id").or(""),
-    statusEmoji: row.get("status_emoji").or(""), statusText: row.get("status_text").or("")
+    statusEmoji: row.get("status_emoji").or(""),
+    statusText: row.get("status_text").or("")
   }
 end
