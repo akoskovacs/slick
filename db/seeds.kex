@@ -1,15 +1,16 @@
 # What a database starts with, apart from its tables. Kept here and not in
-# the migrations: those change the schema and carry old rows across it, and
-# say nothing about what a new database should have in it.
+# the migrations: those change the schema, and say nothing about what a new
+# database should have in it.
 #
 #   tey seed     plant what this environment's database starts with
 #
 # Planting twice plants once: a seed looks for what it would make first.
 #
-# Only development has seeds — an organization to sign in to straight away,
-# as ada@example.com or bob@example.com with the password below. Test starts
-# empty, so a spec says what it relies on; production starts with whoever
-# registers.
+# Only development has seeds — data to try things on: the organization Acme
+# with three people (the password is below), two channels with messages, a
+# thread and a reaction in them, a private chat, and a bot called claude
+# whose token is the one below. Test starts empty, so a spec says what it
+# relies on; production starts with whoever registers.
 module DB.Seeds
 
 using Metro.Environment, only: [Environment, Development]
@@ -18,10 +19,15 @@ using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Organizations, as: Organizations
+using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Users, as: Users
 
 # The password of every seeded person.
 let PASSWORD = "correct horse"
+
+# The API token of the seeded bot. Known to everyone who can read this file,
+# which is why it is only ever planted in development.
+let BOT_TOKEN = "slick_bot_development_claude"
 
 # Plants an environment's seeds. What was planted, in words: nothing when it
 # was all there already.
@@ -30,24 +36,59 @@ foul planted(Development) = demo()
 foul planted(environment) = Ok([])
 
 private do
-  # Acme: two people, #general, and a first message.
+  # Acme, and enough in it to try every part of the application on.
   foul demo() -> Result<[String], String> do
     let existing = Organizations.addressed("acme").try
     return Ok([]) if existing.set?
 
     let ada = person("Ada", "ada@example.com").try
     let bob = person("Bob", "bob@example.com").try
+    let eve = person("Eve", "eve@example.com").try
     let acme = Organizations.chartered("Acme", "acme", ada.id).try
     Memberships.enlisted(acme.id, ada.id).try
     Memberships.enlisted(acme.id, bob.id).try
+    Memberships.enlisted(acme.id, eve.id).try
+
     let general = Conversations.founded(acme.id, App.Models.Conversation.GENERAL, ada.id).try
     Conversations.retitled(general.id, "Company-wide announcements and chatter").try
-    Messages.said(general.id, ada.id, "Welcome to Acme :wave:", "").try
+    let welcome = Messages.said(general.id, ada.id, "Welcome to Acme :wave:", "").try
+    Messages.said(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "").try
+    let plan = Messages.said(general.id, ada.id, "It is. The checklist:\n- migrate\n- restart\n- tell everyone", "").try
+    Messages.said(general.id, eve.id, "I can take the migration.", plan.id).try
+    Messages.said(general.id, ada.id, "Yours, thank you.", plan.id).try
+    Reactions.flipped(welcome, bob.id, "👍").try
+    Reactions.flipped(welcome, eve.id, "🎉").try
+
+    let random = Conversations.founded(acme.id, "random", bob.id).try
+    Conversations.retitled(random.id, "Anything goes :tada:").try
+    Messages.said(random.id, bob.id, "Lunch at one?", "").try
+    Messages.said(random.id, eve.id, "`yes`", "").try
+
+    let chat = Conversations.between(acme.id, ada.id, bob.id).try
+    Messages.said(chat.id, ada.id, "Can you look at my pull request today?", "").try
+    Messages.said(chat.id, bob.id, "After lunch.", "").try
+
+    let claude = bot("claude", acme.id).try
+    Memberships.enlisted(acme.id, claude.id).try
     return Ok([
       "the organization Acme, at /acme",
-      "${ada.email} and ${bob.email}, password \"${PASSWORD}\"",
-      "#general, with a first message"
+      "${ada.email}, ${bob.email} and ${eve.email}, password \"${PASSWORD}\"",
+      "#general and #random, a thread, reactions and a private chat",
+      "the bot claude, token ${BOT_TOKEN}"
     ])
+  end
+
+  # An organization's bot, known by `BOT_TOKEN`.
+  foul bot(name: String, organizationId: String) -> Result<User, String> do
+    let id = "b${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
+    let made = User {
+      id: id,
+      email: "${id}@bots.invalid",
+      name: name,
+      kind: "bot",
+      ownerOrganizationId: organizationId
+    }
+    return Users.automated(made, Metro.Auth.Token.digest(BOT_TOKEN))
   end
 
   # The person registered under an email, made if there is none.

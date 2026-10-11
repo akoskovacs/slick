@@ -45,7 +45,7 @@ spec/
 ```sh
 tey migrate
 tey rollback
-tey seed       # development: Acme, with ada@example.com / "correct horse"
+tey seed       # development: Acme, ada@example.com / "correct horse", a bot
 ```
 
 Seeds are apart from the migrations (`db/seeds.kex`), and planting them
