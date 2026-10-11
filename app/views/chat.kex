@@ -105,18 +105,21 @@ let dialogPartial = Template.html(Kex.embed("chat/_dialog.html.ket"))
 let welcomePartial = Template.html(Kex.embed("chat/_welcome.html.ket"))
 let bubblePartial = Template.html(Kex.embed("chat/_bubble.html.ket"))
 let chipPartial = Template.html(Kex.embed("chat/_chip.html.ket"))
+let topbarPartial = Template.html(Kex.embed("chat/_topbar.html.ket"))
 let moodPartial = Template.html(Kex.embed("chat/_mood.html.ket"))
 let statusPartial = Template.html(Kex.embed("chat/_status.html.ket"))
 let threadPartial = Template.html(Kex.embed("chat/_thread.html.ket"))
 let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
 
 # The document: head, who is signed in, the live region, and Metro's script.
-page : String -> String -> String
-let page(who, live) = layout(who, live)
+# The live region is all of it, the bar across the top included: the name
+# and status there change like everything else.
+page : String -> String
+let page(live) = layout(live)
 
 # The live region for somebody who is in no organization yet.
 welcome : Tab -> User -> String
-let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProblem)
+let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProblem, topbar(user))
 
 # The live region.
 #
@@ -140,7 +143,13 @@ let index(tab, user, organizations, organization, channels, people, online, bots
   let channelLines = channels.map { |channel|
     entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == shown })
   }
-  let personLines = people.reject { |person| person.id == user.id }.map { |person|
+  # A person's own bots have a list of their own; everybody else's, and the
+  # organization's, are among the people, marked as bots.
+  let personLines = people.reject { |person| person.id == user.id || person.ownerId == user.id }.map { |person|
+    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
+  }
+  let robotLines = people.filter { |person| person.ownerId == user.id }.map { |person|
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
     entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
   }
@@ -151,16 +160,23 @@ let index(tab, user, organizations, organization, channels, people, online, bots
   # This person as stored now: the `user` a tab was opened with does not
   # know of a status set since.
   let me = people.find { |person| person.id == user.id }.or(user)
-  let wording = me.statusText.empty? then "Set a status" else me.statusText
-  let myself = me.statusEmoji.empty? then "${me.shown} · ${wording}" else "${me.shown} · ${me.statusEmoji} ${wording}"
   frame(
-    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), founding, personLines.join("\n"), myself,
+    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), founding, personLines.join("\n"), robotLines.join("\n"), topbar(me),
     pane(tab, user, people, conversation, messages, reactions, thread.empty? && tab.dialog.empty?, doing) + beside,
     asking(tab, organization, people, bots, me), place, caption
   )
 end
 
 private do
+  # The bar across the top: who is signed in, and under their name what
+  # they say about themselves and the way to change it.
+  topbar : User -> String
+  let topbar(me) do
+    let set = !me.statusEmoji.empty? || !me.statusText.empty?
+    let saying = set then "${me.statusEmoji} ${me.statusText}".trim else "No status set"
+    topbarPartial(me.shown, me.statusEmoji, saying, set)
+  end
+
   # Where a conversation is, as an address: the one the address bar shows
   # and `App.Live.Chat.arrived` reads back.
   located : Organization -> Conversation -> User -> [Message] -> String

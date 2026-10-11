@@ -177,7 +177,7 @@ private do
   foul chatting(database: Db, statuses: Server<Presence>, env: Context) -> Rodolfo.Reply do
     let user : User = visitor(database, env).try
     let tab = App.Live.Chat.arrived(database, user, env.request.target.string)
-    page(App.Views.Chat.page(user.shown, App.Live.Chat.markup(database, statuses, user, tab)))
+    page(App.Views.Chat.page(App.Live.Chat.markup(database, statuses, user, tab)))
   end
 
   # Every tab is in one group: a message anywhere is news to every sidebar.

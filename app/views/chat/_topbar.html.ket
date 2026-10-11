@@ -1,0 +1,21 @@
+---
+params: [who: String, emblem: String, saying: String, set?: Bool]
+---
+<header class="top">
+  <span class="brand">Slick</span>
+  <span class="search">Search Slick</span>
+  <span class="who">
+    <span id="status" class="status" data-state="connecting" data-live-keep>Connecting…</span>
+    <details class="menu" id="account" data-menu>
+      <summary><%= who %><% if !emblem.empty? %> <span class="emblem"><%= emblem %></span><% end %></summary>
+      <div class="menu-items">
+        <p class="menu-status"><%= saying %></p>
+        <button type="button" data-event="status"><% if set? %>Change your status…<% else %>Set a status…<% end %></button>
+<% if set? %>
+        <button type="button" data-event="status-clear">Clear status</button>
+<% end %>
+        <form method="post" action="/signout"><button type="submit">Sign out</button></form>
+      </div>
+    </details>
+  </span>
+</header>

@@ -161,13 +161,13 @@ describe("Slick") do
     Assert.truthy(statusSet)
     let withStatus = App.Live.Chat.markup(database, statuses, bob, Tab {})
     Assert.truthy(withStatus.contains?("<span class=\"emblem\" title=\"On vacation &lt;till Monday&gt;\">🌴</span>"))
-    Assert.truthy(App.Live.Chat.markup(database, statuses, ada, Tab {}).contains?("Ada · 🌴 On vacation &lt;till Monday&gt;"))
+    Assert.truthy(App.Live.Chat.markup(database, statuses, ada, Tab {}).contains?("<p class=\"menu-status\">🌴 On vacation &lt;till Monday&gt;</p>"))
     let (badStatus, badSet) = stepped(database, statuses, ada, Tab {}, [("event", "status-set"), ("emoji", "<img>"), ("text", "x")])
     Assert.falsy(badSet)
     Assert.truthy(!badStatus.dialogProblem.empty?)
     stepped(database, statuses, ada, Tab {}, [("event", "status-clear")])
     Assert.falsy(App.Live.Chat.markup(database, statuses, bob, Tab {}).contains?("🌴"))
-    Assert.truthy(App.Live.Chat.markup(database, statuses, ada, Tab {}).contains?("Ada · Set a status"))
+    Assert.truthy(App.Live.Chat.markup(database, statuses, ada, Tab {}).contains?("<p class=\"menu-status\">No status set</p>"))
 
     # A channel: created, refused when malformed or taken, visible to all.
     let (refused, _) = stepped(database, statuses, ada, Tab {}, [("event", "create"), ("title", "Bad Name!")])
@@ -316,6 +316,14 @@ describe("Slick") do
     Assert.falsy(App.Live.Chat.markup(database, statuses, ada, Tab {}).contains?(botTab.secret))
     Assert.truthy(App.Live.Chat.markup(database, statuses, ada, Tab {}).contains?("class=\"flag\">BOT"))
     let deployBot : User = App.Services.Bots.bearer(database, Just("Bearer ${botTab.secret}")).try
+    # A person's own bots are listed under Bots, for them; for everyone else
+    # the bot is among the people.
+    let bobsSidebar = App.Live.Chat.markup(database, statuses, bob, Tab {}).split("<h2>Bots</h2>")
+    Assert.falsy(bobsSidebar.first.or("").contains?(">deploy-bot"))
+    Assert.truthy(bobsSidebar.drop(1).first.or("").contains?(">deploy-bot"))
+    let adasSidebar = App.Live.Chat.markup(database, statuses, ada, Tab {}).split("<h2>Bots</h2>")
+    Assert.truthy(adasSidebar.first.or("").contains?(">deploy-bot"))
+    Assert.falsy(adasSidebar.drop(1).first.or("").contains?(">deploy-bot"))
     Assert.truthy(deployBot.bot?)
     Assert.equal(deployBot.ownerId, bob.id)
     Assert.equal(App.Services.Bots.bearer(database, Just("Bearer slick_bot_wrong")), None)

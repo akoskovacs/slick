@@ -1,6 +1,7 @@
 ---
-params: [who: String, email: String, problem: String]
+params: [who: String, email: String, problem: String, bar: String]
 ---
+<%== bar %>
 <div class="welcome" data-live-path="/" data-live-title="Slick">
   <section class="editor">
     <h1>Welcome, <%= who %></h1>
