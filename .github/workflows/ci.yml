@@ -1,0 +1,100 @@
+# Whether Slick builds, its specs pass, and its container runs.
+#
+#   test     in the Kex toolchain image: tey install, tey build, tey test
+#            (the specs keep their data in SQLite files)
+#   docker   docker compose builds the image and starts it beside PostgreSQL;
+#            script/smoke.sh then uses it from outside, before and after a
+#            restart
+#
+# Set on the repository (Settings → Secrets and variables → Actions):
+#
+#   DEPENDENCIES_TOKEN   secret: a token that can read the repositories
+#                        package.kex names, for as long as they are private
+#   KEX_IMAGE            variable, optional: the Kex toolchain image, when it
+#                        is not ghcr.io/kexhq/kex:rc
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  KEX_IMAGE: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:rc' }}
+
+jobs:
+  test:
+    name: Build and specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:rc' }}
+    env:
+      # The SQLite ODBC driver by the name Debian registers it under: the
+      # specs make their databases with it.
+      SQLITE_DRIVER: SQLite3
+    steps:
+      - name: Install git and the ODBC drivers
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates unixodbc libsqliteodbc
+
+      - uses: actions/checkout@v4
+
+      - name: Let git fetch the private dependencies
+        env:
+          DEPENDENCIES_TOKEN: ${{ secrets.DEPENDENCIES_TOKEN }}
+        run: |
+          if [ -n "$DEPENDENCIES_TOKEN" ]; then
+            git config --global url."https://x-access-token:${DEPENDENCIES_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Install dependencies
+        run: tey install --approve-plugins
+
+      - name: Build
+        run: tey build
+
+      - name: Specs
+        run: tey test
+
+  docker:
+    name: Container on PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # docker-compose.yml hands this to the build as a secret.
+      GITHUB_TOKEN: ${{ secrets.DEPENDENCIES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker compose build
+
+      - name: Start Slick and PostgreSQL
+        run: docker compose up --detach
+
+      - name: Use it from outside
+        id: smoke
+        run: echo "email=$(script/smoke.sh http://localhost:4000)" >> "$GITHUB_OUTPUT"
+
+      - name: Restart the application, and sign in again
+        run: |
+          docker compose restart app
+          script/smoke.sh http://localhost:4000 "${{ steps.smoke.outputs.email }}"
+
+      - name: What the containers said
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop
+        if: always()
+        run: docker compose down --volumes
