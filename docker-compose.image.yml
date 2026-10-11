@@ -1,0 +1,46 @@
+# Slick from its published image, and the PostgreSQL it keeps its data in.
+# Nothing is built here: this file and Docker are all a machine needs.
+#
+#   POSTGRES_PASSWORD=… docker compose -f docker-compose.image.yml up --detach
+#
+# Set in the environment, or in a .env file beside this one:
+#
+#   POSTGRES_PASSWORD   the database's password; required
+#   SLICK_IMAGE         the image; ghcr.io/akoskovacs/slick:latest unless set
+#                       — name a version (…/slick:1.2.3) to stay on it
+#   PORT                the port Slick is reached on; 4000 unless set
+#
+# Migrations run when the application starts. The data is in the `data`
+# volume and stays there across `down` and a newer image.
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: slick
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to the password the database should have}
+      POSTGRES_DB: slick
+    volumes:
+      - data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slick -d slick"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  app:
+    image: ${SLICK_IMAGE:-ghcr.io/akoskovacs/slick:latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      METRO_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_DSN: "Driver={PostgreSQL Unicode};Server=db;Port=5432;Database=slick;Uid=slick;Pwd=${POSTGRES_PASSWORD}"
+    ports:
+      - "${PORT:-4000}:4000"
+
+volumes:
+  data:
