@@ -1,14 +1,213 @@
 # Slick
 
-A [Metro](https://github.com/akoskovacs/metro) application.
+A team chat: organizations, channels, threads, private chats, reactions and
+bots. It is written in [Kex](https://github.com/kexhq/kex), on
+[Metro](https://github.com/akoskovacs/metro) for the web and
+[Harmat](https://github.com/kexhq/harmat) for the database. Pages are
+rendered on the server and kept current over a WebSocket, so there is no
+client-side application: the browser shows markup and sends events.
+
+![Slick showing the #general channel of the Acme organization, with a thread open beside it](docs/screenshot.png)
+
+*The development workspace `tey seed` makes, signed in as Ada.*
+
+## What it does
+
+- **Organizations.** Each has its own channels and people. Whoever creates
+  one is its first member, and adds others by the email they registered with.
+- **Channels and private chats.** A channel has a name and a topic and is
+  open to everyone in its organization; a private chat is between two people.
+  Every conversation has an address, which the address bar follows.
+- **Threads.** Any message can be replied to beside the conversation.
+- **Reactions.** 👍 ❤️ 😂 🎉 👀 🙏 on a message; a second click takes yours off.
+- **Rich text.** A light markup, read a line at a time (see below), and
+  `:tada:`-style names for emoji. Nothing typed is ever treated as HTML.
+- **Presence.** Who has a tab open, who is typing, and a status of your own:
+  an emoji and a few words.
+- **Live.** What one person does shows in everyone's open tabs at once.
+- **Bots.** A bot is a member like any other, and uses Slick through a JSON
+  API with a token.
+- **Accounts.** Registration and sign-in with hashed passwords and
+  server-side sessions that last thirty days.
+
+The search box in the top bar is not wired to anything yet.
+
+## Getting started
+
+Needs Kex 0.4.0-rc.1 or newer with Tey, unixODBC and a SQLite ODBC driver
+(`brew install unixodbc sqliteodbc`).
 
 ```sh
-sh script/setup.sh # once: dependencies, the ODBC port program
-tey server         # http://127.0.0.1:4000 — register, then you are in
-tey test
+sh script/setup.sh   # once: dependencies, the ODBC port program
+tey seed             # once: the development workspace in the screenshot
+tey server           # http://127.0.0.1:4000
 ```
 
-Needs unixODBC and a SQLite ODBC driver (`brew install unixodbc sqliteodbc`).
+Sign in as `ada@example.com`, `bob@example.com` or `eve@example.com` with
+the password `correct horse` — or register, and create an organization of
+your own.
+
+| Command | |
+| --- | --- |
+| `tey server` | run pending migrations, then serve |
+| `tey migrate` | run the migrations this database has not run |
+| `tey rollback` | undo the newest migration; `tey rollback 3` undoes three |
+| `tey seed` | migrate, then plant what the environment's database starts with |
+| `tey test` | the specs |
+| `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
+
+## Settings
+
+| Variable | |
+| --- | --- |
+| `METRO_ENV` | `development` (the default), `test` or `production` |
+| `PORT` | the port to listen on; 4000 unless set |
+| `HOST` | the address to bind; 127.0.0.1 unless set |
+| `DATABASE_DSN` | an ODBC connection string; when set, it is the database in every environment |
+| `SQLITE_DRIVER` | the SQLite ODBC driver, when it is not where Homebrew puts it |
+
+## Writing a message
+
+| Typed | Shown as |
+| --- | --- |
+| `# Release notes` | a heading |
+| `- one` | a list item, for as many lines as start that way |
+| `> as she said` | a quote |
+| three backticks on a line of their own | code, up to the closing three |
+| `---` | a divider |
+| `*bold*` `_italic_` `~struck~` `` `code` `` | inside a line |
+| `:rocket:` | 🚀 |
+| `https://…` | a link |
+
+Enter sends; Shift+Enter starts a new line.
+
+## Bots and the API
+
+A bot is made in the **Bots** dialog (the gear beside Bots in the sidebar):
+it belongs to the organization or to you, and its token is shown once.
+Every request carries it:
+
+```sh
+curl -H "Authorization: Bearer slick_bot_…" http://127.0.0.1:4000/api/me
+```
+
+| | |
+| --- | --- |
+| `GET /api/me` | the bot, and the organizations it is in |
+| `GET /api/:organization/channels` | the organization's channels |
+| `GET /api/:organization/channels/:name/messages` | the newest messages, oldest first; `?limit=`, `?after=<sentAt>` |
+| `GET /api/:organization/channels/:name/messages?thread=<id>` | one thread: the message and its replies |
+| `POST /api/:organization/channels/:name/messages` | say something: `{"body": "…"}`, with `"thread": "<id>"` to reply |
+| `POST /api/:organization/channels/:name/reactions` | `{"message": "<id>", "emoji": "🎉"}` |
+| `POST /api/:organization/channels/:name/status` | what the bot is doing: `{"text": "Thinking", "seconds": 30}` |
+| `GET /api/:organization/dm` | the private chats the bot has |
+| `GET`, `POST /api/:organization/dm/:person/…` | the same as for a channel, in the private chat with a person |
+
+A message can also be sent as blocks (`{"blocks": [{"type": "heading",
+"text": "…"}, …]}`), and every message read back carries both its `body` and
+its `blocks`. The whole of it is described at the top of
+`app/controllers/api.kex`.
+
+`tey seed` makes a bot called `claude` in development, with the token
+`slick_bot_development_claude`. The `claude` project, a repository of its
+own, is a bot that answers with Claude when it is named in a channel or
+written to in private.
+
+## Database
+
+| `METRO_ENV` | Database |
+| --- | --- |
+| `development` (default) | SQLite, `db/development.sqlite3` |
+| `test` | SQLite, `db/test.sqlite3` |
+| `production` | whatever `DATABASE_DSN` names |
+
+```sh
+tey migrate
+tey rollback
+tey seed       # development: Acme, ada@example.com / "correct horse", a bot
+```
+
+Seeds are apart from the migrations (`db/seeds.kex`), and planting them
+twice plants once. Only development has any.
+
+## Docker
+
+### The published image
+
+CI publishes Slick as `ghcr.io/akoskovacs/slick`: `latest` is the newest
+main, `sha-…` one commit of it, and a release tagged `v1.2.3` is `1.2.3` and
+`1.2`. It comes for amd64 and arm64.
+
+`docker-compose.image.yml` runs it beside a PostgreSQL 17, with nothing
+built on the machine: that one file and Docker are all it needs.
+
+```sh
+curl -O https://raw.githubusercontent.com/akoskovacs/slick/main/docker-compose.image.yml
+POSTGRES_PASSWORD=choose-one docker compose -f docker-compose.image.yml up --detach
+```
+
+Slick is then on http://localhost:4000: register, and create an
+organization. Migrations run whenever the application starts, and the data
+is in a volume that outlives the containers.
+
+```sh
+docker compose -f docker-compose.image.yml pull              # a newer image…
+docker compose -f docker-compose.image.yml up --detach       # …and onto it
+docker compose -f docker-compose.image.yml logs --follow app
+docker compose -f docker-compose.image.yml run --rm app rollback
+docker compose -f docker-compose.image.yml down              # stop; the data stays
+```
+
+| Variable | |
+| --- | --- |
+| `POSTGRES_PASSWORD` | the database's password; required |
+| `SLICK_IMAGE` | the image; `ghcr.io/akoskovacs/slick:latest` unless set. Name a version to stay on it |
+| `PORT` | the port Slick is reached on; 4000 unless set |
+
+While the package is private, sign in first: `docker login ghcr.io`, with a
+token that may read packages.
+
+Against a database of your own, the image needs only where it is — an ODBC
+connection string. The PostgreSQL driver in the image is called
+`PostgreSQL Unicode`:
+
+```sh
+docker run --detach --publish 4000:4000 \
+  --env DATABASE_DSN="Driver={PostgreSQL Unicode};Server=db.example.com;Port=5432;Database=slick;Uid=slick;Pwd=…" \
+  ghcr.io/akoskovacs/slick:latest
+```
+
+Slick speaks plain HTTP on port 4000. Put it behind something that
+terminates TLS, and have that pass `X-Forwarded-Proto: https`, so that the
+session cookie is marked `Secure`.
+
+### Building it yourself
+
+```sh
+docker compose up --build    # http://localhost:4000, on PostgreSQL
+```
+
+`docker-compose.yml` runs the application beside a PostgreSQL 17 and keeps
+the data in a volume; `Dockerfile` is the application on the Kex toolchain
+image, with the ODBC drivers it reaches a database through.
+
+| Variable | |
+| --- | --- |
+| `POSTGRES_PASSWORD` | the database's password; set it anywhere but your own machine |
+| `KEX_IMAGE` | the Kex toolchain image to build on; `ghcr.io/kexhq/kex:rc` unless set |
+| `GITHUB_TOKEN` | fetches dependencies kept in private repositories, at build time only |
+
+## CI
+
+`.github/workflows/ci.yml` builds Slick and runs its specs in the Kex
+toolchain image, then builds the Docker image, starts it beside PostgreSQL
+and uses it from outside with `script/smoke.sh` — before and after a
+restart, so that what was stored is seen to be still there. When both pass
+on main, or on a tag like `v1.2.3`, it publishes the image.
+
+```sh
+script/smoke.sh http://localhost:4000   # against any running Slick
+```
 
 ## Layout
 
@@ -31,38 +230,6 @@ db/
   store.kex         the process that owns the connection
   seeds.kex         what a new database starts with, per environment
 public/             app.css
+script/             setup, and smoke.sh: a running Slick checked from outside
 spec/
 ```
-
-## Database
-
-| `METRO_ENV` | Database |
-| --- | --- |
-| `development` (default) | SQLite, `db/development.sqlite3` |
-| `test` | SQLite, `db/test.sqlite3` |
-| `production` | whatever `DATABASE_DSN` names |
-
-```sh
-tey migrate
-tey rollback
-tey seed       # development: Acme, ada@example.com / "correct horse", a bot
-```
-
-Seeds are apart from the migrations (`db/seeds.kex`), and planting them
-twice plants once. Only development has any.
-
-## Docker
-
-```sh
-docker compose up --build    # http://localhost:4000, on PostgreSQL
-```
-
-`docker-compose.yml` runs the application beside a PostgreSQL 17 and keeps
-the data in a volume; `Dockerfile` is the application on the Kex toolchain
-image, with the ODBC drivers it reaches a database through.
-
-| Variable | |
-| --- | --- |
-| `POSTGRES_PASSWORD` | the database's password; set it anywhere but your own machine |
-| `KEX_IMAGE` | the Kex toolchain image to build on; `ghcr.io/kexhq/kex:rc` unless set |
-| `GITHUB_TOKEN` | fetches dependencies kept in private repositories, at build time only |
