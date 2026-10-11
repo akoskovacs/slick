@@ -11,9 +11,9 @@ params: [presets: String, options: String, saying: String, problem: String]
         <select name="emoji" aria-label="Emoji"><%== options %></select>
         <input name="text" value="<%= saying %>" placeholder="What are you up to?" maxlength="80" autocomplete="off">
       </div>
-<% if !problem.empty? %>
-      <p class="problem" role="alert"><%= problem %></p>
-<% end %>
+      <% if !problem.empty? %>
+        <p class="problem" role="alert"><%= problem %></p>
+      <% end %>
       <div class="actions">
         <button type="submit" class="primary">Save</button>
         <button type="button" class="quiet" data-event="status-clear">Clear status</button>

@@ -2,8 +2,9 @@
 # one organization can be seen from another.
 module App.Models.Organization
 
+type OrganizationId = String
 record Organization do
-  id : String
+  id : OrganizationId
   # The name as it appears in addresses: /acme/channels/general.
   slug : String = ""
   name : String = ""
@@ -14,5 +15,7 @@ end
 let RESERVED = ["signin", "signout", "register", "live", "metro", "public", "channels", "dm", "api"]
 
 # The address form of a name: its letters and digits, lower case.
-slugged : String -> String
-let slugged(name) = name.trim.lowerCase.chars.filter { |char| char.lower? || char.digit? }.map { |char| "${char}" }.join("")
+let slugged(name: String) -> String do
+  let slug = name.trim.lowerCase.chars.filter { |char| char.lower? || char.digit? }
+  return slug.map { |char| "${char}" }.join("")
+end

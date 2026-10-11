@@ -2,7 +2,11 @@
 params: [email: String, problems: [String]]
 ---
 <% if !problems.empty? %>
-<ul class="failure" role="alert"><% problems.map do |problem| %><li><%= problem %></li><% end %></ul>
+<ul class="failure" role="alert">
+  <% problems.map do |problem| %>
+    <li><%= problem %></li>
+  <% end %>
+</ul>
 <% end %>
 <form method="post" action="/signin" class="credentials">
   <label class="field"><span class="label">Email</span>

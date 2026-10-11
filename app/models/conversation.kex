@@ -2,8 +2,11 @@
 # two people.
 module App.Models.Conversation
 
+using App.Models.Organization, only: [OrganizationId]
+
+type ConversationId = String
 record Conversation do
-  id : String
+  id : ConversationId
   # "channel" or "direct".
   kind : String = "channel"
   slug : String = ""
@@ -11,7 +14,7 @@ record Conversation do
   topic : String = ""
   firstUser : String = ""
   secondUser : String = ""
-  organizationId : String = ""
+  organizationId : OrganizationId = ""
 end
 
 # The channel every workspace starts with.

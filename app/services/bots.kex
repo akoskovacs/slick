@@ -5,6 +5,7 @@
 module App.Services.Bots
 
 using App.Models.User, only: [User]
+using App.Models.Organization, only: [OrganizationId]
 using DB.Repositories.Users, as: Users
 
 # What every token starts with, so one found lying around can be recognised.
@@ -12,7 +13,7 @@ let PREFIX = "slick_bot_"
 
 # Makes a bot: an organization's when `organizationId` names one, and
 # otherwise this person's own. The bot, and its token.
-built : User -> String -> String -> Result<(User, String), String>
+built : User -> OrganizationId -> String -> Result<(User, String), String>
 foul built(maker, organizationId, name) do
   let id = "b${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
@@ -26,16 +27,18 @@ end
 # Gives a bot a new token; the old one stops working. The bot has to be
 # this person's own, or belong to `organizationId` — which the caller has
 # already made sure this person is in.
-renewed : User -> String -> String -> Result<String, String>
+renewed : User -> OrganizationId -> String -> Result<String, String>
 foul renewed(asker, organizationId, botId) do
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
   let digest = Metro.Auth.Token.digest(token)
   let own = Users.rekeyed(botId, asker.id, digest).or(false)
+
   return Ok(token) if own
   return Error("That is not one of your bots.") if organizationId.empty?
 
   let shared = Users.rekeyedFor(botId, organizationId, digest).or(false)
-  shared then Ok(token) else Error("That is not one of your bots, or of this organization's.")
+
+  return shared then Ok(token) else Error("That is not one of your bots, or of this organization's.")
 end
 
 # The bot an `Authorization: Bearer …` header speaks for, if any.

@@ -32,8 +32,8 @@ foul joined(request, socket) do
   hub.changed(seat, "everyone")
   Metro.Live.Socket.attached(
     socket, hub, "everyone", App.Live.Chat.arrived(user, request.query("at").or("/")),
-    do |tab, event| App.Live.Chat.handled(statuses, user, tab, event) end,
-    do |tab| App.Live.Chat.markup(statuses, user, tab) end
+    { |tab, event| App.Live.Chat.handled(statuses, user, tab, event) },
+    { |tab| App.Live.Chat.markup(statuses, user, tab) }
   )
   App.Live.Chat.leaving(statuses, user, seat)
   hub.changed(seat, "everyone")

@@ -7,9 +7,9 @@ params: [heading: String, lead: String, verb: String, asked: String, hint: Strin
     <p class="hint"><%= lead %></p>
     <form class="asking" data-live="<%= verb %>" data-live-quiet>
       <input name="<%= asked %>" placeholder="<%= hint %>" maxlength="200" autocomplete="off">
-<% if !problem.empty? %>
-      <p class="problem" role="alert"><%= problem %></p>
-<% end %>
+      <% if !problem.empty? %>
+        <p class="problem" role="alert"><%= problem %></p>
+      <% end %>
       <div class="actions">
         <button type="submit" class="primary"><%= label %></button>
         <button type="button" class="quiet" data-event="cancel">Cancel</button>

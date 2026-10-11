@@ -1,8 +1,9 @@
 # Something somebody said.
 module App.Models.Message
 
+type MessageId = String
 record Message do
-  id : String
+  id : MessageId
   conversationId : String
   userId : String
   body : String

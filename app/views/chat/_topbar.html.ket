@@ -11,9 +11,9 @@ params: [who: String, emblem: String, saying: String, set?: Bool]
       <div class="menu-items">
         <p class="menu-status"><%= saying %></p>
         <button type="button" data-event="status"><% if set? %>Change your status…<% else %>Set a status…<% end %></button>
-<% if set? %>
-        <button type="button" data-event="status-clear">Clear status</button>
-<% end %>
+        <% if set? %>
+          <button type="button" data-event="status-clear">Clear status</button>
+        <% end %>
         <form method="post" action="/signout"><button type="submit">Sign out</button></form>
       </div>
     </details>

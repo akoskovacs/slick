@@ -20,16 +20,22 @@ let STATUSES = [
 
 # Whether an emoji is one a status may carry: one of the ready-made ones, one
 # of the named ones, or none.
-status? : String -> Bool
-let status?(emoji) = emoji.empty? || STATUSES.any? { |entry| match entry do (glyph, _) => glyph == emoji end } || KNOWN.any? { |entry| match entry do (_, glyph) => glyph == emoji end }
+let status?(emoji: String) -> Bool do
+  let hasStatus = STATUSES.any? { |glyph, _| glyph == emoji }
+  let hasName = KNOWN.any? { |_, glyph| glyph == emoji }
+
+  return emoji.empty? || hasStatus || hasName
+end 
 
 # A message with its shortcodes turned into emoji. A name that is not known
 # is left as typed.
-shown : String -> String
-let shown(body) = KNOWN.reduce(body) { |text, entry|
-  match entry do (code, emoji) => text.replace(":${code}:", emoji) end
-}
+let shown(body: String) -> String do
+  KNOWN.reduce(body) do |text, entry|
+    match entry do 
+      (code, emoji) => text.replace(":${code}:", emoji)
+    end
+  end
+end
 
 # Whether an emoji is one a reaction may be.
-reaction? : String -> Bool
-let reaction?(emoji) = PALETTE.contains?(emoji)
+let reaction?(emoji: String) -> Bool = PALETTE.contains?(emoji)

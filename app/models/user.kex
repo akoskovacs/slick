@@ -3,8 +3,11 @@
 # they are called in a conversation.
 module App.Models.User
 
+using App.Models.Organization, only: [OrganizationId]
+
+type UserId = String
 record User do
-  id : String
+  id : UserId
   email : String
   name : String = ""
   # "person" or "bot".
@@ -12,7 +15,7 @@ record User do
   # A bot belongs to a person or to an organization: one of these is set
   # on a bot, and neither on a person.
   ownerId : String = ""
-  ownerOrganizationId : String = ""
+  ownerOrganizationId : OrganizationId = ""
   # What they say about themselves: an emoji and a few words, either or
   # both, or neither.
   statusEmoji : String = ""
