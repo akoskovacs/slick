@@ -5,7 +5,8 @@
 module DB.Migrate.N0008CreateOrganizations
 
 using Harmat.Migration, as: Migration
-using Harmat.Migration, only: [createTable, addColumn, addIndex, runSql]
+using Harmat.Migration, only: [createTable, addColumn, addIndex, execute]
+using Harmat.Sql, only: [sql]
 
 let change = Migration.define :create_organizations, follows: :add_message_threads do
   createTable(:organizations) do |t|
@@ -29,20 +30,30 @@ let change = Migration.define :create_organizations, follows: :add_message_threa
   addIndex(:memberships, [:organization_id, :user_id], unique: true)
   addIndex(:memberships, [:user_id])
   addColumn(:conversations) do |t| t.text(:organization_id, default: "") end
-  runSql(
-    "INSERT INTO organizations (id, slug, name, created_at) SELECT 'slick', 'slick', 'Slick', '1970-01-01T00:00:00Z' WHERE EXISTS (SELECT 1 FROM users)",
-    undo: "DELETE FROM organizations WHERE id = 'slick'"
+  # Whoever was here before organizations were: one organization, everyone
+  # in it, and every conversation there was. Nothing, where there is nobody.
+  execute(
+    sql`
+      INSERT INTO organizations (id, slug, name, created_at)
+      SELECT 'slick', 'slick', 'Slick', '1970-01-01T00:00:00Z'
+      WHERE EXISTS (SELECT 1 FROM users)`,
+    undo: sql`DELETE FROM organizations WHERE id = 'slick'`
   )
-  runSql(
-    "INSERT INTO memberships (id, organization_id, user_id, joined_at) SELECT 'slick:' || id, 'slick', id, '1970-01-01T00:00:00Z' FROM users",
-    undo: "DELETE FROM memberships WHERE organization_id = 'slick'"
+  execute(
+    sql`
+      INSERT INTO memberships (id, organization_id, user_id, joined_at)
+      SELECT 'slick:' || id, 'slick', id, '1970-01-01T00:00:00Z'
+      FROM users`,
+    undo: sql`DELETE FROM memberships WHERE organization_id = 'slick'`
   )
-  runSql(
-    "UPDATE conversations SET organization_id = 'slick', slug = 'slick' || slug WHERE EXISTS (SELECT 1 FROM users)",
-    undo: "UPDATE conversations SET organization_id = '', slug = substr(slug, 6) WHERE organization_id = 'slick'"
-  )
-  runSql(
-    "DELETE FROM conversations WHERE organization_id = ''",
-    undo: "INSERT INTO conversations (id, kind, slug, title, topic, created_at) SELECT 'general', 'channel', '#general', 'general', 'Company-wide announcements and chatter', '1970-01-01T00:00:00Z' WHERE NOT EXISTS (SELECT 1 FROM conversations WHERE id = 'general')"
+  execute(
+    sql`
+      UPDATE conversations
+      SET organization_id = 'slick', slug = 'slick' || slug
+      WHERE EXISTS (SELECT 1 FROM users)`,
+    undo: sql`
+      UPDATE conversations
+      SET organization_id = '', slug = substr(slug, 6)
+      WHERE organization_id = 'slick'`
   )
 end
