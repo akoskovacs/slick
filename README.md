@@ -35,7 +35,7 @@ spec/
 
 ## Database
 
-| `SLICK_ENV` | Database |
+| `METRO_ENV` | Database |
 | --- | --- |
 | `development` (default) | SQLite, `db/development.sqlite3` |
 | `test` | SQLite, `db/test.sqlite3` |
