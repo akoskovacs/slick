@@ -15,7 +15,9 @@ let definition = Table.define :users do |t|
     t.text(:kind, default: "person", oneOf: ["person", "bot"]),
     t.text(:owner_id, default: ""),
     t.text(:api_token_digest, default: ""),
-    t.text(:owner_organization_id, default: "")
+    t.text(:owner_organization_id, default: ""),
+    t.text(:status_emoji, default: ""),
+    t.text(:status_text, default: "")
   ]
 end
 

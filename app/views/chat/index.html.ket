@@ -1,5 +1,5 @@
 ---
-params: [failure: String, notice: String, rail: String, organization: String, channels: String, founding: String, people: String, pane: String, dialog: String, place: String, caption: String]
+params: [failure: String, notice: String, rail: String, organization: String, channels: String, founding: String, people: String, myself: String, pane: String, dialog: String, place: String, caption: String]
 ---
 <% if !failure.empty? %>
 <p class="failure" role="alert"><%= failure %></p>
@@ -25,6 +25,8 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
     <ul class="entries"><%== channels %></ul>
     <div class="sidebar-head"><h2>Direct messages</h2></div>
     <ul class="entries people"><%== people %></ul>
+    <div class="sidebar-head"><h2>You</h2></div>
+    <ul class="entries"><li><button type="button" class="entry online me" data-event="status" title="Set what you are up to"><%= myself %></button></li></ul>
     <div class="sidebar-head">
       <h2>Bots</h2>
       <button type="button" class="quiet" data-event="bots" title="Your bots and their API tokens">⚙</button>

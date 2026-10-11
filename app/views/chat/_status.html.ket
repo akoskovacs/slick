@@ -1,0 +1,4 @@
+---
+params: [standing: Standing]
+---
+<span data-live-until="<%= standing.lapses %>"><strong><%= standing.who %></strong> <%= standing.doing %></span>

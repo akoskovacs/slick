@@ -12,6 +12,17 @@ let KNOWN = [
 # What a message can be reacted with.
 let PALETTE = ["👍", "❤️", "😂", "🎉", "👀", "🙏"]
 
+# Statuses offered ready-made: an emoji and what it usually means.
+let STATUSES = [
+  ("🌴", "On vacation"), ("🤒", "Out sick"), ("🏠", "Working remotely"),
+  ("🗓️", "In a meeting"), ("🚌", "Commuting"), ("🎯", "Focusing")
+]
+
+# Whether an emoji is one a status may carry: one of the ready-made ones, one
+# of the named ones, or none.
+status? : String -> Bool
+let status?(emoji) = emoji.empty? || STATUSES.any? { |entry| match entry do (glyph, _) => glyph == emoji end } || KNOWN.any? { |entry| match entry do (_, glyph) => glyph == emoji end }
+
 # A message with its shortcodes turned into emoji. A name that is not known
 # is left as typed.
 shown : String -> String

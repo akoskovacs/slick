@@ -479,3 +479,25 @@ body.chat .editor { width: min(28rem, 100%); background: var(--pane); color: var
   font-size: 0.68rem; color: var(--muted); font-variant-numeric: tabular-nums; visibility: hidden;
 }
 .message.continued:hover .gutter { visibility: visible; }
+
+/* --- What people are in the middle of ---------------------------------------- */
+
+.statuses { flex: 0 0 auto; min-height: 1.3rem; margin: 0; padding: 0 1.25rem; font-size: 0.78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statuses span + span::before { content: "· "; }
+.statuses strong { color: var(--ink); }
+
+/* --- Presence and statuses --------------------------------------------------- */
+
+.people .entry.online::before { background: #2bac76; border-color: #2bac76; opacity: 1; }
+.entry.me { white-space: nowrap; }
+.entry.me::before {
+  content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; margin: 0 0.5rem 0.05rem 0.1rem;
+  border: 1.5px solid #2bac76; background: #2bac76; border-radius: 50%;
+}
+.emblem { cursor: default; }
+.byline .emblem { margin-left: 0.15rem; font-size: 0.9rem; }
+.presets { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.8rem; }
+.presets button { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.85rem; background: var(--hover); }
+.mood { display: flex; gap: 0.5rem; }
+.mood select { flex: 0 0 6.5rem; width: auto; }
+.mood input { flex: 1 1 auto; }

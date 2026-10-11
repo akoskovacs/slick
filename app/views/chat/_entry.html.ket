@@ -1,4 +1,4 @@
 ---
 params: [entry: Entry]
 ---
-<li><button type="button" class="entry<% if entry.current? %> current<% end %>" data-event="<%= entry.action %>" data-<%= entry.subject %>="<%= entry.key %>"><%= entry.caption %><% if !entry.badged.empty? %> <span class="flag"><%= entry.badged %></span><% end %></button></li>
+<li><button type="button" class="entry<% if entry.current? %> current<% end %><% if entry.online? %> online<% end %>" data-event="<%= entry.action %>" data-<%= entry.subject %>="<%= entry.key %>"><%= entry.caption %><% if !entry.emblem.empty? %> <span class="emblem" title="<%= entry.emblemNote %>"><%= entry.emblem %></span><% end %><% if !entry.badged.empty? %> <span class="flag"><%= entry.badged %></span><% end %></button></li>

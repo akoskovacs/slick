@@ -13,6 +13,7 @@
 module App.Live.Chat
 
 using Harmat.Db, only: [Db]
+using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field]
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using App.Live.Tab, only: [Tab]
@@ -53,8 +54,11 @@ let organizationRules = rules do
 end
 
 # The live region for one person's tab, as things are stored right now.
-markup : Db -> User -> Tab -> String
-foul markup(database, user, tab) do
+#
+# `statuses` is the board of what people are in the middle of — typing, or
+# whatever a bot says it is doing: `Metro.Live.Presence`.
+markup : Db -> Server<Presence> -> User -> Tab -> String
+foul markup(database, statuses, user, tab) do
   match home(database, user, tab) do
     None => return App.Views.Chat.welcome(tab, user)
     Just(organization) => do
@@ -63,13 +67,16 @@ foul markup(database, user, tab) do
       let everyone : [User] = UserRepository { db: database }.everyone.or([])
       let people = everyone.filter { |person| roster.contains?(person.id) }
       let channels : [Conversation] = ConversationRepository { db: database }.channels(organization.id).or([])
+      let now = BEAM.erlang.system_time(:millisecond)
+      let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(database, user, organization) else []
       match visible(database, user, tab) do
-        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, bots, None, [], [], [])
+        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, None, [], [], [], [])
         Just(conversation) => do
           let messages : [Message] = MessageRepository { db: database }.latest(conversation.id, WINDOW).or([])
           let reactions = ReactionRepository { db: database }.throughout(conversation.id).or([])
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, bots, Just(conversation), messages, reactions, unfolded(database, conversation, tab.thread))
+          let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, Just(conversation), messages, reactions, unfolded(database, conversation, tab.thread), doing.reject { |note| note.member == user.id })
         end
       end
     end
@@ -78,32 +85,74 @@ end
 
 # Applies one event: the tab's next state, and whether something other tabs
 # show was changed — in which case they are told to refresh.
-handled : Db -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
-foul handled(database, user, tab, entries) do
+handled : Db -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
+foul handled(database, statuses, user, tab, entries) do
   match field(entries, "event") do
     "open" => opened(database, user, tab, field(entries, "id"))
     "direct" => whispered(database, user, tab, field(entries, "user"))
     "found" => (Tab { ...settled(tab), founding?: true }, false)
     "create" => established(database, user, tab, field(entries, "title").trim.lowerCase)
-    "send" => sent(database, user, tab, field(entries, "body").trim)
+    "send" => sent(database, statuses, user, tab, field(entries, "body").trim)
+    "typing" => typing(database, statuses, user, tab)
     "retitle" => (Tab { ...settled(tab), retitling?: true }, false)
     "topic" => retitled(database, user, tab, field(entries, "topic").trim)
     "react" => reacted(database, user, tab, field(entries, "message"), field(entries, "emoji"))
     "cancel" => (settled(tab), false)
     "thread" => threaded(database, user, tab, field(entries, "message"))
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
-    "reply" => replied(database, user, tab, field(entries, "body").trim)
+    "reply" => replied(database, statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(database, user, field(entries, "path")), false)
     "organization" => switched(database, user, tab, field(entries, "id"))
     "organize" => (Tab { ...settled(tab), dialog: "organization" }, false)
     "charter" => organized(database, user, tab, field(entries, "name").trim)
     "invite" => (Tab { ...settled(tab), dialog: "invite" }, false)
     "enlist" => invited(database, user, tab, field(entries, "email").trim.lowerCase)
+    "status" => (Tab { ...settled(tab), dialog: "status" }, false)
+    "status-set" => restyled(database, user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
+    "status-clear" => restyled(database, user, tab, "", "")
     "bots" => (Tab { ...settled(tab), dialog: "bots" }, false)
     "bot-create" => botMade(database, user, tab, field(entries, "name").trim, field(entries, "owner"))
     "bot-rekey" => botRenewed(database, user, tab, field(entries, "id"))
     "bot-enlist" => botBrought(database, user, tab, field(entries, "id"))
     _ => (tab, false)
+  end
+end
+
+# The topic, on the statuses board, of who has a tab open. A member there is
+# "<user id> <something of the tab's own>", so that closing one of two tabs
+# does not make somebody look gone.
+let ONLINE = "online"
+
+# Somebody's tab has opened, or closed.
+arriving : Server<Presence> -> User -> String -> Void
+foul arriving(statuses, user, seat) do
+  statuses.noted(ONLINE, "${user.id} ${seat}", "", BEAM.erlang.system_time(:millisecond) + 86400000)
+end
+
+leaving : Server<Presence> -> User -> String -> Void
+foul leaving(statuses, user, seat) do
+  statuses.lifted(ONLINE, "${user.id} ${seat}")
+end
+
+# How long "is typing" stands after a keystroke is heard of, in milliseconds.
+# The browser says so again every three seconds while it goes on.
+let TYPING_FOR = 6000
+
+# Says what somebody is doing in the conversation their tab is showing, for
+# `milliseconds`; "" takes it back. Whether there was a conversation to say
+# it in.
+noting : Db -> Server<Presence> -> User -> Tab -> String -> Integer -> Bool
+foul noting(database, statuses, user, tab, text, milliseconds) do
+  match visible(database, user, tab) do
+    None => return false
+    Just(conversation) => do
+      if milliseconds <= 0
+        statuses.lifted(conversation.id, user.id)
+      else
+        statuses.noted(conversation.id, user.id, text, BEAM.erlang.system_time(:millisecond) + milliseconds)
+      end
+      return true
+    end
   end
 end
 
@@ -304,6 +353,29 @@ private do
     end
   end
 
+  let statusRules = rules do
+    validates("text", "A status", [sized(0, 80)])
+  end
+
+  # What somebody says about themselves: an emoji Slick offers, and a few
+  # words. Both empty takes it back.
+  restyled : Db -> User -> Tab -> String -> String -> (Tab, Bool)
+  foul restyled(database, user, tab, emoji, saying) do
+    let refused = Tab { ...settled(tab), dialog: "status" }
+    let problems = Metro.Validation.checked(statusRules, {"text": saying}).messages
+    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
+    return (Tab { ...refused, dialogProblem: "Pick one of the emoji offered." }, false) if !App.Models.Emoji.status?(emoji)
+
+    match UserRepository { db: database }.restyled(user.id, emoji, saying) do
+      Ok(_) => return (settled(tab), true)
+      Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+    end
+  end
+
+  # Somebody is typing: said for a few seconds, to everyone else there.
+  typing : Db -> Server<Presence> -> User -> Tab -> (Tab, Bool)
+  foul typing(database, statuses, user, tab) = (tab, noting(database, statuses, user, tab, "", TYPING_FOR))
+
   # The message that starts the thread this message is in — itself, when it
   # is not a reply — if it belongs to this conversation.
   rooted : Db -> Conversation -> String -> Message?
@@ -345,8 +417,8 @@ private do
   end
 
   # A reply goes into the thread the tab has open, and nowhere else.
-  replied : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul replied(database, user, tab, body) do
+  replied : Db -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
+  foul replied(database, statuses, user, tab, body) do
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
     return (tab, false) if !problems.empty?
 
@@ -355,7 +427,10 @@ private do
       Just(conversation) => match rooted(database, conversation, tab.thread) do
         None => return (tab, false)
         Just(first) => match MessageRepository { db: database }.said(conversation.id, user.id, body, first.id) do
-          Ok(_) => return (Tab { ...settled(tab), thread: first.id }, true)
+          Ok(_) => do
+            statuses.lifted(conversation.id, user.id)
+            return (Tab { ...settled(tab), thread: first.id }, true)
+          end
           Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
         end
       end
@@ -407,15 +482,19 @@ private do
     end
   end
 
-  sent : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul sent(database, user, tab, body) do
+  sent : Db -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
+  foul sent(database, statuses, user, tab, body) do
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
     return (tab, false) if !problems.empty?
 
     match visible(database, user, tab) do
       None => return (tab, false)
       Just(conversation) => match MessageRepository { db: database }.said(conversation.id, user.id, body, "") do
-        Ok(_) => return (settled(tab), true)
+        Ok(_) => do
+          # Whatever they were said to be doing, they have done.
+          statuses.lifted(conversation.id, user.id)
+          return (settled(tab), true)
+        end
         Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
       end
     end

@@ -6,6 +6,7 @@
 #   POST /api/:organization/channels/:name/messages    {"body": "…", "thread": "<message id>"}
 #                                                      or {"blocks": […]} in place of "body"
 #   POST /api/:organization/channels/:name/reactions   {"message": "<id>", "emoji": "🎉"}
+#   POST /api/:organization/channels/:name/status      {"text": "Deploying", "seconds": 30}
 #   GET  /api/:organization/dm/:person/messages
 #   POST /api/:organization/dm/:person/messages
 #
@@ -21,6 +22,11 @@
 #
 # and every message read back carries both: "body" and "blocks".
 #
+# A status is what the bot is in the middle of — "Thinking", "Deploying" —
+# shown under the conversation the way "is typing" is for a person. It
+# stands for `seconds` (30 unless said, 300 at most), or until the bot says
+# something there, or until it sends an empty "text".
+#
 # A bot is a member like any other, and what it does goes through the same
 # two functions a browser tab's events do (`App.Live.Chat.arrived` and
 # `handled`), so it can read and write exactly what a person in its place
@@ -30,6 +36,7 @@ module App.Controllers.Api
 using Harmat.Db, only: [Db]
 using Rodolfo
 using Metro.Live.Hub, only: [Hub]
+using Metro.Live.Presence, only: [Presence]
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
@@ -90,8 +97,8 @@ foul history(database, env, kind) do
 end
 
 # Says something, in the conversation or — with `thread` — in a thread.
-posted : Db -> Server<Hub> -> Context -> String -> Rodolfo.Reply
-foul posted(database, hub, env, kind) do
+posted : Db -> Server<Hub> -> Server<Presence> -> Context -> String -> Rodolfo.Reply
+foul posted(database, hub, statuses, env, kind) do
   let thread = given(env, "thread")
   let typed = given(env, "body")
   let body = typed.empty? then App.Helpers.RichText.composed(listGiven(env, "blocks")) else typed
@@ -99,7 +106,7 @@ foul posted(database, hub, env, kind) do
     Error(reply) => return reply
     Ok((bot, tab, conversation)) => do
       let event = thread.empty? then "send" else "reply"
-      let (_, changed) = App.Live.Chat.handled(database, bot, tab, [("event", Just(event)), ("body", Just(body))])
+      let (_, changed) = App.Live.Chat.handled(database, statuses, bot, tab, [("event", Just(event)), ("body", Just(body))])
       return failed(422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
       hub.changed("api", "everyone")
@@ -114,16 +121,39 @@ foul posted(database, hub, env, kind) do
 end
 
 # Puts an emoji on a message, or takes the bot's own one off again.
-reacting : Db -> Server<Hub> -> Context -> String -> Rodolfo.Reply
-foul reacting(database, hub, env, kind) do
+reacting : Db -> Server<Hub> -> Server<Presence> -> Context -> String -> Rodolfo.Reply
+foul reacting(database, hub, statuses, env, kind) do
   match placed(database, env, kind, "") do
     Error(reply) => return reply
     Ok((bot, tab, conversation)) => do
-      let (_, changed) = App.Live.Chat.handled(database, bot, tab, [("event", Just("react")), ("message", Just(given(env, "message"))), ("emoji", Just(given(env, "emoji")))])
+      let (_, changed) = App.Live.Chat.handled(database, statuses, bot, tab, [("event", Just("react")), ("message", Just(given(env, "message"))), ("emoji", Just(given(env, "emoji")))])
       return failed(422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
 
       hub.changed("api", "everyone")
       return Response.JSON { body: JSON.stringify({"ok": true}) }
+    end
+  end
+end
+
+# The longest a status stands without being said again, and the longest it
+# may be.
+let STATUS_SECONDS = 30
+let STATUS_MOST = 300
+let STATUS_LONGEST = 80
+
+# Says what the bot is doing in a conversation, or takes it back.
+statusSet : Db -> Server<Hub> -> Server<Presence> -> Context -> String -> Rodolfo.Reply
+foul statusSet(database, hub, statuses, env, kind) do
+  match placed(database, env, kind, "") do
+    Error(reply) => return reply
+    Ok((bot, tab, conversation)) => do
+      let text = given(env, "text").replace("\n", " ").take(STATUS_LONGEST)
+      let asked = given(env, "seconds").to(Integer).or(STATUS_SECONDS)
+      let seconds = asked < 1 || asked > STATUS_MOST then STATUS_SECONDS else asked
+      App.Live.Chat.noting(database, statuses, bot, tab, text, text.empty? then 0 else seconds * 1000)
+      hub.changed("api", "everyone")
+      let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
+      return Response.JSON { body: JSON.stringify(answer) }
     end
   end
 end

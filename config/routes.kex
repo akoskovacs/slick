@@ -24,6 +24,9 @@ let COOKIE = "slick_session"
 routes : Server<Store> -> Server<Hub> -> Rodolfo.Router
 foul routes(store, hub) do
   let database = Harmat.Db.over(DB.Store.gateway(store))
+  # What people are in the middle of — typing, or what a bot says it is
+  # doing. Remembered here and not in the database: it is only true for now.
+  let statuses = Process.spawn(Metro.Live.Presence.Presence {})
   Rodolfo.router do
     # Bots, with a token on every request: no cookie is read here, so there
     # is no request another site could forge, and no origin to check.
@@ -41,11 +44,19 @@ foul routes(store, hub) do
       end
 
       post "/:organization/channels/:name/messages" do |env|
-        App.Controllers.Api.posted(database, hub, env, "channels")
+        App.Controllers.Api.posted(database, hub, statuses, env, "channels")
       end
 
       post "/:organization/channels/:name/reactions" do |env|
-        App.Controllers.Api.reacting(database, hub, env, "channels")
+        App.Controllers.Api.reacting(database, hub, statuses, env, "channels")
+      end
+
+      post "/:organization/channels/:name/status" do |env|
+        App.Controllers.Api.statusSet(database, hub, statuses, env, "channels")
+      end
+
+      post "/:organization/dm/:name/status" do |env|
+        App.Controllers.Api.statusSet(database, hub, statuses, env, "dm")
       end
 
       get "/:organization/dm/:name/messages" do |env|
@@ -53,11 +64,11 @@ foul routes(store, hub) do
       end
 
       post "/:organization/dm/:name/messages" do |env|
-        App.Controllers.Api.posted(database, hub, env, "dm")
+        App.Controllers.Api.posted(database, hub, statuses, env, "dm")
       end
 
       post "/:organization/dm/:name/reactions" do |env|
-        App.Controllers.Api.reacting(database, hub, env, "dm")
+        App.Controllers.Api.reacting(database, hub, statuses, env, "dm")
       end
     end
 
@@ -66,17 +77,17 @@ foul routes(store, hub) do
       plug(signedIn(database))
 
       get "/" do |env|
-        chatting(database, env)
+        chatting(database, statuses, env)
       end
 
       # A conversation has an address; the live view keeps the address bar
       # on the one it is showing, and a reload comes back here.
       get "/:organization/channels/:name" do |env|
-        chatting(database, env)
+        chatting(database, statuses, env)
       end
 
       get "/:organization/dm/:person" do |env|
-        chatting(database, env)
+        chatting(database, statuses, env)
       end
 
       post "/signout" do |env|
@@ -122,7 +133,7 @@ foul routes(store, hub) do
       if user.none?
         socket.close
       else
-        served(database, hub, socket, user.try, env.query("at").or("/"))
+        served(database, hub, statuses, socket, user.try, env.query("at").or("/"))
       end
     end
 
@@ -163,10 +174,10 @@ private do
   foul visitor(database, env) = App.Services.Authentication.current(database, token(env))
 
   # The chat page, opened at the conversation the address names.
-  foul chatting(database: Db, env: Context) -> Rodolfo.Reply do
+  foul chatting(database: Db, statuses: Server<Presence>, env: Context) -> Rodolfo.Reply do
     let user : User = visitor(database, env).try
     let tab = App.Live.Chat.arrived(database, user, env.request.target.string)
-    page(App.Views.Chat.page(user.shown, App.Live.Chat.markup(database, user, tab)))
+    page(App.Views.Chat.page(user.shown, App.Live.Chat.markup(database, statuses, user, tab)))
   end
 
   # Every tab is in one group: a message anywhere is news to every sidebar.
@@ -174,12 +185,19 @@ private do
   #
   # `location` is the address of the page the socket was opened from: the
   # live view starts where the page was rendered.
-  foul served(database: Db, hub: Server<Hub>, socket: Connection, user: User, location: String) -> Void do
+  foul served(database: Db, hub: Server<Hub>, statuses: Server<Presence>, socket: Connection, user: User, location: String) -> Void do
+    # Having a tab open is being here: said on the way in, taken back on the
+    # way out, and the others' pages are told both times.
+    let seat = "${BEAM.erlang.unique_integer([:positive])}"
+    App.Live.Chat.arriving(statuses, user, seat)
+    hub.changed(seat, "everyone")
     Metro.Live.Socket.attached(
       socket, hub, "everyone", App.Live.Chat.arrived(database, user, location),
-      do |tab, event| App.Live.Chat.handled(database, user, tab, event) end,
-      do |tab| App.Live.Chat.markup(database, user, tab) end
+      do |tab, event| App.Live.Chat.handled(database, statuses, user, tab, event) end,
+      do |tab| App.Live.Chat.markup(database, statuses, user, tab) end
     )
+    App.Live.Chat.leaving(statuses, user, seat)
+    hub.changed(seat, "everyone")
   end
 
   # A page with its stylesheet and script addressed by what is in them

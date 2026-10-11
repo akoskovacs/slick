@@ -13,6 +13,7 @@ using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
 using App.Models.User, only: [User]
+using Metro.Live.Presence, only: [Note]
 
 # One line of the sidebar.
 record Entry do
@@ -24,6 +25,11 @@ record Entry do
   current? : Bool
   # "BOT" beside a bot's name; "" beside a person's.
   badged : String = ""
+  # Whether they have a tab open.
+  online? : Bool = false
+  # The emoji of their status, and its words for whoever points at it.
+  emblem : String = ""
+  emblemNote : String = ""
 end
 
 # One of my bots, in the bots dialog.
@@ -53,6 +59,8 @@ record Bubble do
   anchor : String
   author : String
   badged : String = ""
+  emblem : String = ""
+  emblemNote : String = ""
   # The author's first letter and one of eight colours, for the avatar.
   initial : String
   tint : String
@@ -67,6 +75,14 @@ record Bubble do
   # Whether it carries on from the message above — the same person, soon
   # after — and so is shown without their name and picture again.
   continued? : Bool = false
+end
+
+# What somebody is in the middle of, under the conversation.
+record Standing do
+  who : String
+  doing : String
+  # When it stops being true, in milliseconds since 1970.
+  lapses : String
 end
 
 # One emoji under a message: how many put it there, and whether I did.
@@ -89,6 +105,8 @@ let dialogPartial = Template.html(Kex.embed("chat/_dialog.html.ket"))
 let welcomePartial = Template.html(Kex.embed("chat/_welcome.html.ket"))
 let bubblePartial = Template.html(Kex.embed("chat/_bubble.html.ket"))
 let chipPartial = Template.html(Kex.embed("chat/_chip.html.ket"))
+let moodPartial = Template.html(Kex.embed("chat/_mood.html.ket"))
+let statusPartial = Template.html(Kex.embed("chat/_status.html.ket"))
 let threadPartial = Template.html(Kex.embed("chat/_thread.html.ket"))
 let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
 
@@ -109,8 +127,12 @@ let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProble
 #
 # `bots` are the ones this person may look after here — the organization's
 # and their own — and only asked for while their dialog is open.
-index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> String
-let index(tab, user, organizations, organization, channels, people, bots, conversation, messages, reactions, thread) do
+#
+# `doing` is what other people there are in the middle of right now.
+#
+# `online` are the ids of the people with a tab open.
+index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> [Note] -> String
+let index(tab, user, organizations, organization, channels, people, online, bots, conversation, messages, reactions, thread, doing) do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
     badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id })
@@ -120,16 +142,21 @@ let index(tab, user, organizations, organization, channels, people, bots, conver
   }
   let personLines = people.reject { |person| person.id == user.id }.map { |person|
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "" })
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
   }
   let founding = tab.founding? then foundingPartial(tab.channelProblem) else ""
   let beside = thread.empty? then "" else threadPane(user, people, reactions, thread)
   let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
   let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
+  # This person as stored now: the `user` a tab was opened with does not
+  # know of a status set since.
+  let me = people.find { |person| person.id == user.id }.or(user)
+  let wording = me.statusText.empty? then "Set a status" else me.statusText
+  let myself = me.statusEmoji.empty? then "${me.shown} · ${wording}" else "${me.shown} · ${me.statusEmoji} ${wording}"
   frame(
-    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), founding, personLines.join("\n"),
-    pane(tab, user, people, conversation, messages, reactions, thread.empty? && tab.dialog.empty?) + beside,
-    asking(tab, organization, people, bots), place, caption
+    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), founding, personLines.join("\n"), myself,
+    pane(tab, user, people, conversation, messages, reactions, thread.empty? && tab.dialog.empty?, doing) + beside,
+    asking(tab, organization, people, bots, me), place, caption
   )
 end
 
@@ -143,8 +170,15 @@ private do
   end
 
   # The dialog a tab has open, if any.
-  asking : Tab -> Organization -> [User] -> [User] -> String
-  let asking(tab, organization, people, bots) do
+  asking : Tab -> Organization -> [User] -> [User] -> User -> String
+  let asking(tab, organization, people, bots, me) do
+    if tab.dialog == "status"
+      let presets = App.Models.Emoji.STATUSES.map { |entry| match entry do (glyph, words) => preset(glyph, words) end }
+      let glyphs = [""] + App.Models.Emoji.STATUSES.map { |entry| match entry do (glyph, _) => glyph end } + App.Models.Emoji.KNOWN.map { |entry| match entry do (_, glyph) => glyph end }
+      let options = glyphs.map { |glyph| choice(glyph, glyph == me.statusEmoji) }
+      return moodPartial(presets.join(""), options.join(""), me.statusText, tab.dialogProblem)
+    end
+
     if tab.dialog == "bots"
       let rows = bots.map { |bot|
         let shared = !bot.ownerOrganizationId.empty?
@@ -161,6 +195,16 @@ private do
 
     ""
   end
+
+  # A ready-made status, set with one click. Both are this program's own
+  # constants, not anything typed.
+  preset : String -> String -> String
+  let preset(glyph, words) = "<button type=\"button\" data-event=\"status-set\" data-emoji=\"${glyph}\" data-text=\"${words}\">${glyph} ${words}</button>"
+
+  choice : String -> Bool -> String
+  let choice("", chosen?) = "<option value=\"\">No emoji</option>"
+  let choice(glyph, true) = "<option value=\"${glyph}\" selected>${glyph}</option>"
+  let choice(glyph, false) = "<option value=\"${glyph}\">${glyph}</option>"
 
   # The emoji buttons that type into one message box.
   picked : String -> String
@@ -182,14 +226,24 @@ private do
     threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true))
   end
 
-  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> Bool -> String
-  let pane(tab, user, people, None, messages, reactions, alone?) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
-  let pane(tab, user, people, Just(conversation), messages, reactions, alone?) do
+  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> Bool -> [Note] -> String
+  let pane(tab, user, people, None, messages, reactions, alone?, doing) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
+  let pane(tab, user, people, Just(conversation), messages, reactions, alone?, doing) do
     let title = titled(conversation, user, people)
     let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
     let bubbles = sequence(messages, "", 0, user, people, reactions, false)
     let emptied = messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
-    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div>${composerPartial("send", "message-box", "Message ${title}", picked("#message-box"), alone?)}</section>"
+    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div><p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">${statuses(doing, people)}</p>${composerPartial("send", "message-box", "Message ${title}", picked("#message-box"), alone?)}</section>"
+  end
+
+  # "Ada is typing…", or what a bot says it is doing: "deploy-bot Deploying…".
+  statuses : [Note] -> [User] -> String
+  let statuses(doing, people) do
+    doing.map { |note|
+      let who = people.find { |person| person.id == note.member }.map { |person| person.shown }.or("Someone")
+      let what = note.saying.empty? then "is typing…" else "${note.saying}…"
+      statusPartial(Standing { who: who, doing: what, lapses: "${note.lapses}" })
+    }.join(" ")
   end
 
   # What a conversation is called for this person: `# name` for a channel,
@@ -223,6 +277,8 @@ private do
     let writer = people.find { |person| person.id == message.userId }
     let author = writer.map { |person| person.shown }.or("Someone")
     let badged = writer.map { |person| person.bot? }.or(false) then "BOT" else ""
+    let emblem = writer.map { |person| person.statusEmoji }.or("")
+    let emblemNote = writer.map { |person| person.statusText }.or("")
     let mine = reactions.filter { |reaction| reaction.messageId == message.id }
     let chips = mine.map { |reaction| reaction.emoji }.uniq.map { |glyph|
       let givers = mine.filter { |reaction| reaction.emoji == glyph }
@@ -230,7 +286,7 @@ private do
     }
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
-      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, continued?: carries, author: author, badged: badged, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.html(message.body), own?: message.userId == user.id },
+      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, continued?: carries, author: author, badged: badged, emblem: emblem, emblemNote: emblemNote, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.html(message.body), own?: message.userId == user.id },
       chips.join(""), offers.join("")
     )
   end

@@ -1,7 +1,7 @@
 ---
 params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool]
 ---
-<form class="composer" data-live="<%= verb %>" data-live-reset data-live-quiet>
+<form class="composer" data-live="<%= verb %>" data-live-reset data-live-quiet data-live-typing>
   <div class="composer-box">
     <div class="formats">
       <button type="button" class="quiet" data-wrap="*" data-target="#<%= boxId %>" title="Bold: *text*"><strong>B</strong></button>

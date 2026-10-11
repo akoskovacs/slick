@@ -13,6 +13,10 @@ record User do
   # on a bot, and neither on a person.
   ownerId : String = ""
   ownerOrganizationId : String = ""
+  # What they say about themselves: an emoji and a few words, either or
+  # both, or neither.
+  statusEmoji : String = ""
+  statusText : String = ""
 end
 
 make User do

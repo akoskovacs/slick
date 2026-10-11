@@ -35,13 +35,13 @@ make UserRepository do
 
   # A person's bots, by name.
   foul operated(owner: String) -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.ownerId, owner)).orderBy([:name, :id]).all
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.ownerId, owner)).orderBy([:name, :id]).all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 
   # An organization's bots, by name.
   foul maintained(organizationId: String) -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition)
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition)
       .where(eq(DB.Schema.Users.ownerOrganizationId, organizationId)).orderBy([:name, :id]).all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
@@ -55,7 +55,7 @@ make UserRepository do
 
   # The bot an API token's digest belongs to, or `None`.
   foul bearing(tokenDigest: String) -> Result<User?, String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition)
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition)
       .where(eq(DB.Schema.Users.apiTokenDigest, tokenDigest)).where(eq(DB.Schema.Users.kind, "bot")).first
       .map { |row| row.map { |found| decoded(found) } }
   end
@@ -66,6 +66,11 @@ make UserRepository do
       .set({api_token_digest: tokenDigest}).where(eq(DB.Schema.Users.id, botId)).run.map { |changed| changed > 0 }
   end
 
+  # Sets what somebody says about themselves; "" and "" takes it back.
+  foul restyled(id: String, emoji: String, saying: String) -> Result<Integer, String> do
+    return @db.update(DB.Schema.Users.definition).set({status_emoji: emoji, status_text: saying}).where(eq(DB.Schema.Users.id, id)).run
+  end
+
   foul member(id: String) -> Result<User?, String> do
     return @db.select().from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.id, id)).first
       .map { |row| row.map { |found| decoded(found) } }
@@ -73,7 +78,7 @@ make UserRepository do
 
   # Everyone, by name: who can be written to, and whose name goes on a message.
   foul everyone -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id, :status_emoji, :status_text]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 end
@@ -83,6 +88,7 @@ private do
   let decoded(row) = User {
     id: row.get("id").or(""), email: row.get("email").or(""), name: row.get("name").or(""),
     kind: row.get("kind").or("person"), ownerId: row.get("owner_id").or(""),
-    ownerOrganizationId: row.get("owner_organization_id").or("")
+    ownerOrganizationId: row.get("owner_organization_id").or(""),
+    statusEmoji: row.get("status_emoji").or(""), statusText: row.get("status_text").or("")
   }
 end
