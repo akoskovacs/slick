@@ -31,16 +31,16 @@ foul routes(store, hub) do
       plug(signedIn(database))
 
       get "/" do |env|
-        redirectTo("/channels/general")
+        chatting(database, env)
       end
 
       # A conversation has an address; the live view keeps the address bar
       # on the one it is showing, and a reload comes back here.
-      get "/channels/:name" do |env|
+      get "/:organization/channels/:name" do |env|
         chatting(database, env)
       end
 
-      get "/dm/:person" do |env|
+      get "/:organization/dm/:person" do |env|
         chatting(database, env)
       end
 

@@ -10,6 +10,7 @@ module App.Views.Chat
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
+using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
 using App.Models.User, only: [User]
 
@@ -19,6 +20,14 @@ record Entry do
   action : String
   subject : String
   key : String
+  caption : String
+  current? : Bool
+end
+
+# One organization in the rail.
+record Badge do
+  key : String
+  glyph : String
   caption : String
   current? : Bool
 end
@@ -55,6 +64,9 @@ let frame = Template.html(Kex.embed("chat/index.html.ket"))
 let entryPartial = Template.html(Kex.embed("chat/_entry.html.ket"))
 let foundingPartial = Template.html(Kex.embed("chat/_founding.html.ket"))
 let headingPartial = Template.html(Kex.embed("chat/_heading.html.ket"))
+let badgePartial = Template.html(Kex.embed("chat/_badge.html.ket"))
+let dialogPartial = Template.html(Kex.embed("chat/_dialog.html.ket"))
+let welcomePartial = Template.html(Kex.embed("chat/_welcome.html.ket"))
 let bubblePartial = Template.html(Kex.embed("chat/_bubble.html.ket"))
 let chipPartial = Template.html(Kex.embed("chat/_chip.html.ket"))
 let threadPartial = Template.html(Kex.embed("chat/_thread.html.ket"))
@@ -64,14 +76,24 @@ let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
 page : String -> String -> String
 let page(who, live) = layout(who, live)
 
+# The live region for somebody who is in no organization yet.
+welcome : Tab -> User -> String
+let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProblem)
+
 # The live region.
 #
+# `organizations` are the ones this person is in; `organization` is the one
+# the tab is in, and the channels and people are its.
 # `thread` is the open thread — the message that started it, then the
 # replies — or empty.
-index : Tab -> User -> [Conversation] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> String
-let index(tab, user, channels, people, conversation, messages, reactions, thread) do
+index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> String
+let index(tab, user, organizations, organization, channels, people, conversation, messages, reactions, thread) do
+  let shown = conversation.map { |open| open.id }.or("")
+  let badges = organizations.map { |each|
+    badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id })
+  }
   let channelLines = channels.map { |channel|
-    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == tab.conversation })
+    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == shown })
   }
   let personLines = people.reject { |person| person.id == user.id }.map { |person|
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
@@ -79,21 +101,31 @@ let index(tab, user, channels, people, conversation, messages, reactions, thread
   }
   let founding = tab.founding? then foundingPartial(tab.channelProblem) else ""
   let beside = thread.empty? then "" else threadPane(user, people, reactions, thread)
-  let place = conversation.map { |open| located(open, user, thread) }.or("")
-  let caption = conversation.map { |open| "${titled(open, user, people)} · Slick" }.or("Slick")
+  let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
+  let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
   frame(
-    tab.failure, channelLines.join("\n"), founding, personLines.join("\n"),
-    pane(tab, user, people, conversation, messages, reactions, thread.empty?) + beside, place, caption
+    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), founding, personLines.join("\n"),
+    pane(tab, user, people, conversation, messages, reactions, thread.empty? && tab.dialog.empty?) + beside,
+    asking(tab, organization), place, caption
   )
 end
 
 private do
   # Where a conversation is, as an address: the one the address bar shows
   # and `App.Live.Chat.arrived` reads back.
-  located : Conversation -> User -> [Message] -> String
-  let located(conversation, user, thread) do
-    let base = conversation.channel? then "/channels/${conversation.title}" else "/dm/${conversation.counterpart(user.id)}"
+  located : Organization -> Conversation -> User -> [Message] -> String
+  let located(organization, conversation, user, thread) do
+    let base = conversation.channel? then "/${organization.slug}/channels/${conversation.title}" else "/${organization.slug}/dm/${conversation.counterpart(user.id)}"
     thread.first.map { |opening| "${base}?thread=${opening.id}" }.or(base)
+  end
+
+  # The dialog a tab has open, if any.
+  asking : Tab -> Organization -> String
+  let asking(tab, organization) do
+    return dialogPartial("Create an organization", "Its own channels and people, apart from every other.", "charter", "name", "Acme", tab.dialogProblem, "Create") if tab.dialog == "organization"
+    return dialogPartial("Add people to ${organization.name}", "The email somebody registered with. They are in as soon as you add them.", "enlist", "email", "name@example.com", tab.dialogProblem, "Add") if tab.dialog == "invite"
+
+    ""
   end
 
   # The emoji buttons that type into one message box.

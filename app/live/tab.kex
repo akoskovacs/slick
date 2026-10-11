@@ -3,8 +3,12 @@
 module App.Live.Tab
 
 record Tab do
-  # The conversation the tab is showing, by id.
-  conversation : String = "general"
+  # The organization the tab is in, by id; "" is the first one its person
+  # belongs to.
+  organization : String = ""
+  # The conversation the tab is showing, by id; "" is the organization's
+  # #general.
+  conversation : String = ""
   # The message whose thread is open beside it, by id; "" when none is.
   thread : String = ""
   # Whether the new-channel form is open, and what was wrong with its last try.
@@ -12,5 +16,10 @@ record Tab do
   channelProblem : String = ""
   # Whether the topic is being edited.
   retitling? : Bool = false
+  # The dialog that is open — "organization" or "invite" — and what was
+  # wrong with its last try.
+  dialog : String = ""
+  dialogProblem : String = ""
+  notice : String = ""
   failure : String = ""
 end

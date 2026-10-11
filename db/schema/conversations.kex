@@ -15,7 +15,8 @@ let definition = Table.define :conversations do |t|
     t.text(:first_user, default: ""),
     t.text(:second_user, default: ""),
     t.text(:created_by, default: ""),
-    t.text(:created_at)
+    t.text(:created_at),
+    t.text(:organization_id, default: "")
   ]
 end
 
@@ -30,3 +31,4 @@ let firstUser = DB.Schema.Conversations.definition.textColumn(:first_user)
 let secondUser = DB.Schema.Conversations.definition.textColumn(:second_user)
 let createdBy = DB.Schema.Conversations.definition.textColumn(:created_by)
 let createdAt = DB.Schema.Conversations.definition.textColumn(:created_at)
+let organizationId = DB.Schema.Conversations.definition.textColumn(:organization_id)

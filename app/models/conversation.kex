@@ -11,6 +11,7 @@ record Conversation do
   topic : String = ""
   firstUser : String = ""
   secondUser : String = ""
+  organizationId : String = ""
 end
 
 # The channel every workspace starts with.
@@ -24,8 +25,9 @@ let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:$
 make Conversation do
   let channel? -> Bool = @kind == "channel"
 
-  # Whether this person may read and write here: anyone in a channel, and
-  # only the two people of a private chat.
+  # Whether this person may read and write here, given that they are in its
+  # organization: anyone in a channel, and only the two people of a private
+  # chat.
   let admits?(userId: String) -> Bool = @kind == "channel" || @firstUser == userId || @secondUser == userId
 
   # The other person of a private chat.

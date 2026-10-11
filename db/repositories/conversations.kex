@@ -14,9 +14,10 @@ record ConversationRepository do
 end
 
 make ConversationRepository do
-  # Every channel, by name.
-  foul channels -> Result<[Conversation], String> do
-    return @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.kind, "channel")).orderBy([:title]).all
+  # Every channel of an organization, by name.
+  foul channels(organizationId: String) -> Result<[Conversation], String> do
+    return @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.kind, "channel"))
+      .where(eq(DB.Schema.Conversations.organizationId, organizationId)).orderBy([:title]).all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 
@@ -26,24 +27,24 @@ make ConversationRepository do
       .map { |row| row.map { |found| decoded(found) } }
   end
 
-  # The channel of this name, or `None`.
-  foul titled(title: String) -> Result<Conversation?, String> do
-    return @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.slug, "#${title}")).first
+  # An organization's channel of this name, or `None`.
+  foul channelCalled(organizationId: String, title: String) -> Result<Conversation?, String> do
+    return @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.slug, "${organizationId}#${title}")).first
       .map { |row| row.map { |found| decoded(found) } }
   end
 
-  # Creates a channel. Fails when one of that name exists: the unique index
-  # on `slug` decides.
-  foul founded(title: String, by: String) -> Result<Conversation, String> do
-    let channel = Conversation { id: "c${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", kind: "channel", slug: "#${title}", title: title }
-    let row = {id: channel.id, kind: "channel", slug: channel.slug, title: title, created_by: by, created_at: "${DateTime.utcNow()}"}
+  # Creates a channel. Fails when the organization has one of that name: the
+  # unique index on `slug`, which starts with the organization, decides.
+  foul founded(organizationId: String, title: String, by: String) -> Result<Conversation, String> do
+    let channel = Conversation { id: "c${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", kind: "channel", slug: "${organizationId}#${title}", title: title, organizationId: organizationId }
+    let row = {id: channel.id, kind: "channel", slug: channel.slug, title: title, organization_id: organizationId, created_by: by, created_at: "${DateTime.utcNow()}"}
     return @db.insert(DB.Schema.Conversations.definition).values(row).run.map { |_| channel }
   end
 
-  # The private chat between two people, created the first time it is asked
-  # for.
-  foul between(one: String, other: String) -> Result<Conversation, String> do
-    let slug = App.Models.Conversation.pairing(one, other)
+  # The private chat between two people in an organization, created the
+  # first time it is asked for.
+  foul between(organizationId: String, one: String, other: String) -> Result<Conversation, String> do
+    let slug = "${organizationId}${App.Models.Conversation.pairing(one, other)}"
     let existing = @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.slug, slug)).first
     match existing do
       Error(reason) => return Error(reason)
@@ -51,8 +52,8 @@ make ConversationRepository do
       Ok(None) => do
         let first = one <= other then one else other
         let second = one <= other then other else one
-        let chat = Conversation { id: "d${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", kind: "direct", slug: slug, firstUser: first, secondUser: second }
-        let row = {id: chat.id, kind: "direct", slug: slug, first_user: first, second_user: second, created_by: one, created_at: "${DateTime.utcNow()}"}
+        let chat = Conversation { id: "d${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", kind: "direct", slug: slug, firstUser: first, secondUser: second, organizationId: organizationId }
+        let row = {id: chat.id, kind: "direct", slug: slug, organization_id: organizationId, first_user: first, second_user: second, created_by: one, created_at: "${DateTime.utcNow()}"}
         return @db.insert(DB.Schema.Conversations.definition).values(row).run.map { |_| chat }
       end
     end
@@ -75,6 +76,7 @@ private do
     title: row.get("title").or(""),
     topic: row.get("topic").or(""),
     firstUser: row.get("first_user").or(""),
-    secondUser: row.get("second_user").or("")
+    secondUser: row.get("second_user").or(""),
+    organizationId: row.get("organization_id").or("")
   }
 end

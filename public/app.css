@@ -383,7 +383,7 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 
 /* --- Threads ---------------------------------------------------------------- */
 
-.workspace:has(.thread) { grid-template-columns: 16.25rem minmax(0, 1fr) minmax(18rem, 26rem); }
+.workspace:has(.thread) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr) minmax(18rem, 26rem); }
 .thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); border-left: 1px solid var(--line); }
 .thread-head { display: flex; align-items: center; justify-content: space-between; }
 .thread-head button { font-size: 1rem; padding: 0.1rem 0.5rem; }
@@ -397,9 +397,40 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 .answers:hover { background: var(--pane); border-color: var(--line); }
 
 @media (max-width: 60rem) {
-  .workspace:has(.thread) { grid-template-columns: 16.25rem minmax(0, 1fr); }
+  .workspace:has(.thread) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr); }
   .workspace:has(.thread) > .pane { display: none; }
 }
 @media (max-width: 44rem) {
-  .workspace:has(.thread) { grid-template-columns: 1fr; }
+  .workspace:has(.thread) { grid-template-columns: 3.25rem minmax(0, 1fr); }
+}
+
+/* --- Organizations ---------------------------------------------------------- */
+
+.workspace { grid-template-columns: 4rem 16.25rem minmax(0, 1fr); }
+.rail { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.75rem 0; background: var(--rail-top); overflow-y: auto; min-height: 0; }
+.badge {
+  width: 2.4rem; height: 2.4rem; padding: 0; border-radius: 9px; border: 2px solid transparent;
+  background: var(--rail-hover); color: var(--rail-strong); font-weight: 900; font-size: 1.05rem;
+}
+.badge:hover { border-color: var(--rail-ink); }
+.badge.current { background: var(--rail-strong); color: var(--rail-top); box-shadow: 0 0 0 2px var(--rail-top), 0 0 0 4px var(--rail-strong); }
+.badge.add { background: transparent; color: var(--rail-ink); border: 1px dashed var(--rail-line); font-weight: 400; font-size: 1.3rem; }
+.organization { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.1rem 0.6rem 0.6rem 1rem; margin-bottom: 0.3rem; border-bottom: 1px solid var(--rail-line); }
+.organization strong { color: var(--rail-strong); font-size: 1.05rem; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.organization button { flex: 0 0 auto; color: var(--rail-ink); font-size: 0.78rem; padding: 0.1rem 0.4rem; }
+.organization button:hover { background: var(--rail-hover); color: var(--rail-strong); border-color: transparent; }
+
+body.chat main > .notice { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
+body.chat .editor { width: min(28rem, 100%); background: var(--pane); color: var(--ink); }
+.editor h1, .editor h2 { margin: 0 0 0.3rem; font-size: 1.25rem; font-weight: 900; }
+.asking { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.9rem; }
+.asking input { width: 100%; }
+.asking .problem { margin: 0; }
+.asking .actions { display: flex; gap: 0.5rem; }
+.welcome { flex: 1 1 auto; display: grid; place-items: center; padding: 1rem; background: var(--page); }
+
+@media (max-width: 44rem) {
+  .workspace { grid-template-columns: 3.25rem minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .rail { grid-row: 1 / span 2; }
+  .badge { width: 2.1rem; height: 2.1rem; }
 }

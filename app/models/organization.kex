@@ -1,0 +1,18 @@
+# A group of people with their own channels and private chats. Nothing in
+# one organization can be seen from another.
+module App.Models.Organization
+
+record Organization do
+  id : String
+  # The name as it appears in addresses: /acme/channels/general.
+  slug : String = ""
+  name : String = ""
+end
+
+# Words an organization's address cannot be, because the application's own
+# addresses start with them.
+let RESERVED = ["signin", "signout", "register", "live", "metro", "public", "channels", "dm"]
+
+# The address form of a name: its letters and digits, lower case.
+slugged : String -> String
+let slugged(name) = name.trim.lowerCase.chars.filter { |char| char.lower? || char.digit? }.map { |char| "${char}" }.join("")

@@ -10,5 +10,7 @@ let tables = [
   DB.Schema.Sessions.definition,
   DB.Schema.Conversations.definition,
   DB.Schema.Messages.definition,
-  DB.Schema.Reactions.definition
+  DB.Schema.Reactions.definition,
+  DB.Schema.Organizations.definition,
+  DB.Schema.Memberships.definition
 ]

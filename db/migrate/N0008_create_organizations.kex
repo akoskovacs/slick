@@ -1,0 +1,48 @@
+# Organizations: every channel and private chat belongs to one, and only its
+# members can see it. Whoever was here before organizations were is put in
+# one called Slick, with every conversation there was; a database with
+# nobody in it starts with none, and the first person makes their own.
+module DB.Migrate.N0008CreateOrganizations
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addColumn, addIndex, runSql]
+
+let change = Migration.define :create_organizations, follows: :add_message_threads do
+  createTable(:organizations) do |t|
+    [
+      t.text(:id, primaryKey: true),
+      t.text(:slug),
+      t.text(:name),
+      t.text(:created_by, default: ""),
+      t.text(:created_at)
+    ]
+  end
+  addIndex(:organizations, [:slug], unique: true)
+  createTable(:memberships) do |t|
+    [
+      t.text(:id, primaryKey: true),
+      t.text(:organization_id),
+      t.text(:user_id),
+      t.text(:joined_at)
+    ]
+  end
+  addIndex(:memberships, [:organization_id, :user_id], unique: true)
+  addIndex(:memberships, [:user_id])
+  addColumn(:conversations) do |t| t.text(:organization_id, default: "") end
+  runSql(
+    "INSERT INTO organizations (id, slug, name, created_at) SELECT 'slick', 'slick', 'Slick', '1970-01-01T00:00:00Z' WHERE EXISTS (SELECT 1 FROM users)",
+    undo: "DELETE FROM organizations WHERE id = 'slick'"
+  )
+  runSql(
+    "INSERT INTO memberships (id, organization_id, user_id, joined_at) SELECT 'slick:' || id, 'slick', id, '1970-01-01T00:00:00Z' FROM users",
+    undo: "DELETE FROM memberships WHERE organization_id = 'slick'"
+  )
+  runSql(
+    "UPDATE conversations SET organization_id = 'slick', slug = 'slick' || slug WHERE EXISTS (SELECT 1 FROM users)",
+    undo: "UPDATE conversations SET organization_id = '', slug = substr(slug, 6) WHERE organization_id = 'slick'"
+  )
+  runSql(
+    "DELETE FROM conversations WHERE organization_id = ''",
+    undo: "INSERT INTO conversations (id, kind, slug, title, topic, created_at) SELECT 'general', 'channel', '#general', 'general', 'Company-wide announcements and chatter', '1970-01-01T00:00:00Z' WHERE NOT EXISTS (SELECT 1 FROM conversations WHERE id = 'general')"
+  )
+end

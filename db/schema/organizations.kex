@@ -1,0 +1,20 @@
+# The `organizations` table. See db/migrate/N0008_create_organizations.kex.
+module DB.Schema.Organizations
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :organizations do |t|
+  [
+    t.text(:id, primaryKey: true),
+    t.text(:slug),
+    t.text(:name),
+    t.text(:created_by, default: ""),
+    t.text(:created_at)
+  ]
+end
+
+let table = DB.Schema.Organizations.definition.table
+
+let id = DB.Schema.Organizations.definition.textColumn(:id)
+let slug = DB.Schema.Organizations.definition.textColumn(:slug)
