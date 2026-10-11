@@ -89,7 +89,7 @@ foul handled(statuses, user, tab, entries) do
   match field(entries, "event") do
     "open" => opened(user, tab, field(entries, "id"))
     "direct" => whispered(user, tab, field(entries, "user"))
-    "found" => (Tab { ...settled(tab), founding?: true }, false)
+    "found" => (Tab { ...settled(tab), dialog: "channel" }, false)
     "create" => established(user, tab, field(entries, "title").trim.lowerCase)
     "send" => sent(statuses, user, tab, field(entries, "body").trim)
     "typing" => typing(statuses, user, tab)
@@ -472,15 +472,15 @@ private do
   # argument when compiled, and fail as `undef` when run (kexhq/kex#451).
   established : User -> Tab -> String -> (Tab, Bool)
   foul established(user, tab, title) do
-    let refused = Tab { ...settled(tab), founding?: true }
+    let refused = Tab { ...settled(tab), dialog: "channel" }
     let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
-    return (Tab { ...refused, channelProblem: problems.first.or("") }, false) if !problems.empty?
+    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => match Conversations.founded(organization.id, title, user.id) do
         Ok(channel) => return (Tab { organization: organization.id, conversation: channel.id }, true)
-        Error(_) => return (Tab { ...refused, channelProblem: "There is already a channel called ${title}." }, false)
+        Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)
       end
     end
   end

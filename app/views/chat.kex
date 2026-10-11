@@ -96,7 +96,6 @@ end
 let layout = Template.html(Kex.embed("layouts/application.html.ket"))
 let frame = Template.html(Kex.embed("chat/index.html.ket"))
 let entryPartial = Template.html(Kex.embed("chat/_entry.html.ket"))
-let foundingPartial = Template.html(Kex.embed("chat/_founding.html.ket"))
 let headingPartial = Template.html(Kex.embed("chat/_heading.html.ket"))
 let badgePartial = Template.html(Kex.embed("chat/_badge.html.ket"))
 let botPartial = Template.html(Kex.embed("chat/_bot.html.ket"))
@@ -153,7 +152,6 @@ let index(tab, user, organizations, organization, channels, people, online, bots
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
     entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
   }
-  let founding = tab.founding? then foundingPartial(tab.channelProblem) else ""
   let beside = thread.empty? then "" else threadPane(user, people, reactions, thread)
   let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
   let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
@@ -161,7 +159,7 @@ let index(tab, user, organizations, organization, channels, people, online, bots
   # know of a status set since.
   let me = people.find { |person| person.id == user.id }.or(user)
   frame(
-    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), founding, personLines.join("\n"), robotLines.join("\n"), topbar(me),
+    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), personLines.join("\n"), robotLines.join("\n"), topbar(me),
     pane(tab, user, people, conversation, messages, reactions, thread.empty? && tab.dialog.empty?, doing) + beside,
     asking(tab, organization, people, bots, me), place, caption
   )
@@ -210,6 +208,18 @@ private do
         })
       }
       return botsPartial(organization.name, rows.join("\n"), tab.dialogProblem, tab.secret, tab.secretFor)
+    end
+
+    if tab.dialog == "channel"
+      return dialogPartial(
+        "Create a channel",
+        "Everyone in ${organization.name} can read it and write in it. Lower-case letters, digits and dashes.",
+        "create",
+        "title",
+        "new-channel",
+        tab.dialogProblem,
+        "Create"
+      )
     end
 
     return dialogPartial("Create an organization", "Its own channels and people, apart from every other.", "charter", "name", "Acme", tab.dialogProblem, "Create") if tab.dialog == "organization"

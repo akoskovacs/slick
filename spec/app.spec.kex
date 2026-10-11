@@ -264,13 +264,16 @@ describe("Slick") do
 
       # A channel: created, refused when malformed or taken, visible to all.
       let (refused, _) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "Bad Name!")])
-      Assert.truthy(refused.founding?)
-      Assert.truthy(!refused.channelProblem.empty?)
+      Assert.equal(refused.dialog, "channel")
+      Assert.truthy(!refused.dialogProblem.empty?)
+      let (asking, _) = stepped(statuses, ada, Tab {}, [("event", "found")])
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, asking).contains?("aria-label=\"Create a channel\""))
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, refused).contains?("role=\"alert\""))
       let (inRandom, created) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "random")])
       Assert.truthy(created)
       Assert.truthy(inRandom.conversation != "general")
       let (taken, _) = stepped(statuses, bob, Tab {}, [("event", "create"), ("title", "random")])
-      Assert.truthy(taken.channelProblem.contains?("already"))
+      Assert.truthy(taken.dialogProblem.contains?("already"))
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("# random"))
 
       # A topic, on a channel.

@@ -1,12 +1,12 @@
 ---
-params: [failure: String, notice: String, rail: String, organization: String, channels: String, founding: String, people: String, robots: String, bar: String, pane: String, dialog: String, place: String, caption: String]
+params: [failure: String, notice: String, rail: String, organization: String, channels: String, people: String, robots: String, bar: String, pane: String, dialog: String, place: String, caption: String]
 ---
 <%== bar %>
 <% if !failure.empty? %>
-<p class="failure" role="alert"><%= failure %></p>
+  <p class="failure" role="alert"><%= failure %></p>
 <% end %>
 <% if !notice.empty? %>
-<p class="notice" role="status"><%= notice %></p>
+  <p class="notice" role="status"><%= notice %></p>
 <% end %>
 <div class="workspace" data-live-path="<%= place %>" data-live-title="<%= caption %>">
   <nav class="rail" aria-label="Organizations">
@@ -22,7 +22,6 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
       <h2>Channels</h2>
       <button type="button" class="quiet" data-event="found" title="New channel">+</button>
     </div>
-    <%== founding %>
     <ul class="entries"><%== channels %></ul>
     <div class="sidebar-head"><h2>Direct messages</h2></div>
     <ul class="entries people"><%== people %></ul>
