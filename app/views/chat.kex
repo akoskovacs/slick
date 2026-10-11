@@ -64,6 +64,9 @@ record Bubble do
   answers : String = ""
   # Whether a thread can be opened from it.
   threadable? : Bool = true
+  # Whether it carries on from the message above — the same person, soon
+  # after — and so is shown without their name and picture again.
+  continued? : Bool = false
 end
 
 # One emoji under a message: how many put it there, and whether I did.
@@ -173,8 +176,8 @@ private do
   # The thread beside the conversation: its first message, then the replies.
   threadPane : User -> [User] -> [Reaction] -> [Message] -> String
   let threadPane(user, people, reactions, thread) do
-    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, true) }.join("")
-    let followups = thread.drop(1).map { |message| bubble(message, user, people, reactions, true) }
+    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, true, false) }.join("")
+    let followups = sequence(thread.drop(1), "", 0, user, people, reactions, true)
     let summary = followups.empty? then "No replies yet" else tallied(followups.count)
     threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true))
   end
@@ -184,7 +187,7 @@ private do
   let pane(tab, user, people, Just(conversation), messages, reactions, alone?) do
     let title = titled(conversation, user, people)
     let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
-    let bubbles = messages.map { |message| bubble(message, user, people, reactions, false) }
+    let bubbles = sequence(messages, "", 0, user, people, reactions, false)
     let emptied = messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
     "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div>${composerPartial("send", "message-box", "Message ${title}", picked("#message-box"), alone?)}</section>"
   end
@@ -199,10 +202,24 @@ private do
     people.find { |person| person.id == other }.map { |person| person.shown }.or("Private chat")
   end
 
+  # How long after a message the same person's next one still counts as
+  # carrying on from it, in milliseconds.
+  let RUN = 300000
+
+  # Messages in order, each knowing whether it carries on from the one
+  # before: consecutive messages of one person are shown as one block, under
+  # one name. `lastUser` and `lastAt` are the message before.
+  sequence : [Message] -> String -> Integer -> User -> [User] -> [Reaction] -> Bool -> [String]
+  let sequence([], lastUser, lastAt, user, people, reactions, inThread?) = []
+  let sequence([message | rest], lastUser, lastAt, user, people, reactions, inThread?) do
+    let carries = message.userId == lastUser && message.sentAt - lastAt < RUN
+    [bubble(message, user, people, reactions, inThread?, carries)] + sequence(rest, message.userId, message.sentAt, user, people, reactions, inThread?)
+  end
+
   # `inThread?` is whether it is shown in the thread pane, where a message
   # has its own element id and no way to open the thread it is already in.
-  bubble : Message -> User -> [User] -> [Reaction] -> Bool -> String
-  let bubble(message, user, people, reactions, inThread?) do
+  bubble : Message -> User -> [User] -> [Reaction] -> Bool -> Bool -> String
+  let bubble(message, user, people, reactions, inThread?, carries) do
     let writer = people.find { |person| person.id == message.userId }
     let author = writer.map { |person| person.shown }.or("Someone")
     let badged = writer.map { |person| person.bot? }.or(false) then "BOT" else ""
@@ -213,7 +230,7 @@ private do
     }
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
-      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, author: author, badged: badged, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.html(message.body), own?: message.userId == user.id },
+      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, continued?: carries, author: author, badged: badged, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.html(message.body), own?: message.userId == user.id },
       chips.join(""), offers.join("")
     )
   end

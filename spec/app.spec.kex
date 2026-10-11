@@ -118,6 +118,15 @@ describe("Slick") do
     let (_, emptyChanged) = stepped(database, ada, Tab {}, [("event", "send"), ("body", "   ")])
     Assert.falsy(emptyChanged)
 
+    # Consecutive messages of one person are one block: the name is there once.
+    stepped(database, ada, Tab {}, [("event", "send"), ("body", "and one more thing")])
+    let block = App.Live.Chat.markup(database, bob, Tab {})
+    Assert.equal(block.split("<strong>Ada</strong>").count, 2)
+    Assert.truthy(block.contains?("class=\"message continued\""))
+    stepped(database, bob, Tab {}, [("event", "send"), ("body", "bob cuts in")])
+    stepped(database, ada, Tab {}, [("event", "send"), ("body", "ada again")])
+    Assert.equal(App.Live.Chat.markup(database, eve, Tab {}).split("<strong>Ada</strong>").count, 3)
+
     # A channel: created, refused when malformed or taken, visible to all.
     let (refused, _) = stepped(database, ada, Tab {}, [("event", "create"), ("title", "Bad Name!")])
     Assert.truthy(refused.founding?)

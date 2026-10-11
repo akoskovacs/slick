@@ -469,3 +469,13 @@ body.chat .editor { width: min(28rem, 100%); background: var(--pane); color: var
 .thread .formats .hint { display: none; }
 .asking select { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--pane); color: var(--ink); font: inherit; }
 .bots .hint { flex: 0 0 auto; font-size: 0.78rem; }
+
+/* --- Consecutive messages of one person, as one block ------------------------ */
+
+.message { padding-top: 0.5rem; padding-bottom: 0.1rem; }
+.message.continued { padding-top: 0.1rem; }
+.gutter {
+  flex: 0 0 2.25rem; width: 2.25rem; padding-top: 0.25rem; text-align: right;
+  font-size: 0.68rem; color: var(--muted); font-variant-numeric: tabular-nums; visibility: hidden;
+}
+.message.continued:hover .gutter { visibility: visible; }
