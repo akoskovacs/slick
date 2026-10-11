@@ -111,13 +111,37 @@ describe("Slick") do
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do
       Assert.equal(DB.Seeds.planted(Test), Ok([]))
       Assert.equal(DB.Seeds.planted(Production), Ok([]))
-      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(3))
+      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(4))
       Assert.equal(DB.Seeds.planted(Development), Ok([]))
 
       let token = App.Services.Authentication.signIn("ada@example.com", DB.Seeds.PASSWORD).try
       let ada : User = App.Services.Authentication.current(Just(token)).try
       let statuses = Process.spawn(Metro.Live.Presence.Presence {})
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("Welcome to Acme 👋"))
+      let claude : User = App.Services.Bots.bearer(Just("Bearer ${DB.Seeds.BOT_TOKEN}")).try
+      Assert.equal(claude.name, "claude")
+
+      # The bot reads a channel through the API, and a thread when it asks
+      # for one — but only a thread of the conversation it names.
+      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}))
+      let asBot = [("Authorization", "Bearer ${DB.Seeds.BOT_TOKEN}")]
+      let general = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/general/messages", asBot, ""))
+      Assert.equal(general.code, 200)
+      let said = general.payload.to(String).or("")
+      Assert.truthy(said.contains?("The checklist") && !said.contains?("I can take the migration."))
+      # A message's fields come in alphabetical order: its id after its body.
+      let rootId = said.split("The checklist").last.or("").split("\"id\":\"").second.or("").split("\"").first.or("")
+      let thread = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/general/messages?thread=${rootId}", asBot, ""))
+      Assert.truthy(thread.payload.to(String).or("").contains?("I can take the migration."))
+      let elsewhere = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/random/messages?thread=${rootId}", asBot, ""))
+      Assert.equal(elsewhere.payload.to(String).or(""), "[]")
+
+      # It is told which private chats it has, once somebody has opened one.
+      let before = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, ""))
+      Assert.equal(before.payload.to(String).or(""), "[]")
+      stepped(statuses, ada, Tab {}, [("event", "direct"), ("user", claude.id)])
+      let chats = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, "")).payload.to(String).or("")
+      Assert.truthy(chats.contains?("\"person\":\"${ada.id}\"") && chats.contains?("\"name\":\"Ada\""))
     end
     FS.File.delete(file)
   end

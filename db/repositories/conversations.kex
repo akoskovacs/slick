@@ -99,6 +99,24 @@ foul between(organizationId: String, one: String, other: String) -> Result<Conve
   end
 end
 
+# The private chats a person has in an organization, whichever of the two
+# they are in it.
+foul directsOf(organizationId: String, userId: String) -> Result<[Conversation], String> do
+  let asFirst = Database.select().from(DB.Schema.Conversations)
+    .where(DB.Schema.Conversations.kind.eq("direct"))
+    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
+    .where(DB.Schema.Conversations.firstUser.eq(userId))
+    .all
+    .try
+  let asSecond = Database.select().from(DB.Schema.Conversations)
+    .where(DB.Schema.Conversations.kind.eq("direct"))
+    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
+    .where(DB.Schema.Conversations.secondUser.eq(userId))
+    .all
+    .try
+  return Ok((asFirst + asSecond).map { |row| decoded(row) })
+end
+
 # Sets a channel's topic; whether there was such a channel. A private chat
 # has no topic, and the condition on `kind` keeps it that way.
 foul retitled(id: String, topic: String) -> Result<Bool, String> do

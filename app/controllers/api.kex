@@ -5,10 +5,12 @@
 #   GET  /api/me
 #   GET  /api/:organization/channels
 #   GET  /api/:organization/channels/:name/messages?limit=50&after=<sentAt>
+#   GET  /api/:organization/channels/:name/messages?thread=<message id>
 #   POST /api/:organization/channels/:name/messages    {"body": "…", "thread": "<message id>"}
 #                                                      or {"blocks": […]} in place of "body"
 #   POST /api/:organization/channels/:name/reactions   {"message": "<id>", "emoji": "🎉"}
 #   POST /api/:organization/channels/:name/status      {"text": "Deploying", "seconds": 30}
+#   GET  /api/:organization/dm                         the private chats it has
 #   GET  /api/:organization/dm/:person/messages
 #   POST /api/:organization/dm/:person/messages
 #
@@ -75,13 +77,42 @@ foul channelList(request) do
   return request.json(listed)
 end
 
+# The private chats the bot has in an organization: who each is with. A
+# chat is there once somebody has opened one with the bot; asking does not
+# make any.
+chatList : WebRequest -> WebRequest
+foul chatList(request) do
+  let bot = userFor(request)
+  let slug = request.param("organization").or("")
+  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
+
+  let people : [User] = Users.everyone.or([])
+  let found : [Conversation] = Conversations.directsOf(tab.organization, bot.id).or([])
+  let listed : [Any] = found.map { |chat|
+    let other = chat.firstUser == bot.id then chat.secondUser else chat.firstUser
+    let person = people.find { |each| each.id == other }
+    {
+      "id": chat.id,
+      "person": other,
+      "name": person.map { |each| each.shown }.or("Someone"),
+      "bot": person.map { |each| each.bot? }.or(false)
+    }
+  }
+  return request.json(listed)
+end
+
 # The newest messages of a conversation — a channel, or the private chat
-# with a person — oldest first.
+# with a person — oldest first. Replies are not among them: `thread` asks
+# for one thread instead, the message it hangs from and then its replies.
 history : WebRequest -> WebRequest
 foul history(request) do
-  match placed(request, "") do
+  let thread = request.query("thread").or("").trim
+  match placed(request, thread) do
     Error(reply) => return reply
     Ok((tab, conversation)) => do
+      return request.json(unfolded(conversation, tab.thread)) if !thread.empty?
+
       let asked = request.query("limit").or("50").to(Integer).or(50)
       let limit = asked < 1 || asked > MOST then MOST else asked
       let since = request.query("after").or("0").to(Integer).or(0)
@@ -151,6 +182,24 @@ foul statusSet(request) do
 end
 
 private do
+  # A thread as the API tells it: the message it hangs from, then the
+  # replies, oldest first. Nothing, when the message is not one of this
+  # conversation's.
+  foul unfolded(conversation: Conversation, rootId: String) -> [Any] do
+    match Messages.single(rootId) do
+      Ok(Just(root)) => do
+        let none : [Any] = []
+        return none if root.conversationId != conversation.id
+
+        let people : [User] = Users.everyone.or([])
+        let replies : [Message] = Messages.answering(root.id).or([])
+        let listed : [Any] = ([root] + replies).map { |message| described(message, people) }
+        return listed
+      end
+      _ => return []
+    end
+  end
+
   failed : WebRequest -> Integer -> String -> WebRequest
   let failed(request, status, reason) = request.json(status, {"error": reason})
 
