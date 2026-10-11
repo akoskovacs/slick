@@ -50,3 +50,19 @@ tey seed       # development: Acme, ada@example.com / "correct horse", a bot
 
 Seeds are apart from the migrations (`db/seeds.kex`), and planting them
 twice plants once. Only development has any.
+
+## Docker
+
+```sh
+docker compose up --build    # http://localhost:4000, on PostgreSQL
+```
+
+`docker-compose.yml` runs the application beside a PostgreSQL 17 and keeps
+the data in a volume; `Dockerfile` is the application on the Kex toolchain
+image, with the ODBC drivers it reaches a database through.
+
+| Variable | |
+| --- | --- |
+| `POSTGRES_PASSWORD` | the database's password; set it anywhere but your own machine |
+| `KEX_IMAGE` | the Kex toolchain image to build on; `ghcr.io/kexhq/kex:rc` unless set |
+| `GITHUB_TOKEN` | fetches dependencies kept in private repositories, at build time only |
