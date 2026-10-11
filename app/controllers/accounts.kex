@@ -2,14 +2,14 @@
 module App.Controllers.Accounts
 
 using Metro.WebRequest, only: [WebRequest]
-using App.Controllers.Application, only: [databaseFor, page, COOKIE]
+using App.Controllers.Application, only: [page, COOKIE]
 
 foul signInPage(request: WebRequest) -> WebRequest = page(request, 200, App.Views.Auth.signin("", []))
 
 signIn : WebRequest -> WebRequest
 foul signIn(request) do
   let email = request.param("email").or("")
-  match App.Services.Authentication.signIn(databaseFor(request), email, request.param("password").or("")) do
+  match App.Services.Authentication.signIn(email, request.param("password").or("")) do
     Ok(token) => return entered(request, token)
     Error(problems) => return page(request, 422, App.Views.Auth.signin(email, problems))
   end
@@ -17,7 +17,7 @@ end
 
 signOut : WebRequest -> WebRequest
 foul signOut(request) do
-  App.Services.Authentication.signOut(databaseFor(request), request.cookie(COOKIE))
+  App.Services.Authentication.signOut(request.cookie(COOKIE))
   return request.withCookie(Metro.Cookies.cleared(COOKIE)).redirect("/signin")
 end
 
@@ -28,7 +28,7 @@ register : WebRequest -> WebRequest
 foul register(request) do
   let name = request.param("name").or("")
   let email = request.param("email").or("")
-  match App.Services.Authentication.register(databaseFor(request), name, email, request.param("password").or("")) do
+  match App.Services.Authentication.register(name, email, request.param("password").or("")) do
     Ok(token) => return entered(request, token)
     Error(problems) => return page(request, 422, App.Views.Auth.register(name, email, problems))
   end

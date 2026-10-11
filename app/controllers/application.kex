@@ -1,12 +1,12 @@
 # What every controller shares: who is asking, what the application runs on,
 # and the plugs that decide who gets as far as an action.
 #
-# The database, the hub and the statuses board are put on every request by
-# the router's first pipeline (config/routes.kex); these read them back,
-# with their types.
+# The hub and the statuses board are put on every request by the router's
+# first pipeline (config/routes.kex); these read them back, with their
+# types. The database is not among them: queries reach it on their own,
+# through `Harmat.Connection`.
 module App.Controllers.Application
 
-using Harmat.Db, only: [Db]
 using Metro.WebRequest, only: [WebRequest, Plug, plug]
 using Metro.Live.Hub, only: [Hub]
 using Metro.Live.Presence, only: [Presence]
@@ -14,12 +14,6 @@ using App.Models.User, only: [User]
 
 # The cookie a session's token travels in.
 let COOKIE = "slick_session"
-
-databaseFor : WebRequest -> Db
-foul databaseFor(request) do
-  let found : Db = request.assigned(:database).try
-  return found
-end
 
 hubFor : WebRequest -> Server<Hub>
 foul hubFor(request) do
@@ -47,7 +41,7 @@ foul page(request, status, markup) = request.html(status, Metro.Assets.marked(ma
 
 # Who a request's session cookie says is asking.
 visitor : WebRequest -> User?
-foul visitor(request) = App.Services.Authentication.current(databaseFor(request), request.cookie(COOKIE))
+foul visitor(request) = App.Services.Authentication.current(request.cookie(COOKIE))
 
 # Lets a signed-in request through, noting who it is; sends anyone else to
 # sign in.
@@ -67,7 +61,7 @@ end
 # this side of the application, so there is no request another site could
 # forge and no origin to check.
 foul bearer() -> Plug = plug do |request|
-  match App.Services.Bots.bearer(databaseFor(request), request.header("Authorization")) do
+  match App.Services.Bots.bearer(request.header("Authorization")) do
     Just(bot) => request.assign(:user, bot)
     None => request.json(401, {"error": "Send a bot's token as: Authorization: Bearer <token>"})
   end

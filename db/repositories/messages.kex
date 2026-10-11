@@ -1,80 +1,74 @@
 # What was said.
 #
-#   MessageRepository { db: db }.latest(conversation.id, 200)
+#   DB.Repositories.Messages.latest(conversation.id, 200)
 module DB.Repositories.Messages
 
-using Harmat.Db, only: [Db]
+using Harmat.Db, as: Db
 using App.Models.Message, only: [Message]
 
-record MessageRepository do
-  db : Db
+# The newest `limit` messages of a conversation, oldest first. Replies are
+# not among them: they are read with the thread they belong to.
+foul latest(conversationId: String, limit: Integer) -> Result<[Message], String> do
+  return Db.select().from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.conversationId.eq(conversationId))
+    .where(DB.Schema.Messages.parentId.eq(""))
+    .orderBy(descending: [:sent_at, :id])
+    .limit(limit)
+    .all
+    .map { |rows| rows.map { |row| decoded(row) }.reverse }
 end
 
-make MessageRepository do
-  # The newest `limit` messages of a conversation, oldest first. Replies are
-  # not among them: they are read with the thread they belong to.
-  foul latest(conversationId: String, limit: Integer) -> Result<[Message], String> do
-    return @db.select().from(DB.Schema.Messages)
-      .where(DB.Schema.Messages.conversationId.eq(conversationId))
-      .where(DB.Schema.Messages.parentId.eq(""))
-      .orderBy(descending: [:sent_at, :id])
-      .limit(limit)
-      .all
-      .map { |rows| rows.map { |row| decoded(row) }.reverse }
-  end
+# The replies to a message, oldest first.
+foul answering(rootId: String) -> Result<[Message], String> do
+  return Db.select().from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.parentId.eq(rootId))
+    .orderBy([:sent_at, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
 
-  # The replies to a message, oldest first.
-  foul answering(rootId: String) -> Result<[Message], String> do
-    return @db.select().from(DB.Schema.Messages)
-      .where(DB.Schema.Messages.parentId.eq(rootId))
-      .orderBy([:sent_at, :id])
-      .all
-      .map { |rows| rows.map { |row| decoded(row) } }
-  end
+# Stores a message, stamped now. With a parent it is a reply, and the
+# parent's count is brought up to date — counted again, not added to, so
+# two replies at once cannot leave it wrong.
+foul said(conversationId: String, userId: String, body: String, parent: String) -> Result<Message, String> do
+  let moment = BEAM.erlang.system_time(:millisecond)
+  let message = Message {
+    id: "m${moment}-${BEAM.erlang.unique_integer([:positive])}",
+    conversationId: conversationId,
+    userId: userId,
+    body: body,
+    sentAt: moment,
+    sentOn: "${DateTime.now()}",
+    parentId: parent
+  }
+  let row = {
+    id: message.id,
+    conversation_id: conversationId,
+    user_id: userId,
+    body: body,
+    sent_at: moment,
+    sent_on: message.sentOn,
+    parent_id: parent
+  }
+  let stored = Db.insert(DB.Schema.Messages)
+    .values(row)
+    .run
+  return stored.map { |_| message } if stored.error? || parent.empty?
 
-  # Stores a message, stamped now. With a parent it is a reply, and the
-  # parent's count is brought up to date — counted again, not added to, so
-  # two replies at once cannot leave it wrong.
-  foul said(conversationId: String, userId: String, body: String, parent: String) -> Result<Message, String> do
-    let moment = BEAM.erlang.system_time(:millisecond)
-    let message = Message {
-      id: "m${moment}-${BEAM.erlang.unique_integer([:positive])}",
-      conversationId: conversationId,
-      userId: userId,
-      body: body,
-      sentAt: moment,
-      sentOn: "${DateTime.now()}",
-      parentId: parent
-    }
-    let row = {
-      id: message.id,
-      conversation_id: conversationId,
-      user_id: userId,
-      body: body,
-      sent_at: moment,
-      sent_on: message.sentOn,
-      parent_id: parent
-    }
-    let stored = @db.insert(DB.Schema.Messages)
-      .values(row)
-      .run
-    return stored.map { |_| message } if stored.error? || parent.empty?
+  let replies = answering(parent).try
+  return Db.update(DB.Schema.Messages)
+    .set({reply_count: replies.count})
+    .where(DB.Schema.Messages.id.eq(parent))
+    .run
+    .map { |_| message }
+end
 
-    let replies = this.answering(parent).try
-    return @db.update(DB.Schema.Messages)
-      .set({reply_count: replies.count})
-      .where(DB.Schema.Messages.id.eq(parent))
-      .run
-      .map { |_| message }
-  end
-
-  # One message, or `None`.
-  foul single(id: String) -> Result<Message?, String> do
-    return @db.select().from(DB.Schema.Messages)
-      .where(DB.Schema.Messages.id.eq(id))
-      .first
-      .map { |row| row.map { |found| decoded(found) } }
-  end
+# One message, or `None`.
+foul single(id: String) -> Result<Message?, String> do
+  return Db.select().from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.id.eq(id))
+    .first
+    .map { |row| row.map { |found| decoded(found) } }
 end
 
 private do

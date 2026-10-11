@@ -4,48 +4,47 @@
 # whoever reads the database cannot act as a bot.
 module App.Services.Bots
 
-using Harmat.Db, only: [Db]
 using App.Models.User, only: [User]
-using DB.Repositories.Users, only: [UserRepository]
+using DB.Repositories.Users, as: Users
 
 # What every token starts with, so one found lying around can be recognised.
 let PREFIX = "slick_bot_"
 
 # Makes a bot: an organization's when `organizationId` names one, and
 # otherwise this person's own. The bot, and its token.
-built : Db -> User -> String -> String -> Result<(User, String), String>
-foul built(database, maker, organizationId, name) do
+built : User -> String -> String -> Result<(User, String), String>
+foul built(maker, organizationId, name) do
   let id = "b${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
   let bot = User {
     id: id, email: "${id}@bots.invalid", name: name, kind: "bot",
     ownerId: organizationId.empty? then maker.id else "", ownerOrganizationId: organizationId
   }
-  return UserRepository { db: database }.automated(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }
+  return Users.automated(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }
 end
 
 # Gives a bot a new token; the old one stops working. The bot has to be
 # this person's own, or belong to `organizationId` — which the caller has
 # already made sure this person is in.
-renewed : Db -> User -> String -> String -> Result<String, String>
-foul renewed(database, asker, organizationId, botId) do
+renewed : User -> String -> String -> Result<String, String>
+foul renewed(asker, organizationId, botId) do
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
   let digest = Metro.Auth.Token.digest(token)
-  let own = UserRepository { db: database }.rekeyed(botId, asker.id, digest).or(false)
+  let own = Users.rekeyed(botId, asker.id, digest).or(false)
   return Ok(token) if own
   return Error("That is not one of your bots.") if organizationId.empty?
 
-  let shared = UserRepository { db: database }.rekeyedFor(botId, organizationId, digest).or(false)
+  let shared = Users.rekeyedFor(botId, organizationId, digest).or(false)
   shared then Ok(token) else Error("That is not one of your bots, or of this organization's.")
 end
 
 # The bot an `Authorization: Bearer …` header speaks for, if any.
-bearer : Db -> String? -> User?
-foul bearer(database, header) do
+bearer : String? -> User?
+foul bearer(header) do
   let token = header.or("").split("Bearer ").drop(1).first.or("").trim
   return None if token.empty?
 
-  match UserRepository { db: database }.bearing(Metro.Auth.Token.digest(token)) do
+  match Users.bearing(Metro.Auth.Token.digest(token)) do
     Ok(Just(bot)) => return Just(bot)
     _ => return None
   end

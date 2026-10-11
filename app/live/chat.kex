@@ -12,7 +12,6 @@
 # nothing.
 module App.Live.Chat
 
-using Harmat.Db, only: [Db]
 using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field]
 using Metro.Validation, only: [rules, validates, present, sized, passing]
@@ -21,12 +20,12 @@ using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
-using DB.Repositories.Conversations, only: [ConversationRepository]
-using DB.Repositories.Memberships, only: [MembershipRepository]
-using DB.Repositories.Messages, only: [MessageRepository]
-using DB.Repositories.Organizations, only: [OrganizationRepository]
-using DB.Repositories.Reactions, only: [ReactionRepository]
-using DB.Repositories.Users, only: [UserRepository]
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Memberships, as: Memberships
+using DB.Repositories.Messages, as: Messages
+using DB.Repositories.Organizations, as: Organizations
+using DB.Repositories.Reactions, as: Reactions
+using DB.Repositories.Users, as: Users
 
 # How many messages of a conversation a tab is shown.
 let WINDOW = 200
@@ -57,26 +56,26 @@ end
 #
 # `statuses` is the board of what people are in the middle of — typing, or
 # whatever a bot says it is doing: `Metro.Live.Presence`.
-markup : Db -> Server<Presence> -> User -> Tab -> String
-foul markup(database, statuses, user, tab) do
-  match home(database, user, tab) do
+markup : Server<Presence> -> User -> Tab -> String
+foul markup(statuses, user, tab) do
+  match home(user, tab) do
     None => return App.Views.Chat.welcome(tab, user)
     Just(organization) => do
-      let mine : [Organization] = organizations(database, user)
-      let roster : [String] = MembershipRepository { db: database }.roster(organization.id).or([])
-      let everyone : [User] = UserRepository { db: database }.everyone.or([])
+      let mine : [Organization] = organizations(user)
+      let roster : [String] = Memberships.roster(organization.id).or([])
+      let everyone : [User] = Users.everyone.or([])
       let people = everyone.filter { |person| roster.contains?(person.id) }
-      let channels : [Conversation] = ConversationRepository { db: database }.channels(organization.id).or([])
+      let channels : [Conversation] = Conversations.channels(organization.id).or([])
       let now = BEAM.erlang.system_time(:millisecond)
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
-      let bots : [User] = tab.dialog == "bots" then manageable(database, user, organization) else []
-      match visible(database, user, tab) do
+      let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
+      match visible(user, tab) do
         None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, None, [], [], [], [])
         Just(conversation) => do
-          let messages : [Message] = MessageRepository { db: database }.latest(conversation.id, WINDOW).or([])
-          let reactions = ReactionRepository { db: database }.throughout(conversation.id).or([])
+          let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
+          let reactions = Reactions.throughout(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, Just(conversation), messages, reactions, unfolded(database, conversation, tab.thread), doing.reject { |note| note.member == user.id })
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, Just(conversation), messages, reactions, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
         end
       end
     end
@@ -85,35 +84,35 @@ end
 
 # Applies one event: the tab's next state, and whether something other tabs
 # show was changed — in which case they are told to refresh.
-handled : Db -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
-foul handled(database, statuses, user, tab, entries) do
+handled : Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
+foul handled(statuses, user, tab, entries) do
   match field(entries, "event") do
-    "open" => opened(database, user, tab, field(entries, "id"))
-    "direct" => whispered(database, user, tab, field(entries, "user"))
+    "open" => opened(user, tab, field(entries, "id"))
+    "direct" => whispered(user, tab, field(entries, "user"))
     "found" => (Tab { ...settled(tab), founding?: true }, false)
-    "create" => established(database, user, tab, field(entries, "title").trim.lowerCase)
-    "send" => sent(database, statuses, user, tab, field(entries, "body").trim)
-    "typing" => typing(database, statuses, user, tab)
+    "create" => established(user, tab, field(entries, "title").trim.lowerCase)
+    "send" => sent(statuses, user, tab, field(entries, "body").trim)
+    "typing" => typing(statuses, user, tab)
     "retitle" => (Tab { ...settled(tab), retitling?: true }, false)
-    "topic" => retitled(database, user, tab, field(entries, "topic").trim)
-    "react" => reacted(database, user, tab, field(entries, "message"), field(entries, "emoji"))
+    "topic" => retitled(user, tab, field(entries, "topic").trim)
+    "react" => reacted(user, tab, field(entries, "message"), field(entries, "emoji"))
     "cancel" => (settled(tab), false)
-    "thread" => threaded(database, user, tab, field(entries, "message"))
+    "thread" => threaded(user, tab, field(entries, "message"))
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
-    "reply" => replied(database, statuses, user, tab, field(entries, "body").trim)
-    "visit" => (arrived(database, user, field(entries, "path")), false)
-    "organization" => switched(database, user, tab, field(entries, "id"))
+    "reply" => replied(statuses, user, tab, field(entries, "body").trim)
+    "visit" => (arrived(user, field(entries, "path")), false)
+    "organization" => switched(user, tab, field(entries, "id"))
     "organize" => (Tab { ...settled(tab), dialog: "organization" }, false)
-    "charter" => organized(database, user, tab, field(entries, "name").trim)
+    "charter" => organized(user, tab, field(entries, "name").trim)
     "invite" => (Tab { ...settled(tab), dialog: "invite" }, false)
-    "enlist" => invited(database, user, tab, field(entries, "email").trim.lowerCase)
+    "enlist" => invited(user, tab, field(entries, "email").trim.lowerCase)
     "status" => (Tab { ...settled(tab), dialog: "status" }, false)
-    "status-set" => restyled(database, user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
-    "status-clear" => restyled(database, user, tab, "", "")
+    "status-set" => restyled(user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
+    "status-clear" => restyled(user, tab, "", "")
     "bots" => (Tab { ...settled(tab), dialog: "bots" }, false)
-    "bot-create" => botMade(database, user, tab, field(entries, "name").trim, field(entries, "owner"))
-    "bot-rekey" => botRenewed(database, user, tab, field(entries, "id"))
-    "bot-enlist" => botBrought(database, user, tab, field(entries, "id"))
+    "bot-create" => botMade(user, tab, field(entries, "name").trim, field(entries, "owner"))
+    "bot-rekey" => botRenewed(user, tab, field(entries, "id"))
+    "bot-enlist" => botBrought(user, tab, field(entries, "id"))
     _ => (tab, false)
   end
 end
@@ -141,9 +140,9 @@ let TYPING_FOR = 6000
 # Says what somebody is doing in the conversation their tab is showing, for
 # `milliseconds`; "" takes it back. Whether there was a conversation to say
 # it in.
-noting : Db -> Server<Presence> -> User -> Tab -> String -> Integer -> Bool
-foul noting(database, statuses, user, tab, text, milliseconds) do
-  match visible(database, user, tab) do
+noting : Server<Presence> -> User -> Tab -> String -> Integer -> Bool
+foul noting(statuses, user, tab, text, milliseconds) do
+  match visible(user, tab) do
     None => return false
     Just(conversation) => do
       if milliseconds <= 0
@@ -160,23 +159,23 @@ end
 # organization, either with `?thread=<message>`. Anything else, or a place
 # this person may not be, is the tab everyone starts with. A private chat is
 # started by going to it.
-arrived : Db -> User -> String -> Tab
-foul arrived(database, user, location) do
+arrived : User -> String -> Tab
+foul arrived(user, location) do
   let thread = Metro.Path.query(location, "thread").or("")
   match App.Paths.channelPath.captured(location) do
-    Just(parts) => match memberOrganization(database, user, parts.get("organization").or("")) do
+    Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
       None => return Tab {}
-      Just(organization) => match ConversationRepository { db: database }.channelCalled(organization.id, parts.get("name").or("")) do
+      Just(organization) => match Conversations.channelCalled(organization.id, parts.get("name").or("")) do
         Ok(Just(channel)) => return Tab { organization: organization.id, conversation: channel.id, thread: thread }
         _ => return Tab { organization: organization.id }
       end
     end
     None => match App.Paths.directPath.captured(location) do
       None => return Tab {}
-      Just(parts) => match memberOrganization(database, user, parts.get("organization").or("")) do
+      Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
         None => return Tab {}
         Just(organization) => do
-          let (chat, _) = whispered(database, user, Tab { organization: organization.id }, parts.get("person").or(""))
+          let (chat, _) = whispered(user, Tab { organization: organization.id }, parts.get("person").or(""))
           return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
         end
       end
@@ -185,23 +184,23 @@ foul arrived(database, user, location) do
 end
 
 # The organization at an address, if this person is in it.
-memberOrganization : Db -> User -> String -> Organization?
-foul memberOrganization(database, user, slug) do
-  match OrganizationRepository { db: database }.addressed(slug) do
-    Ok(Just(organization)) => return MembershipRepository { db: database }.affiliated?(organization.id, user.id) then Just(organization) else None
+memberOrganization : User -> String -> Organization?
+foul memberOrganization(user, slug) do
+  match Organizations.addressed(slug) do
+    Ok(Just(organization)) => return Memberships.affiliated?(organization.id, user.id) then Just(organization) else None
     _ => return None
   end
 end
 
 # The organization a tab is in: the one it names, if its person is in it,
 # and otherwise the first one they are in. `None` is somebody in none.
-home : Db -> User -> Tab -> Organization?
-foul home(database, user, tab) do
-  let mine : [String] = MembershipRepository { db: database }.affiliations(user.id).or([])
+home : User -> Tab -> Organization?
+foul home(user, tab) do
+  let mine : [String] = Memberships.affiliations(user.id).or([])
   let chosen = mine.contains?(tab.organization) then tab.organization else mine.first.or("")
   return None if chosen.empty?
 
-  match OrganizationRepository { db: database }.identified(chosen) do
+  match Organizations.identified(chosen) do
     Ok(Just(organization)) => return Just(organization)
     _ => return None
   end
@@ -209,13 +208,12 @@ end
 
 # The conversation a tab is showing, if its person may read it: it has to be
 # in the tab's organization, and theirs to read there.
-visible : Db -> User -> Tab -> Conversation?
-foul visible(database, user, tab) do
-  match home(database, user, tab) do
+visible : User -> Tab -> Conversation?
+foul visible(user, tab) do
+  match home(user, tab) do
     None => return None
     Just(organization) => do
-      let conversations = ConversationRepository { db: database }
-      let found = tab.conversation.empty? then conversations.channelCalled(organization.id, App.Models.Conversation.GENERAL) else conversations.lookup(tab.conversation)
+      let found = tab.conversation.empty? then Conversations.channelCalled(organization.id, App.Models.Conversation.GENERAL) else Conversations.lookup(tab.conversation)
       match found do
         Ok(Just(conversation)) => do
           return None if conversation.organizationId != organization.id || !conversation.admits?(user.id)
@@ -228,12 +226,11 @@ foul visible(database, user, tab) do
 end
 
 # The organizations a person is in, oldest membership first.
-organizations : Db -> User -> [Organization]
-foul organizations(database, user) do
-  let mine : [String] = MembershipRepository { db: database }.affiliations(user.id).or([])
-  let known = OrganizationRepository { db: database }
+organizations : User -> [Organization]
+foul organizations(user) do
+  let mine : [String] = Memberships.affiliations(user.id).or([])
   return mine.flatMap { |id|
-    match known.identified(id) do
+    match Organizations.identified(id) do
       Ok(Just(organization)) => [organization]
       _ => []
     end
@@ -246,15 +243,15 @@ private do
   settled : Tab -> Tab
   let settled(tab) = Tab { organization: tab.organization, conversation: tab.conversation, thread: tab.thread }
 
-  switched : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul switched(database, user, tab, id) do
-    return (tab, false) if !MembershipRepository { db: database }.affiliated?(id, user.id)
+  switched : User -> Tab -> String -> (Tab, Bool)
+  foul switched(user, tab, id) do
+    return (tab, false) if !Memberships.affiliated?(id, user.id)
     return (Tab { organization: id }, false)
   end
 
   # Creates an organization with its first member and its #general.
-  organized : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul organized(database, user, tab, name) do
+  organized : User -> Tab -> String -> (Tab, Bool)
+  foul organized(user, tab, name) do
     let refused = Tab { ...settled(tab), dialog: "organization" }
     let problems = Metro.Validation.checked(organizationRules, {"name": name}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
@@ -263,14 +260,14 @@ private do
     return (Tab { ...refused, dialogProblem: "A name needs at least two letters or digits." }, false) if slug.chars.count < 2
     return (Tab { ...refused, dialogProblem: "${name} cannot be used as a name. Try another." }, false) if App.Models.Organization.RESERVED.contains?(slug)
 
-    match OrganizationRepository { db: database }.chartered(name, slug, user.id) do
+    match Organizations.chartered(name, slug, user.id) do
       Error(_) => return (Tab { ...refused, dialogProblem: "There is already an organization called ${name}." }, false)
       Ok(organization) => do
-        MembershipRepository { db: database }.enlisted(organization.id, user.id)
-        let general : Result<Conversation, String> = ConversationRepository { db: database }.founded(organization.id, App.Models.Conversation.GENERAL, user.id)
+        Memberships.enlisted(organization.id, user.id)
+        let general : Result<Conversation, String> = Conversations.founded(organization.id, App.Models.Conversation.GENERAL, user.id)
         if general.ok?
           let channel : Conversation = general.try
-          ConversationRepository { db: database }.retitled(channel.id, GENERAL_TOPIC)
+          Conversations.retitled(channel.id, GENERAL_TOPIC)
         end
         return (Tab { organization: organization.id }, true)
       end
@@ -278,13 +275,13 @@ private do
   end
 
   # Puts somebody who has registered into the tab's organization.
-  invited : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul invited(database, user, tab, email) do
+  invited : User -> Tab -> String -> (Tab, Bool)
+  foul invited(user, tab, email) do
     let refused = Tab { ...settled(tab), dialog: "invite" }
-    match home(database, user, tab) do
+    match home(user, tab) do
       None => return (tab, false)
-      Just(organization) => match UserRepository { db: database }.credentials(email) do
-        Ok(Just((person, _))) => match MembershipRepository { db: database }.enlisted(organization.id, person.id) do
+      Just(organization) => match Users.credentials(email) do
+        Ok(Just((person, _))) => match Memberships.enlisted(organization.id, person.id) do
           Ok(_) => return (Tab { ...settled(tab), notice: "${person.shown} is now in ${organization.name}." }, true)
           Error(_) => return (Tab { ...refused, dialogProblem: "${person.shown} is already in ${organization.name}." }, false)
         end
@@ -301,41 +298,41 @@ private do
   # kept in the tab, to be shown until the dialog is closed, and nowhere else.
   # The bots a person may look after from a tab: their own, and those of
   # the organization the tab is in.
-  manageable : Db -> User -> Organization -> [User]
-  foul manageable(database, user, organization) do
-    let own : [User] = UserRepository { db: database }.operated(user.id).or([])
-    let shared : [User] = UserRepository { db: database }.maintained(organization.id).or([])
+  manageable : User -> Organization -> [User]
+  foul manageable(user, organization) do
+    let own : [User] = Users.operated(user.id).or([])
+    let shared : [User] = Users.maintained(organization.id).or([])
     return shared + own
   end
 
   # `owner` is "me" for a bot of this person's own; anything else makes it
   # the organization's.
-  botMade : Db -> User -> Tab -> String -> String -> (Tab, Bool)
-  foul botMade(database, user, tab, name, owner) do
+  botMade : User -> Tab -> String -> String -> (Tab, Bool)
+  foul botMade(user, tab, name, owner) do
     let refused = Tab { ...settled(tab), dialog: "bots" }
     let problems = Metro.Validation.checked(botRules, {"name": name}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
-    match home(database, user, tab) do
+    match home(user, tab) do
       None => return (tab, false)
-      Just(organization) => match App.Services.Bots.built(database, user, owner == "me" then "" else organization.id, name) do
+      Just(organization) => match App.Services.Bots.built(user, owner == "me" then "" else organization.id, name) do
         Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
         Ok((bot, token)) => do
-          MembershipRepository { db: database }.enlisted(organization.id, bot.id)
+          Memberships.enlisted(organization.id, bot.id)
           return (Tab { ...refused, secret: token, secretFor: bot.name }, true)
         end
       end
     end
   end
 
-  botRenewed : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul botRenewed(database, user, tab, id) do
+  botRenewed : User -> Tab -> String -> (Tab, Bool)
+  foul botRenewed(user, tab, id) do
     let refused = Tab { ...settled(tab), dialog: "bots" }
-    match home(database, user, tab) do
+    match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        let named = manageable(database, user, organization).find { |bot| bot.id == id }.map { |bot| bot.name }.or("the bot")
-        match App.Services.Bots.renewed(database, user, organization.id, id) do
+        let named = manageable(user, organization).find { |bot| bot.id == id }.map { |bot| bot.name }.or("the bot")
+        match App.Services.Bots.renewed(user, organization.id, id) do
           Ok(token) => return (Tab { ...refused, secret: token, secretFor: named }, false)
           Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
         end
@@ -344,16 +341,16 @@ private do
   end
 
   # Puts one of this person's bots into the tab's organization.
-  botBrought : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul botBrought(database, user, tab, id) do
+  botBrought : User -> Tab -> String -> (Tab, Bool)
+  foul botBrought(user, tab, id) do
     let refused = Tab { ...settled(tab), dialog: "bots" }
-    let owned : [User] = UserRepository { db: database }.operated(user.id).or([])
+    let owned : [User] = Users.operated(user.id).or([])
     return (Tab { ...refused, dialogProblem: "That is not one of your bots." }, false) if !owned.any? { |bot| bot.id == id }
 
-    match home(database, user, tab) do
+    match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        MembershipRepository { db: database }.enlisted(organization.id, id)
+        Memberships.enlisted(organization.id, id)
         return (refused, true)
       end
     end
@@ -365,34 +362,34 @@ private do
 
   # What somebody says about themselves: an emoji Slick offers, and a few
   # words. Both empty takes it back.
-  restyled : Db -> User -> Tab -> String -> String -> (Tab, Bool)
-  foul restyled(database, user, tab, emoji, saying) do
+  restyled : User -> Tab -> String -> String -> (Tab, Bool)
+  foul restyled(user, tab, emoji, saying) do
     let refused = Tab { ...settled(tab), dialog: "status" }
     let problems = Metro.Validation.checked(statusRules, {"text": saying}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
     return (Tab { ...refused, dialogProblem: "Pick one of the emoji offered." }, false) if !App.Models.Emoji.status?(emoji)
 
-    match UserRepository { db: database }.restyled(user.id, emoji, saying) do
+    match Users.restyled(user.id, emoji, saying) do
       Ok(_) => return (settled(tab), true)
       Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
     end
   end
 
   # Somebody is typing: said for a few seconds, to everyone else there.
-  typing : Db -> Server<Presence> -> User -> Tab -> (Tab, Bool)
-  foul typing(database, statuses, user, tab) = (tab, noting(database, statuses, user, tab, "", TYPING_FOR))
+  typing : Server<Presence> -> User -> Tab -> (Tab, Bool)
+  foul typing(statuses, user, tab) = (tab, noting(statuses, user, tab, "", TYPING_FOR))
 
   # The message that starts the thread this message is in — itself, when it
   # is not a reply — if it belongs to this conversation.
-  rooted : Db -> Conversation -> String -> Message?
-  foul rooted(database, conversation, id) do
+  rooted : Conversation -> String -> Message?
+  foul rooted(conversation, id) do
     return None if id.empty?
 
-    match MessageRepository { db: database }.single(id) do
+    match Messages.single(id) do
       Ok(Just(message)) => do
         return None if message.conversationId != conversation.id
         return Just(message) if message.parentId.empty?
-        return rooted(database, conversation, message.parentId)
+        return rooted(conversation, message.parentId)
       end
       _ => return None
     end
@@ -400,22 +397,22 @@ private do
 
   # An open thread: the message that started it, then its replies. Empty
   # when no thread is open, or the one asked for is not in this conversation.
-  unfolded : Db -> Conversation -> String -> [Message]
-  foul unfolded(database, conversation, id) do
-    match rooted(database, conversation, id) do
+  unfolded : Conversation -> String -> [Message]
+  foul unfolded(conversation, id) do
+    match rooted(conversation, id) do
       None => return []
       Just(first) => do
-        let replies : [Message] = MessageRepository { db: database }.answering(first.id).or([])
+        let replies : [Message] = Messages.answering(first.id).or([])
         return [first] + replies
       end
     end
   end
 
-  threaded : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul threaded(database, user, tab, id) do
-    match visible(database, user, tab) do
+  threaded : User -> Tab -> String -> (Tab, Bool)
+  foul threaded(user, tab, id) do
+    match visible(user, tab) do
       None => return (tab, false)
-      Just(conversation) => match rooted(database, conversation, id) do
+      Just(conversation) => match rooted(conversation, id) do
         Just(first) => return (Tab { ...settled(tab), thread: first.id }, false)
         None => return (tab, false)
       end
@@ -423,16 +420,16 @@ private do
   end
 
   # A reply goes into the thread the tab has open, and nowhere else.
-  replied : Db -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
-  foul replied(database, statuses, user, tab, body) do
+  replied : Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
+  foul replied(statuses, user, tab, body) do
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
     return (tab, false) if !problems.empty?
 
-    match visible(database, user, tab) do
+    match visible(user, tab) do
       None => return (tab, false)
-      Just(conversation) => match rooted(database, conversation, tab.thread) do
+      Just(conversation) => match rooted(conversation, tab.thread) do
         None => return (tab, false)
-        Just(first) => match MessageRepository { db: database }.said(conversation.id, user.id, body, first.id) do
+        Just(first) => match Messages.said(conversation.id, user.id, body, first.id) do
           Ok(_) => do
             statuses.lifted(conversation.id, user.id)
             return (Tab { ...settled(tab), thread: first.id }, true)
@@ -443,11 +440,11 @@ private do
     end
   end
 
-  opened : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul opened(database, user, tab, id) do
+  opened : User -> Tab -> String -> (Tab, Bool)
+  foul opened(user, tab, id) do
     return (tab, false) if id.empty?
 
-    match visible(database, user, Tab { organization: tab.organization, conversation: id }) do
+    match visible(user, Tab { organization: tab.organization, conversation: id }) do
       Just(conversation) => return (Tab { organization: conversation.organizationId, conversation: conversation.id }, false)
       None => return (tab, false)
     end
@@ -455,14 +452,14 @@ private do
 
   # Opens the private chat with another person of the organization, starting
   # it if need be.
-  whispered : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul whispered(database, user, tab, other) do
-    match home(database, user, tab) do
+  whispered : User -> Tab -> String -> (Tab, Bool)
+  foul whispered(user, tab, other) do
+    match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        return (tab, false) if other == user.id || !MembershipRepository { db: database }.affiliated?(organization.id, other)
+        return (tab, false) if other == user.id || !Memberships.affiliated?(organization.id, other)
 
-        match ConversationRepository { db: database }.between(organization.id, user.id, other) do
+        match Conversations.between(organization.id, user.id, other) do
           Ok(conversation) => return (Tab { organization: organization.id, conversation: conversation.id }, false)
           Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
         end
@@ -473,29 +470,29 @@ private do
   # Not called `founded`: a function here with the name and the number of
   # arguments of a repository method makes the call to that method lose an
   # argument when compiled, and fail as `undef` when run (kexhq/kex#451).
-  established : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul established(database, user, tab, title) do
+  established : User -> Tab -> String -> (Tab, Bool)
+  foul established(user, tab, title) do
     let refused = Tab { ...settled(tab), founding?: true }
     let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
     return (Tab { ...refused, channelProblem: problems.first.or("") }, false) if !problems.empty?
 
-    match home(database, user, tab) do
+    match home(user, tab) do
       None => return (tab, false)
-      Just(organization) => match ConversationRepository { db: database }.founded(organization.id, title, user.id) do
+      Just(organization) => match Conversations.founded(organization.id, title, user.id) do
         Ok(channel) => return (Tab { organization: organization.id, conversation: channel.id }, true)
         Error(_) => return (Tab { ...refused, channelProblem: "There is already a channel called ${title}." }, false)
       end
     end
   end
 
-  sent : Db -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
-  foul sent(database, statuses, user, tab, body) do
+  sent : Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
+  foul sent(statuses, user, tab, body) do
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
     return (tab, false) if !problems.empty?
 
-    match visible(database, user, tab) do
+    match visible(user, tab) do
       None => return (tab, false)
-      Just(conversation) => match MessageRepository { db: database }.said(conversation.id, user.id, body, "") do
+      Just(conversation) => match Messages.said(conversation.id, user.id, body, "") do
         Ok(_) => do
           # Whatever they were said to be doing, they have done.
           statuses.lifted(conversation.id, user.id)
@@ -506,14 +503,14 @@ private do
     end
   end
 
-  retitled : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul retitled(database, user, tab, topic) do
+  retitled : User -> Tab -> String -> (Tab, Bool)
+  foul retitled(user, tab, topic) do
     let problems = Metro.Validation.checked(topicRules, {"topic": topic}).messages
     return (Tab { ...settled(tab), retitling?: true, failure: problems.first.or("") }, false) if !problems.empty?
 
-    match visible(database, user, tab) do
+    match visible(user, tab) do
       None => return (tab, false)
-      Just(conversation) => match ConversationRepository { db: database }.retitled(conversation.id, topic) do
+      Just(conversation) => match Conversations.retitled(conversation.id, topic) do
         Ok(changed) => return (settled(tab), changed)
         Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
       end
@@ -522,16 +519,16 @@ private do
 
   # A reaction goes on a message of the conversation the tab is showing, and
   # nowhere else: the message is looked up, and has to belong to it.
-  reacted : Db -> User -> Tab -> String -> String -> (Tab, Bool)
-  foul reacted(database, user, tab, messageId, emoji) do
+  reacted : User -> Tab -> String -> String -> (Tab, Bool)
+  foul reacted(user, tab, messageId, emoji) do
     return (tab, false) if !App.Models.Emoji.reaction?(emoji)
 
-    match visible(database, user, tab) do
+    match visible(user, tab) do
       None => return (tab, false)
-      Just(conversation) => match MessageRepository { db: database }.single(messageId) do
+      Just(conversation) => match Messages.single(messageId) do
         Ok(Just(message)) => do
           return (tab, false) if message.conversationId != conversation.id
-          match ReactionRepository { db: database }.flipped(message, user.id, emoji) do
+          match Reactions.flipped(message, user.id, emoji) do
             Ok(_) => return (tab, true)
             Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
           end

@@ -1,129 +1,123 @@
 # The people who can sign in.
 #
-#   UserRepository { db: db }.credentials(email)
+#   DB.Repositories.Users.credentials(email)
 module DB.Repositories.Users
 
-using Harmat.Db, only: [Db]
+using Harmat.Db, as: Db
 using App.Models.User, only: [User]
 
-record UserRepository do
-  db : Db
+# Stores a new user. Fails when the email is taken: the table's unique
+# index decides, so two registrations racing for one address cannot both win.
+foul enroll(user: User, passwordHash: String) -> Result<User, String> do
+  let row = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    password_hash: passwordHash,
+    created_at: "${DateTime.utcNow()}"
+  }
+  return Db.insert(DB.Schema.Users)
+    .values(row)
+    .run
+    .map { |_| user }
 end
 
-make UserRepository do
-  # Stores a new user. Fails when the email is taken: the table's unique
-  # index decides, so two registrations racing for one address cannot both win.
-  foul enroll(user: User, passwordHash: String) -> Result<User, String> do
-    let row = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      password_hash: passwordHash,
-      created_at: "${DateTime.utcNow()}"
-    }
-    return @db.insert(DB.Schema.Users)
-      .values(row)
-      .run
-      .map { |_| user }
-  end
+# The user registered under an email, with their stored password line.
+foul credentials(email: String) -> Result<(User, String)?, String> do
+  return Db.select().from(DB.Schema.Users)
+    .where(DB.Schema.Users.email.eq(email))
+    .first
+    .map { |row| row.map { |found| (decoded(found), found.get("password_hash").or("")) } }
+end
 
-  # The user registered under an email, with their stored password line.
-  foul credentials(email: String) -> Result<(User, String)?, String> do
-    return @db.select().from(DB.Schema.Users)
-      .where(DB.Schema.Users.email.eq(email))
-      .first
-      .map { |row| row.map { |found| (decoded(found), found.get("password_hash").or("")) } }
-  end
+# Stores a bot. It has no password: `tokenDigest` is how it is known.
+foul automated(bot: User, tokenDigest: String) -> Result<User, String> do
+  let row = {
+    id: bot.id,
+    email: bot.email,
+    name: bot.name,
+    password_hash: "",
+    created_at: "${DateTime.utcNow()}",
+    kind: "bot",
+    owner_id: bot.ownerId,
+    owner_organization_id: bot.ownerOrganizationId,
+    api_token_digest: tokenDigest
+  }
+  return Db.insert(DB.Schema.Users)
+    .values(row)
+    .run
+    .map { |_| bot }
+end
 
-  # Stores a bot. It has no password: `tokenDigest` is how it is known.
-  foul automated(bot: User, tokenDigest: String) -> Result<User, String> do
-    let row = {
-      id: bot.id,
-      email: bot.email,
-      name: bot.name,
-      password_hash: "",
-      created_at: "${DateTime.utcNow()}",
-      kind: "bot",
-      owner_id: bot.ownerId,
-      owner_organization_id: bot.ownerOrganizationId,
-      api_token_digest: tokenDigest
-    }
-    return @db.insert(DB.Schema.Users)
-      .values(row)
-      .run
-      .map { |_| bot }
-  end
+# A person's bots, by name.
+foul operated(owner: String) -> Result<[User], String> do
+  return Db.select(SHOWN).from(DB.Schema.Users)
+    .where(DB.Schema.Users.ownerId.eq(owner))
+    .orderBy([:name, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
 
-  # A person's bots, by name.
-  foul operated(owner: String) -> Result<[User], String> do
-    return @db.select(SHOWN).from(DB.Schema.Users)
-      .where(DB.Schema.Users.ownerId.eq(owner))
-      .orderBy([:name, :id])
-      .all
-      .map { |rows| rows.map { |row| decoded(row) } }
-  end
+# An organization's bots, by name.
+foul maintained(organizationId: String) -> Result<[User], String> do
+  return Db.select(SHOWN).from(DB.Schema.Users)
+    .where(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
+    .orderBy([:name, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
 
-  # An organization's bots, by name.
-  foul maintained(organizationId: String) -> Result<[User], String> do
-    return @db.select(SHOWN).from(DB.Schema.Users)
-      .where(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
-      .orderBy([:name, :id])
-      .all
-      .map { |rows| rows.map { |row| decoded(row) } }
-  end
+# Replaces the token of an organization's bot; whether it was that
+# organization's to change.
+foul rekeyedFor(botId: String, organizationId: String, tokenDigest: String) -> Result<Bool, String> do
+  return Db.within(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
+    .update(DB.Schema.Users)
+    .set({api_token_digest: tokenDigest})
+    .where(DB.Schema.Users.id.eq(botId))
+    .run
+    .map { |changed| changed > 0 }
+end
 
-  # Replaces the token of an organization's bot; whether it was that
-  # organization's to change.
-  foul rekeyedFor(botId: String, organizationId: String, tokenDigest: String) -> Result<Bool, String> do
-    return @db.within(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
-      .update(DB.Schema.Users)
-      .set({api_token_digest: tokenDigest})
-      .where(DB.Schema.Users.id.eq(botId))
-      .run
-      .map { |changed| changed > 0 }
-  end
+# The bot an API token's digest belongs to, or `None`.
+foul bearing(tokenDigest: String) -> Result<User?, String> do
+  return Db.select(SHOWN).from(DB.Schema.Users)
+    .where(DB.Schema.Users.apiTokenDigest.eq(tokenDigest))
+    .where(DB.Schema.Users.kind.eq("bot"))
+    .first
+    .map { |row| row.map { |found| decoded(found) } }
+end
 
-  # The bot an API token's digest belongs to, or `None`.
-  foul bearing(tokenDigest: String) -> Result<User?, String> do
-    return @db.select(SHOWN).from(DB.Schema.Users)
-      .where(DB.Schema.Users.apiTokenDigest.eq(tokenDigest))
-      .where(DB.Schema.Users.kind.eq("bot"))
-      .first
-      .map { |row| row.map { |found| decoded(found) } }
-  end
+# Replaces a bot's token; whether it was this owner's bot to change.
+foul rekeyed(botId: String, owner: String, tokenDigest: String) -> Result<Bool, String> do
+  return Db.within(DB.Schema.Users.ownerId.eq(owner))
+    .update(DB.Schema.Users)
+    .set({api_token_digest: tokenDigest})
+    .where(DB.Schema.Users.id.eq(botId))
+    .run
+    .map { |changed| changed > 0 }
+end
 
-  # Replaces a bot's token; whether it was this owner's bot to change.
-  foul rekeyed(botId: String, owner: String, tokenDigest: String) -> Result<Bool, String> do
-    return @db.within(DB.Schema.Users.ownerId.eq(owner))
-      .update(DB.Schema.Users)
-      .set({api_token_digest: tokenDigest})
-      .where(DB.Schema.Users.id.eq(botId))
-      .run
-      .map { |changed| changed > 0 }
-  end
+# Sets what somebody says about themselves; "" and "" takes it back.
+foul restyled(id: String, emoji: String, saying: String) -> Result<Integer, String> do
+  return Db.update(DB.Schema.Users)
+    .set({status_emoji: emoji, status_text: saying})
+    .where(DB.Schema.Users.id.eq(id))
+    .run
+end
 
-  # Sets what somebody says about themselves; "" and "" takes it back.
-  foul restyled(id: String, emoji: String, saying: String) -> Result<Integer, String> do
-    return @db.update(DB.Schema.Users)
-      .set({status_emoji: emoji, status_text: saying})
-      .where(DB.Schema.Users.id.eq(id))
-      .run
-  end
+foul member(id: String) -> Result<User?, String> do
+  return Db.select().from(DB.Schema.Users)
+    .where(DB.Schema.Users.id.eq(id))
+    .first
+    .map { |row| row.map { |found| decoded(found) } }
+end
 
-  foul member(id: String) -> Result<User?, String> do
-    return @db.select().from(DB.Schema.Users)
-      .where(DB.Schema.Users.id.eq(id))
-      .first
-      .map { |row| row.map { |found| decoded(found) } }
-  end
-
-  # Everyone, by name: who can be written to, and whose name goes on a message.
-  foul everyone -> Result<[User], String> do
-    return @db.select(SHOWN).from(DB.Schema.Users)
-      .orderBy([:name, :email])
-      .all
-      .map { |rows| rows.map { |row| decoded(row) } }
-  end
+# Everyone, by name: who can be written to, and whose name goes on a message.
+foul everyone -> Result<[User], String> do
+  return Db.select(SHOWN).from(DB.Schema.Users)
+    .orderBy([:name, :email])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
 end
 
 private do

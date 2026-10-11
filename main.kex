@@ -41,9 +41,13 @@ end
 foul served(store: Server<DB.Store.Store>) -> Void do
   let port = ENV.get("PORT").flatMap { |text| text.to(Integer) }.or(4000)
   let bindHost = ENV.get("HOST").or("127.0.0.1")
-  let site = Config.Routes.routes(store, Process.spawn(Metro.Live.Hub.Hub {}))
   IO.printLine("Slick (${Config.Database.environment()}) is on http://${bindHost == "0.0.0.0" then "localhost" else bindHost}:${port}")
-  site.start(bindHost, port).try
+  # Everything that serves is made in here, the routes included: this is
+  # where the store becomes the database every query reaches.
+  with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}))
+    site.start(bindHost, port).try
+  end
 end
 
 foul commanded(store: Server<DB.Store.Store>, args: [String]) -> Void do

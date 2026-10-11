@@ -1,54 +1,48 @@
 # Who is in which organization.
 #
-#   MembershipRepository { db: db }.affiliated?(organization.id, user.id)
+#   DB.Repositories.Memberships.affiliated?(organization.id, user.id)
 module DB.Repositories.Memberships
 
-using Harmat.Db, only: [Db]
+using Harmat.Db, as: Db
 
-record MembershipRepository do
-  db : Db
+# Puts a person in an organization. Fails when they are already in it: the
+# row's id is the pair.
+foul enlisted(organizationId: String, userId: String) -> Result<Integer, String> do
+  let row = {
+    id: "${organizationId}:${userId}",
+    organization_id: organizationId,
+    user_id: userId,
+    joined_at: "${DateTime.utcNow()}"
+  }
+  return Db.insert(DB.Schema.Memberships)
+    .values(row)
+    .run
 end
 
-make MembershipRepository do
-  # Puts a person in an organization. Fails when they are already in it: the
-  # row's id is the pair.
-  foul enlisted(organizationId: String, userId: String) -> Result<Integer, String> do
-    let row = {
-      id: "${organizationId}:${userId}",
-      organization_id: organizationId,
-      user_id: userId,
-      joined_at: "${DateTime.utcNow()}"
-    }
-    return @db.insert(DB.Schema.Memberships)
-      .values(row)
-      .run
+# Whether a person is in an organization.
+foul affiliated?(organizationId: String, userId: String) -> Bool do
+  let membership = Db.select([:id]).from(DB.Schema.Memberships)
+    .where(DB.Schema.Memberships.id.eq("${organizationId}:${userId}"))
+    .first
+  match membership do
+    Ok(Just(_)) => return true
+    _ => return false
   end
+end
 
-  # Whether a person is in an organization.
-  foul affiliated?(organizationId: String, userId: String) -> Bool do
-    let membership = @db.select([:id]).from(DB.Schema.Memberships)
-      .where(DB.Schema.Memberships.id.eq("${organizationId}:${userId}"))
-      .first
-    match membership do
-      Ok(Just(_)) => return true
-      _ => return false
-    end
-  end
+# The ids of the organizations a person is in, oldest membership first.
+foul affiliations(userId: String) -> Result<[String], String> do
+  return Db.select([:organization_id]).from(DB.Schema.Memberships)
+    .where(DB.Schema.Memberships.userId.eq(userId))
+    .orderBy([:joined_at, :id])
+    .all
+    .map { |rows| rows.map { |row| row.get("organization_id").or("") } }
+end
 
-  # The ids of the organizations a person is in, oldest membership first.
-  foul affiliations(userId: String) -> Result<[String], String> do
-    return @db.select([:organization_id]).from(DB.Schema.Memberships)
-      .where(DB.Schema.Memberships.userId.eq(userId))
-      .orderBy([:joined_at, :id])
-      .all
-      .map { |rows| rows.map { |row| row.get("organization_id").or("") } }
-  end
-
-  # The ids of the people in an organization.
-  foul roster(organizationId: String) -> Result<[String], String> do
-    return @db.select([:user_id]).from(DB.Schema.Memberships)
-      .where(DB.Schema.Memberships.organizationId.eq(organizationId))
-      .all
-      .map { |rows| rows.map { |row| row.get("user_id").or("") } }
-  end
+# The ids of the people in an organization.
+foul roster(organizationId: String) -> Result<[String], String> do
+  return Db.select([:user_id]).from(DB.Schema.Memberships)
+    .where(DB.Schema.Memberships.organizationId.eq(organizationId))
+    .all
+    .map { |rows| rows.map { |row| row.get("user_id").or("") } }
 end

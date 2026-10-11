@@ -1,44 +1,35 @@
 # Who is signed in where. It only ever sees token digests.
 #
-#   SessionRepository { db: db }.holder(digest)
+#   DB.Repositories.Sessions.holder(digest)
 module DB.Repositories.Sessions
 
-using Harmat.Db, only: [Db]
+using Harmat.Db, as: Db
 
-record SessionRepository do
-  db : Db
+foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<Integer, String> do
+  let row = {
+    token_digest: tokenDigest,
+    user_id: userId,
+    expires_at: expiresAt,
+    created_at: "${DateTime.utcNow()}"
+  }
+  return Db.insert(DB.Schema.Sessions)
+    .values(row)
+    .run
 end
 
-# Keep method names distinct from the other repositories' and away from
-# common words like `remove`: such a name can be "Undefined method" in the
-# served application though its spec passes (kexhq/kex#451).
-make SessionRepository do
-  foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<Integer, String> do
-    let row = {
-      token_digest: tokenDigest,
-      user_id: userId,
-      expires_at: expiresAt,
-      created_at: "${DateTime.utcNow()}"
-    }
-    return @db.insert(DB.Schema.Sessions)
-      .values(row)
-      .run
-  end
+# Whose session a digest is, and when it expires (seconds since 1970).
+foul holder(tokenDigest: String) -> Result<(String, Integer)?, String> do
+  return Db.select().from(DB.Schema.Sessions)
+    .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
+    .first
+    .map { |row| row.map { |found| held(found) } }
+end
 
-  # Whose session a digest is, and when it expires (seconds since 1970).
-  foul holder(tokenDigest: String) -> Result<(String, Integer)?, String> do
-    return @db.select().from(DB.Schema.Sessions)
-      .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
-      .first
-      .map { |row| row.map { |found| held(found) } }
-  end
-
-  foul revoke(tokenDigest: String) -> Result<Bool, String> do
-    return @db.delete(DB.Schema.Sessions)
-      .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
-      .run
-      .map { |count| count > 0 }
-  end
+foul revoke(tokenDigest: String) -> Result<Bool, String> do
+  return Db.delete(DB.Schema.Sessions)
+    .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
+    .run
+    .map { |count| count > 0 }
 end
 
 private do

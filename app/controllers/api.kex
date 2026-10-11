@@ -36,15 +36,15 @@
 module App.Controllers.Api
 
 using Metro.WebRequest, only: [WebRequest]
-using App.Controllers.Application, only: [databaseFor, hubFor, statusesFor, userFor]
+using App.Controllers.Application, only: [hubFor, statusesFor, userFor]
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
-using DB.Repositories.Conversations, only: [ConversationRepository]
-using DB.Repositories.Messages, only: [MessageRepository]
-using DB.Repositories.Users, only: [UserRepository]
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Messages, as: Messages
+using DB.Repositories.Users, as: Users
 
 # The most messages one request is given.
 let MOST = 200
@@ -58,7 +58,7 @@ let STATUS_LONGEST = 80
 whoami : WebRequest -> WebRequest
 foul whoami(request) do
   let bot = userFor(request)
-  let mine : [Organization] = App.Live.Chat.organizations(databaseFor(request), bot)
+  let mine : [Organization] = App.Live.Chat.organizations(bot)
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
   let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed}
   return request.json(answer)
@@ -66,12 +66,11 @@ end
 
 channelList : WebRequest -> WebRequest
 foul channelList(request) do
-  let database = databaseFor(request)
   let slug = request.param("organization").or("")
-  let tab = App.Live.Chat.arrived(database, userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+  let tab = App.Live.Chat.arrived(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
   return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
 
-  let found : [Conversation] = ConversationRepository { db: database }.channels(tab.organization).or([])
+  let found : [Conversation] = Conversations.channels(tab.organization).or([])
   let listed : [Any] = found.map { |channel| {"id": channel.id, "name": channel.title, "topic": channel.topic} }
   return request.json(listed)
 end
@@ -80,15 +79,14 @@ end
 # with a person — oldest first.
 history : WebRequest -> WebRequest
 foul history(request) do
-  let database = databaseFor(request)
   match placed(request, "") do
     Error(reply) => return reply
     Ok((tab, conversation)) => do
       let asked = request.query("limit").or("50").to(Integer).or(50)
       let limit = asked < 1 || asked > MOST then MOST else asked
       let since = request.query("after").or("0").to(Integer).or(0)
-      let people : [User] = UserRepository { db: database }.everyone.or([])
-      let found : [Message] = MessageRepository { db: database }.latest(conversation.id, limit).or([])
+      let people : [User] = Users.everyone.or([])
+      let found : [Message] = Messages.latest(conversation.id, limit).or([])
       let listed : [Any] = found.filter { |message| message.sentAt > since }.map { |message| described(message, people) }
       return request.json(listed)
     end
@@ -98,7 +96,6 @@ end
 # Says something, in the conversation or — with `thread` — in a thread.
 posted : WebRequest -> WebRequest
 foul posted(request) do
-  let database = databaseFor(request)
   let thread = request.field("thread").or("").trim
   let typed = request.field("body").or("").trim
   let body = typed.empty? then App.Helpers.RichText.composed(request.list("blocks")) else typed
@@ -106,13 +103,13 @@ foul posted(request) do
     Error(reply) => return reply
     Ok((tab, conversation)) => do
       let event = thread.empty? then "send" else "reply"
-      let (_, changed) = App.Live.Chat.handled(database, statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
+      let (_, changed) = App.Live.Chat.handled(statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
       return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
       hubFor(request).changed("api", "everyone")
-      let people : [User] = UserRepository { db: database }.everyone.or([])
-      let inChannel : [Message] = MessageRepository { db: database }.latest(conversation.id, 1).or([])
-      let inThread : [Message] = MessageRepository { db: database }.answering(tab.thread).or([])
+      let people : [User] = Users.everyone.or([])
+      let inChannel : [Message] = Messages.latest(conversation.id, 1).or([])
+      let inThread : [Message] = Messages.answering(tab.thread).or([])
       let newest = thread.empty? then inChannel else inThread.reverse.take(1)
       let answer : {String: Any} = newest.first.map { |message| described(message, people) }.or({})
       return request.json(201, answer)
@@ -127,7 +124,7 @@ foul reacting(request) do
     Error(reply) => return reply
     Ok((tab, conversation)) => do
       let fields = [("event", Just("react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
-      let (_, changed) = App.Live.Chat.handled(databaseFor(request), statusesFor(request), userFor(request), tab, fields)
+      let (_, changed) = App.Live.Chat.handled(statusesFor(request), userFor(request), tab, fields)
       return failed(request, 422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
 
       hubFor(request).changed("api", "everyone")
@@ -145,7 +142,7 @@ foul statusSet(request) do
       let text = request.field("text").or("").trim.replace("\n", " ").take(STATUS_LONGEST)
       let asked = request.field("seconds").or("").to(Integer).or(STATUS_SECONDS)
       let seconds = asked < 1 || asked > STATUS_MOST then STATUS_SECONDS else asked
-      App.Live.Chat.noting(databaseFor(request), statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
+      App.Live.Chat.noting(statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
       hubFor(request).changed("api", "everyone")
       let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
       return request.json(answer)
@@ -162,15 +159,14 @@ private do
   # with `:name` is a channel.
   placed : WebRequest -> String -> Result<(Tab, Conversation), WebRequest>
   foul placed(request, thread) do
-    let database = databaseFor(request)
     let bot = userFor(request)
     let slug = request.param("organization").or("")
     let channel = App.Paths.channelPath.filled({"organization": slug, "name": request.param("name").or("")})
     let direct = App.Paths.directPath.filled({"organization": slug, "person": request.param("person").or("")})
-    let tab = App.Live.Chat.arrived(database, bot, App.Paths.threaded(request.param("person").set? then direct else channel, thread))
+    let tab = App.Live.Chat.arrived(bot, App.Paths.threaded(request.param("person").set? then direct else channel, thread))
     return Error(failed(request, 404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
 
-    match App.Live.Chat.visible(database, bot, tab) do
+    match App.Live.Chat.visible(bot, tab) do
       Just(conversation) => return Ok((tab, conversation))
       None => return Error(failed(request, 404, "There is no such conversation, or this bot is not in it."))
     end
