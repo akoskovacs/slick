@@ -9,9 +9,10 @@ params: [email: String, live: String]
     <title>Slick</title>
     <link rel="stylesheet" href="/app.css">
   </head>
-  <body>
+  <body class="chat">
     <header class="top">
       <span class="brand">Slick</span>
+      <span class="search">Search Slick</span>
       <span class="who">
         <span id="status" class="status" data-state="connecting">Connecting…</span>
         <span class="email"><%= email %></span>

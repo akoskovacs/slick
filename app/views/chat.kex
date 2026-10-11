@@ -27,6 +27,9 @@ end
 record Bubble do
   key : String
   author : String
+  # The author's first letter and one of eight colours, for the avatar.
+  initial : String
+  tint : String
   stamp : String
   content : String
   own? : Bool
@@ -99,7 +102,7 @@ private do
     }
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
-      Bubble { key: message.id, author: author, stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
+      Bubble { key: message.id, author: author, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
       chips.join(""), offers.join("")
     )
   end

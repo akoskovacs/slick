@@ -2,9 +2,11 @@
 params: [title: String, picks: String]
 ---
 <form class="composer" data-live="send" data-live-reset data-live-quiet>
-  <div class="picks"><%== picks %></div>
-  <div class="composer-row">
+  <div class="composer-box">
     <input id="message-box" name="body" placeholder="Message <%= title %>" maxlength="4000" autocomplete="off" autofocus>
-    <button type="submit" class="primary">Send</button>
+    <div class="composer-row">
+      <div class="picks"><%== picks %></div>
+      <button type="submit" class="send" title="Send">Send</button>
+    </div>
   </div>
 </form>

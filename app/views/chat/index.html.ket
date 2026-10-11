@@ -12,8 +12,8 @@ params: [failure: String, channels: String, founding: String, people: String, pa
     </div>
     <%== founding %>
     <ul class="entries"><%== channels %></ul>
-    <div class="sidebar-head"><h2>People</h2></div>
-    <ul class="entries"><%== people %></ul>
+    <div class="sidebar-head"><h2>Direct messages</h2></div>
+    <ul class="entries people"><%== people %></ul>
   </nav>
   <%== pane %>
 </div>
