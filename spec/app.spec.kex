@@ -54,7 +54,7 @@ describe("Slick") do
   end
 
   it("answers over HTTP: pages for people, JSON for bots, and neither for the wrong one") do
-    let file = "db/spec_routes_${BEAM.erlang.system_time(:millisecond)}.sqlite3"
+    let file = "db/spec_routes_${Metro.Clock.milliseconds()}.sqlite3"
     let store = DB.Store.started(Config.Database.sqlite(file)).try
     DB.Store.migrate(store).try
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do
@@ -105,7 +105,7 @@ describe("Slick") do
   end
 
   it("seeds development with somewhere to sign in, once, and nothing elsewhere") do
-    let file = "db/spec_seeds_${BEAM.erlang.system_time(:millisecond)}.sqlite3"
+    let file = "db/spec_seeds_${Metro.Clock.milliseconds()}.sqlite3"
     let store = DB.Store.started(Config.Database.sqlite(file)).try
     DB.Store.migrate(store).try
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do
@@ -147,7 +147,7 @@ describe("Slick") do
   end
 
   it("lets people register, chat in channels and in private, react and set topics") do
-    let file = "db/spec_${BEAM.erlang.system_time(:millisecond)}.sqlite3"
+    let file = "db/spec_${Metro.Clock.milliseconds()}.sqlite3"
     let store = DB.Store.started(Config.Database.sqlite(file)).try
     DB.Store.migrate(store).try
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do

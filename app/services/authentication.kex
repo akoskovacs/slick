@@ -27,7 +27,7 @@ foul register(name, email, password) do
   match Users.credentials(address) do
     Error(reason) => Error([reason])
     Ok(Just(_)) => Error(["An account with that email already exists. Sign in instead."])
-    Ok(None) => enrolled(User { id: "u${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}", email: address, name: name.trim }, password)
+    Ok(None) => enrolled(User { id: Metro.Id.generate(prefix: "u"), email: address, name: name.trim }, password)
   end
 end
 
@@ -85,7 +85,7 @@ private do
   end
 
   foul now() -> Integer do
-    return BEAM.erlang.system_time(:second)
+    return Metro.Clock.seconds()
   end
 
   foul admitted(userId: String) -> Result<String, [String]> do

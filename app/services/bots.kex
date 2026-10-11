@@ -15,7 +15,7 @@ let PREFIX = "slick_bot_"
 # otherwise this person's own. The bot, and its token.
 built : User -> OrganizationId -> String -> Result<(User, String), String>
 foul built(maker, organizationId, name) do
-  let id = "b${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
+  let id = Metro.Id.generate(prefix: "b")
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
   let bot = User {
     id: id, email: "${id}@bots.invalid", name: name, kind: "bot",

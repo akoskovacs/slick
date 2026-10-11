@@ -39,7 +39,7 @@ end
 # unique index on `slug`, which starts with the organization, decides.
 foul founded(organizationId: String, title: String, by: String) -> Result<Conversation, String> do
   let channel = Conversation {
-    id: "c${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}",
+    id: Metro.Id.generate(prefix: "c"),
     kind: "channel",
     slug: "${organizationId}#${title}",
     title: title,
@@ -74,7 +74,7 @@ foul between(organizationId: String, one: String, other: String) -> Result<Conve
       let first = one <= other then one else other
       let second = one <= other then other else one
       let chat = Conversation {
-        id: "d${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}",
+        id: Metro.Id.generate(prefix: "d"),
         kind: "direct",
         slug: slug,
         firstUser: first,

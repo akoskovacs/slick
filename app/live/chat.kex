@@ -66,7 +66,7 @@ foul markup(statuses, user, tab) do
       let everyone : [User] = Users.everyone.or([])
       let people = everyone.filter { |person| roster.contains?(person.id) }
       let channels : [Conversation] = Conversations.channels(organization.id).or([])
-      let now = BEAM.erlang.system_time(:millisecond)
+      let now = Metro.Clock.milliseconds()
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
       match visible(user, tab) do
@@ -125,7 +125,7 @@ let ONLINE = "online"
 # Somebody's tab has opened, or closed.
 arriving : Server<Presence> -> User -> String -> Void
 foul arriving(statuses, user, seat) do
-  statuses.noted(ONLINE, "${user.id} ${seat}", "", BEAM.erlang.system_time(:millisecond) + 86400000)
+  statuses.noted(ONLINE, "${user.id} ${seat}", "", Metro.Clock.milliseconds() + 86400000)
 end
 
 leaving : Server<Presence> -> User -> String -> Void
@@ -148,7 +148,7 @@ foul noting(statuses, user, tab, text, milliseconds) do
       if milliseconds <= 0
         statuses.lifted(conversation.id, user.id)
       else
-        statuses.noted(conversation.id, user.id, text, BEAM.erlang.system_time(:millisecond) + milliseconds)
+        statuses.noted(conversation.id, user.id, text, Metro.Clock.milliseconds() + milliseconds)
       end
       return true
     end

@@ -31,9 +31,9 @@ end
 # parent's count is brought up to date — counted again, not added to, so
 # two replies at once cannot leave it wrong.
 foul said(conversationId: String, userId: String, body: String, parent: String) -> Result<Message, String> do
-  let moment = BEAM.erlang.system_time(:millisecond)
+  let moment = Metro.Clock.milliseconds()
   let message = Message {
-    id: "m${moment}-${BEAM.erlang.unique_integer([:positive])}",
+    id: "m${moment}-${Metro.Id.serial()}",
     conversationId: conversationId,
     userId: userId,
     body: body,

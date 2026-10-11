@@ -80,7 +80,7 @@ private do
 
   # An organization's bot, known by `BOT_TOKEN`.
   foul bot(name: String, organizationId: String) -> Result<User, String> do
-    let id = "b${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
+    let id = Metro.Id.generate(prefix: "b")
     let made = User {
       id: id,
       email: "${id}@bots.invalid",
@@ -96,7 +96,7 @@ private do
     match Users.credentials(email).try do
       Just((found, _)) => return Ok(found)
       None => do
-        let id = "u${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}"
+        let id = Metro.Id.generate(prefix: "u")
         return Users.enroll(User { id: id, email: email, name: name }, Metro.Auth.Password.hashed(PASSWORD))
       end
     end

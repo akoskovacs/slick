@@ -27,7 +27,7 @@ foul joined(request, socket) do
   let hub = hubFor(request)
   let statuses = statusesFor(request)
   let user = userFor(request)
-  let seat = "${BEAM.erlang.unique_integer([:positive])}"
+  let seat = "${Metro.Id.serial()}"
   App.Live.Chat.arriving(statuses, user, seat)
   hub.changed(seat, "everyone")
   Metro.Live.Socket.attached(

@@ -10,7 +10,7 @@ using App.Models.Organization, only: [Organization]
 # index on `slug` decides.
 foul chartered(name: String, slug: String, by: String) -> Result<Organization, String> do
   let organization = Organization {
-    id: "o${BEAM.erlang.system_time(:microsecond)}-${BEAM.erlang.unique_integer([:positive])}",
+    id: Metro.Id.generate(prefix: "o"),
     slug: slug,
     name: name
   }
