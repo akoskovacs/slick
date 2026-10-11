@@ -28,20 +28,34 @@ make UserRepository do
   foul automated(bot: User, tokenDigest: String) -> Result<User, String> do
     let row = {
       id: bot.id, email: bot.email, name: bot.name, password_hash: "", created_at: "${DateTime.utcNow()}",
-      kind: "bot", owner_id: bot.ownerId, api_token_digest: tokenDigest
+      kind: "bot", owner_id: bot.ownerId, owner_organization_id: bot.ownerOrganizationId, api_token_digest: tokenDigest
     }
     return @db.insert(DB.Schema.Users.definition).values(row).run.map { |_| bot }
   end
 
   # A person's bots, by name.
   foul operated(owner: String) -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id]).from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.ownerId, owner)).orderBy([:name, :id]).all
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition).where(eq(DB.Schema.Users.ownerId, owner)).orderBy([:name, :id]).all
       .map { |rows| rows.map { |row| decoded(row) } }
+  end
+
+  # An organization's bots, by name.
+  foul maintained(organizationId: String) -> Result<[User], String> do
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition)
+      .where(eq(DB.Schema.Users.ownerOrganizationId, organizationId)).orderBy([:name, :id]).all
+      .map { |rows| rows.map { |row| decoded(row) } }
+  end
+
+  # Replaces the token of an organization's bot; whether it was that
+  # organization's to change.
+  foul rekeyedFor(botId: String, organizationId: String, tokenDigest: String) -> Result<Bool, String> do
+    return @db.within(eq(DB.Schema.Users.ownerOrganizationId, organizationId)).update(DB.Schema.Users.definition)
+      .set({api_token_digest: tokenDigest}).where(eq(DB.Schema.Users.id, botId)).run.map { |changed| changed > 0 }
   end
 
   # The bot an API token's digest belongs to, or `None`.
   foul bearing(tokenDigest: String) -> Result<User?, String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id]).from(DB.Schema.Users.definition)
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition)
       .where(eq(DB.Schema.Users.apiTokenDigest, tokenDigest)).where(eq(DB.Schema.Users.kind, "bot")).first
       .map { |row| row.map { |found| decoded(found) } }
   end
@@ -59,7 +73,7 @@ make UserRepository do
 
   # Everyone, by name: who can be written to, and whose name goes on a message.
   foul everyone -> Result<[User], String> do
-    return @db.select([:id, :email, :name, :kind, :owner_id]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
+    return @db.select([:id, :email, :name, :kind, :owner_id, :owner_organization_id]).from(DB.Schema.Users.definition).orderBy([:name, :email]).all
       .map { |rows| rows.map { |row| decoded(row) } }
   end
 end
@@ -68,6 +82,7 @@ private do
   decoded : {String: String} -> User
   let decoded(row) = User {
     id: row.get("id").or(""), email: row.get("email").or(""), name: row.get("name").or(""),
-    kind: row.get("kind").or("person"), ownerId: row.get("owner_id").or("")
+    kind: row.get("kind").or("person"), ownerId: row.get("owner_id").or(""),
+    ownerOrganizationId: row.get("owner_organization_id").or("")
   }
 end

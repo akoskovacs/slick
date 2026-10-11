@@ -33,6 +33,8 @@ record Robot do
   # Whether it is in the organization the tab is in, and what that is called.
   here? : Bool
   spot : String
+  # Whose it is, in words.
+  belonging : String = ""
 end
 
 # One organization in the rail.
@@ -102,7 +104,8 @@ let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProble
 # `thread` is the open thread — the message that started it, then the
 # replies — or empty.
 #
-# `bots` are this person's own, and only asked for while their dialog is open.
+# `bots` are the ones this person may look after here — the organization's
+# and their own — and only asked for while their dialog is open.
 index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> String
 let index(tab, user, organizations, organization, channels, people, bots, conversation, messages, reactions, thread) do
   let shown = conversation.map { |open| open.id }.or("")
@@ -141,7 +144,11 @@ private do
   let asking(tab, organization, people, bots) do
     if tab.dialog == "bots"
       let rows = bots.map { |bot|
-        botPartial(Robot { key: bot.id, caption: bot.shown, here?: people.any? { |person| person.id == bot.id }, spot: organization.name })
+        let shared = !bot.ownerOrganizationId.empty?
+        botPartial(Robot {
+          key: bot.id, caption: bot.shown, here?: shared || people.any? { |person| person.id == bot.id }, spot: organization.name,
+          belonging: shared then "belongs to ${organization.name}" else "yours"
+        })
       }
       return botsPartial(organization.name, rows.join("\n"), tab.dialogProblem, tab.secret, tab.secretFor)
     end

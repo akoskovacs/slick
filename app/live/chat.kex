@@ -63,7 +63,7 @@ foul markup(database, user, tab) do
       let everyone : [User] = UserRepository { db: database }.everyone.or([])
       let people = everyone.filter { |person| roster.contains?(person.id) }
       let channels : [Conversation] = ConversationRepository { db: database }.channels(organization.id).or([])
-      let bots : [User] = tab.dialog == "bots" then UserRepository { db: database }.operated(user.id).or([]) else []
+      let bots : [User] = tab.dialog == "bots" then manageable(database, user, organization) else []
       match visible(database, user, tab) do
         None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, bots, None, [], [], [])
         Just(conversation) => do
@@ -100,7 +100,7 @@ foul handled(database, user, tab, entries) do
     "invite" => (Tab { ...settled(tab), dialog: "invite" }, false)
     "enlist" => invited(database, user, tab, field(entries, "email").trim.lowerCase)
     "bots" => (Tab { ...settled(tab), dialog: "bots" }, false)
-    "bot-create" => botMade(database, user, tab, field(entries, "name").trim)
+    "bot-create" => botMade(database, user, tab, field(entries, "name").trim, field(entries, "owner"))
     "bot-rekey" => botRenewed(database, user, tab, field(entries, "id"))
     "bot-enlist" => botBrought(database, user, tab, field(entries, "id"))
     _ => (tab, false)
@@ -244,15 +244,26 @@ private do
 
   # Makes a bot of this person's, in the tab's organization. Its token is
   # kept in the tab, to be shown until the dialog is closed, and nowhere else.
-  botMade : Db -> User -> Tab -> String -> (Tab, Bool)
-  foul botMade(database, user, tab, name) do
+  # The bots a person may look after from a tab: their own, and those of
+  # the organization the tab is in.
+  manageable : Db -> User -> Organization -> [User]
+  foul manageable(database, user, organization) do
+    let own : [User] = UserRepository { db: database }.operated(user.id).or([])
+    let shared : [User] = UserRepository { db: database }.maintained(organization.id).or([])
+    return shared + own
+  end
+
+  # `owner` is "me" for a bot of this person's own; anything else makes it
+  # the organization's.
+  botMade : Db -> User -> Tab -> String -> String -> (Tab, Bool)
+  foul botMade(database, user, tab, name, owner) do
     let refused = Tab { ...settled(tab), dialog: "bots" }
     let problems = Metro.Validation.checked(botRules, {"name": name}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
     match home(database, user, tab) do
       None => return (tab, false)
-      Just(organization) => match App.Services.Bots.built(database, user, name) do
+      Just(organization) => match App.Services.Bots.built(database, user, owner == "me" then "" else organization.id, name) do
         Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
         Ok((bot, token)) => do
           MembershipRepository { db: database }.enlisted(organization.id, bot.id)
@@ -265,11 +276,15 @@ private do
   botRenewed : Db -> User -> Tab -> String -> (Tab, Bool)
   foul botRenewed(database, user, tab, id) do
     let refused = Tab { ...settled(tab), dialog: "bots" }
-    let owned : [User] = UserRepository { db: database }.operated(user.id).or([])
-    let named = owned.find { |bot| bot.id == id }.map { |bot| bot.name }.or("your bot")
-    match App.Services.Bots.renewed(database, user, id) do
-      Ok(token) => return (Tab { ...refused, secret: token, secretFor: named }, false)
-      Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+    match home(database, user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        let named = manageable(database, user, organization).find { |bot| bot.id == id }.map { |bot| bot.name }.or("the bot")
+        match App.Services.Bots.renewed(database, user, organization.id, id) do
+          Ok(token) => return (Tab { ...refused, secret: token, secretFor: named }, false)
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        end
+      end
     end
   end
 

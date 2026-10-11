@@ -16,7 +16,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_bots"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_bot_organizations"))
   end
 
   it("turns shortcodes into emoji") do
@@ -256,7 +256,7 @@ describe("Slick") do
 
     # Bots: a person's own, members like anyone, known by a token that is
     # stored only as a digest.
-    let (botTab, botMade) = stepped(database, bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot")])
+    let (botTab, botMade) = stepped(database, bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot"), ("owner", "me")])
     Assert.truthy(botMade)
     Assert.truthy(botTab.secret.contains?("slick_bot_"))
     let botsDialog = App.Live.Chat.markup(database, bob, botTab)
@@ -290,6 +290,32 @@ describe("Slick") do
     # Nor can somebody else bring it into their organization.
     let (malBrings, malBrought) = stepped(database, mal, Tab {}, [("event", "bot-enlist"), ("id", deployBot.id)])
     Assert.falsy(malBrought)
+
+    # A bot belongs to a person or to an organization. An organization's is
+    # looked after by anyone in it — and by nobody outside it.
+    let (sharedTab, _) = stepped(database, bob, Tab {}, [("event", "bot-create"), ("name", "acme-bot"), ("owner", "organization")])
+    let acmeBot : User = App.Services.Bots.bearer(database, Just("Bearer ${sharedTab.secret}")).try
+    Assert.equal(acmeBot.ownerId, "")
+    Assert.equal(acmeBot.ownerOrganizationId, inAcme.organization)
+    Assert.equal(deployBot.ownerOrganizationId, "")
+    let evesDialog = App.Live.Chat.markup(database, eve, Tab { dialog: "bots" })
+    Assert.truthy(evesDialog.contains?("acme-bot"))
+    Assert.truthy(evesDialog.contains?("belongs to Acme Corp"))
+    Assert.falsy(evesDialog.contains?("<span class=\"hint\">yours</span>"))
+    Assert.truthy(App.Live.Chat.markup(database, bob, Tab { dialog: "bots" }).contains?("<span class=\"hint\">yours</span>"))
+    let (eveRenews, _) = stepped(database, eve, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
+    Assert.truthy(eveRenews.secret.contains?("slick_bot_"))
+    Assert.equal(App.Services.Bots.bearer(database, Just("Bearer ${sharedTab.secret}")), None)
+    let (malRenews, _) = stepped(database, mal, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
+    Assert.equal(malRenews.secret, "")
+    Assert.truthy(App.Services.Bots.bearer(database, Just("Bearer ${eveRenews.secret}")).set?)
+    # Ada is in both organizations, but in Other she cannot touch Acme's bot
+    # or bring it over.
+    let (adaElsewhere, _) = stepped(database, ada, adaInOther, [("event", "bot-rekey"), ("id", acmeBot.id)])
+    Assert.equal(adaElsewhere.secret, "")
+    let (_, adaBrought) = stepped(database, ada, adaInOther, [("event", "bot-enlist"), ("id", acmeBot.id)])
+    Assert.falsy(adaBrought)
+    Assert.falsy(App.Live.Chat.markup(database, mal, Tab {}).contains?("acme-bot"))
 
     App.Services.Authentication.signOut(database, Just(adaToken))
     Assert.equal(App.Services.Authentication.current(database, Just(adaToken)), None)

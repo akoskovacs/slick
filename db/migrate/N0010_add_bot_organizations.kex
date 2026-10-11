@@ -1,0 +1,13 @@
+# A bot belongs to a person or to an organization — one of `owner_id` and
+# `owner_organization_id` is set, never both. An organization's bot is
+# looked after by whoever is in the organization, and stays when the person
+# who made it goes.
+module DB.Migrate.N0010AddBotOrganizations
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [addColumn, addIndex]
+
+let change = Migration.define :add_bot_organizations, follows: :add_bots do
+  addColumn(:users) do |t| t.text(:owner_organization_id, default: "") end
+  addIndex(:users, [:owner_organization_id])
+end

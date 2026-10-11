@@ -9,8 +9,10 @@ record User do
   name : String = ""
   # "person" or "bot".
   kind : String = "person"
-  # Whose bot it is; "" for a person.
+  # A bot belongs to a person or to an organization: one of these is set
+  # on a bot, and neither on a person.
   ownerId : String = ""
+  ownerOrganizationId : String = ""
 end
 
 make User do

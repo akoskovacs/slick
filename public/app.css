@@ -467,3 +467,5 @@ body.chat .editor { width: min(28rem, 100%); background: var(--pane); color: var
 .formats button:hover { background: var(--line); border-color: transparent; }
 .formats .hint { margin-left: auto; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread .formats .hint { display: none; }
+.asking select { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--pane); color: var(--ink); font: inherit; }
+.bots .hint { flex: 0 0 auto; font-size: 0.78rem; }

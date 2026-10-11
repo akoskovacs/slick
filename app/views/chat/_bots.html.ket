@@ -2,9 +2,9 @@
 params: [spot: String, rows: String, problem: String, secret: String, secretFor: String]
 ---
 <div class="backdrop">
-  <section class="editor" id="editor" role="dialog" aria-modal="true" aria-label="Your bots">
-    <h2>Your bots</h2>
-    <p class="hint">A bot is a member like anyone else, and uses Slick through its API with a token: <code>Authorization: Bearer …</code></p>
+  <section class="editor" id="editor" role="dialog" aria-modal="true" aria-label="Bots">
+    <h2>Bots</h2>
+    <p class="hint">A bot is a member like anyone else, and uses Slick through its API with a token: <code>Authorization: Bearer …</code> It belongs to <%= spot %>, where anyone can look after it, or to you, and you can bring it to your other organizations.</p>
 <% if !secret.empty? %>
     <div class="secret" role="status">
       <p>The token for <strong><%= secretFor %></strong>. Copy it now: it is not shown again.</p>
@@ -14,11 +14,15 @@ params: [spot: String, rows: String, problem: String, secret: String, secretFor:
     <ul class="bots"><%== rows %></ul>
     <form class="asking" data-live="bot-create" data-live-quiet>
       <input name="name" placeholder="deploy-bot" maxlength="40" autocomplete="off">
+      <select name="owner" aria-label="Who the bot belongs to">
+        <option value="organization">Belongs to <%= spot %></option>
+        <option value="me">Belongs to me</option>
+      </select>
 <% if !problem.empty? %>
       <p class="problem" role="alert"><%= problem %></p>
 <% end %>
       <div class="actions">
-        <button type="submit" class="primary">Create a bot in <%= spot %></button>
+        <button type="submit" class="primary">Create a bot</button>
         <button type="button" class="quiet" data-event="cancel">Close</button>
       </div>
     </form>

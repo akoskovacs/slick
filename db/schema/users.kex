@@ -14,7 +14,8 @@ let definition = Table.define :users do |t|
     t.text(:name, default: ""),
     t.text(:kind, default: "person", oneOf: ["person", "bot"]),
     t.text(:owner_id, default: ""),
-    t.text(:api_token_digest, default: "")
+    t.text(:api_token_digest, default: ""),
+    t.text(:owner_organization_id, default: "")
   ]
 end
 
@@ -28,3 +29,4 @@ let name = DB.Schema.Users.definition.textColumn(:name)
 let kind = DB.Schema.Users.definition.textColumn(:kind)
 let ownerId = DB.Schema.Users.definition.textColumn(:owner_id)
 let apiTokenDigest = DB.Schema.Users.definition.textColumn(:api_token_digest)
+let ownerOrganizationId = DB.Schema.Users.definition.textColumn(:owner_organization_id)
