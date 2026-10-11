@@ -1,0 +1,13 @@
+# Threads: a reply is a message with a parent, and the parent keeps count of
+# its replies so a conversation can say "3 replies" without reading them.
+# `parent_id` is "" on a message that starts, or could start, a thread.
+module DB.Migrate.N0007AddMessageThreads
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [addColumn, addIndex]
+
+let change = Migration.define :add_message_threads, follows: :create_reactions do
+  addColumn(:messages) do |t| t.text(:parent_id, default: "") end
+  addColumn(:messages) do |t| t.int(:reply_count, default: 0) end
+  addIndex(:messages, [:parent_id, :sent_at])
+end

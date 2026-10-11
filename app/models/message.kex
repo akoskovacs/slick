@@ -10,6 +10,10 @@ record Message do
   sentAt : Integer = 0
   # The same moment as ISO text, for showing.
   sentOn : String = ""
+  # The message this one replies to; "" when it is not a reply.
+  parentId : String = ""
+  # How many replies it has.
+  replyCount : Integer = 0
 end
 
 # The longest message accepted.

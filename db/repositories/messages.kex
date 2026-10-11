@@ -11,22 +11,37 @@ record MessageRepository do
 end
 
 make MessageRepository do
-  # The newest `limit` messages of a conversation, oldest first.
+  # The newest `limit` messages of a conversation, oldest first. Replies are
+  # not among them: they are read with the thread they belong to.
   foul latest(conversationId: String, limit: Integer) -> Result<[Message], String> do
     return @db.select().from(DB.Schema.Messages.definition).where(eq(DB.Schema.Messages.conversationId, conversationId))
+      .where(eq(DB.Schema.Messages.parentId, ""))
       .orderByDescending([:sent_at, :id]).limit(limit).all
       .map { |rows| rows.map { |row| decoded(row) }.reverse }
   end
 
-  # Stores a message, stamped now.
-  foul said(conversationId: String, userId: String, body: String) -> Result<Message, String> do
+  # The replies to a message, oldest first.
+  foul answering(rootId: String) -> Result<[Message], String> do
+    return @db.select().from(DB.Schema.Messages.definition).where(eq(DB.Schema.Messages.parentId, rootId))
+      .orderBy([:sent_at, :id]).all
+      .map { |rows| rows.map { |row| decoded(row) } }
+  end
+
+  # Stores a message, stamped now. With a parent it is a reply, and the
+  # parent's count is brought up to date — counted again, not added to, so
+  # two replies at once cannot leave it wrong.
+  foul said(conversationId: String, userId: String, body: String, parent: String) -> Result<Message, String> do
     let moment = BEAM.erlang.system_time(:millisecond)
     let message = Message {
       id: "m${moment}-${BEAM.erlang.unique_integer([:positive])}", conversationId: conversationId,
-      userId: userId, body: body, sentAt: moment, sentOn: "${DateTime.now()}"
+      userId: userId, body: body, sentAt: moment, sentOn: "${DateTime.now()}", parentId: parent
     }
-    let row = {id: message.id, conversation_id: conversationId, user_id: userId, body: body, sent_at: moment, sent_on: message.sentOn}
-    return @db.insert(DB.Schema.Messages.definition).values(row).run.map { |_| message }
+    let row = {id: message.id, conversation_id: conversationId, user_id: userId, body: body, sent_at: moment, sent_on: message.sentOn, parent_id: parent}
+    let stored = @db.insert(DB.Schema.Messages.definition).values(row).run
+    return stored.map { |_| message } if stored.error? || parent.empty?
+
+    let replies = this.answering(parent).try
+    return @db.update(DB.Schema.Messages.definition).set({reply_count: replies.count}).where(eq(DB.Schema.Messages.id, parent)).run.map { |_| message }
   end
 
   # One message, or `None`.
@@ -44,6 +59,8 @@ private do
     userId: row.get("user_id").or(""),
     body: row.get("body").or(""),
     sentAt: row.get("sent_at").or("").trim.to(Integer).or(0),
-    sentOn: row.get("sent_on").or("")
+    sentOn: row.get("sent_on").or(""),
+    parentId: row.get("parent_id").or(""),
+    replyCount: row.get("reply_count").or("").trim.to(Integer).or(0)
   }
 end

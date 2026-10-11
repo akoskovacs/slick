@@ -1,12 +1,15 @@
 ---
 params: [bubble: Bubble, chips: String, offers: String]
 ---
-<article class="message<% if bubble.own? %> own<% end %>" id="message-<%= bubble.key %>">
+<article class="message<% if bubble.own? %> own<% end %>" id="<%= bubble.anchor %>">
   <span class="avatar tint-<%= bubble.tint %>" aria-hidden="true"><%= bubble.initial %></span>
   <div class="said">
     <p class="byline"><strong><%= bubble.author %></strong> <time><%= bubble.stamp %></time></p>
     <p class="body"><%= bubble.content %></p>
     <div class="reactions"><%== chips %></div>
+<% if !bubble.answers.empty? %>
+    <button type="button" class="answers" data-event="thread" data-message="<%= bubble.key %>"><%= bubble.answers %></button>
+<% end %>
   </div>
-  <div class="offers"><%== offers %></div>
+  <div class="offers"><%== offers %><% if bubble.threadable? %><button type="button" class="chip" data-event="thread" data-message="<%= bubble.key %>" title="Reply in thread">💬</button><% end %></div>
 </article>

@@ -5,6 +5,8 @@ module App.Live.Tab
 record Tab do
   # The conversation the tab is showing, by id.
   conversation : String = "general"
+  # The message whose thread is open beside it, by id; "" when none is.
+  thread : String = ""
   # Whether the new-channel form is open, and what was wrong with its last try.
   founding? : Bool = false
   channelProblem : String = ""

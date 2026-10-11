@@ -1,10 +1,10 @@
 ---
-params: [failure: String, channels: String, founding: String, people: String, pane: String]
+params: [failure: String, channels: String, founding: String, people: String, pane: String, place: String, caption: String]
 ---
 <% if !failure.empty? %>
 <p class="failure" role="alert"><%= failure %></p>
 <% end %>
-<div class="workspace">
+<div class="workspace" data-live-path="<%= place %>" data-live-title="<%= caption %>">
   <nav class="sidebar">
     <div class="sidebar-head">
       <h2>Channels</h2>

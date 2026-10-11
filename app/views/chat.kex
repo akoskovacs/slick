@@ -26,6 +26,9 @@ end
 # One message.
 record Bubble do
   key : String
+  # The element's id: a message shown in the conversation and again at the
+  # head of its thread is two elements.
+  anchor : String
   author : String
   # The author's first letter and one of eight colours, for the avatar.
   initial : String
@@ -33,6 +36,10 @@ record Bubble do
   stamp : String
   content : String
   own? : Bool
+  # "3 replies", or "" when there are none or it is shown inside the thread.
+  answers : String = ""
+  # Whether a thread can be opened from it.
+  threadable? : Bool = true
 end
 
 # One emoji under a message: how many put it there, and whether I did.
@@ -50,6 +57,7 @@ let foundingPartial = Template.html(Kex.embed("chat/_founding.html.ket"))
 let headingPartial = Template.html(Kex.embed("chat/_heading.html.ket"))
 let bubblePartial = Template.html(Kex.embed("chat/_bubble.html.ket"))
 let chipPartial = Template.html(Kex.embed("chat/_chip.html.ket"))
+let threadPartial = Template.html(Kex.embed("chat/_thread.html.ket"))
 let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
 
 # The document: head, who is signed in, the live region, and Metro's script.
@@ -57,8 +65,11 @@ page : String -> String -> String
 let page(who, live) = layout(who, live)
 
 # The live region.
-index : Tab -> User -> [Conversation] -> [User] -> Conversation? -> [Message] -> [Reaction] -> String
-let index(tab, user, channels, people, conversation, messages, reactions) do
+#
+# `thread` is the open thread — the message that started it, then the
+# replies — or empty.
+index : Tab -> User -> [Conversation] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Message] -> String
+let index(tab, user, channels, people, conversation, messages, reactions, thread) do
   let channelLines = channels.map { |channel|
     entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == tab.conversation })
   }
@@ -67,19 +78,52 @@ let index(tab, user, channels, people, conversation, messages, reactions) do
     entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting })
   }
   let founding = tab.founding? then foundingPartial(tab.channelProblem) else ""
-  frame(tab.failure, channelLines.join("\n"), founding, personLines.join("\n"), pane(tab, user, people, conversation, messages, reactions))
+  let beside = thread.empty? then "" else threadPane(user, people, reactions, thread)
+  let place = conversation.map { |open| located(open, user, thread) }.or("")
+  let caption = conversation.map { |open| "${titled(open, user, people)} · Slick" }.or("Slick")
+  frame(
+    tab.failure, channelLines.join("\n"), founding, personLines.join("\n"),
+    pane(tab, user, people, conversation, messages, reactions, thread.empty?) + beside, place, caption
+  )
 end
 
 private do
-  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> String
-  let pane(tab, user, people, None, messages, reactions) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
-  let pane(tab, user, people, Just(conversation), messages, reactions) do
+  # Where a conversation is, as an address: the one the address bar shows
+  # and `App.Live.Chat.arrived` reads back.
+  located : Conversation -> User -> [Message] -> String
+  let located(conversation, user, thread) do
+    let base = conversation.channel? then "/channels/${conversation.title}" else "/dm/${conversation.counterpart(user.id)}"
+    thread.first.map { |opening| "${base}?thread=${opening.id}" }.or(base)
+  end
+
+  # The emoji buttons that type into one message box.
+  picked : String -> String
+  let picked(target) do
+    App.Models.Emoji.KNOWN.map { |entry| match entry do (code, glyph) => "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\" data-target=\"${target}\" title=\":${code}:\">${glyph}</button>" end }.join("")
+  end
+
+  tallied : Integer -> String
+  let tallied(0) = ""
+  let tallied(1) = "1 reply"
+  let tallied(replies) = "${replies} replies"
+
+  # The thread beside the conversation: its first message, then the replies.
+  threadPane : User -> [User] -> [Reaction] -> [Message] -> String
+  let threadPane(user, people, reactions, thread) do
+    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, true) }.join("")
+    let followups = thread.drop(1).map { |message| bubble(message, user, people, reactions, true) }
+    let summary = followups.empty? then "No replies yet" else tallied(followups.count)
+    threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true))
+  end
+
+  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> Bool -> String
+  let pane(tab, user, people, None, messages, reactions, alone?) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
+  let pane(tab, user, people, Just(conversation), messages, reactions, alone?) do
     let title = titled(conversation, user, people)
     let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
-    let bubbles = messages.map { |message| bubble(message, user, people, reactions) }
+    let bubbles = messages.map { |message| bubble(message, user, people, reactions, false) }
     let emptied = messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
-    let picks = App.Models.Emoji.KNOWN.map { |entry| match entry do (code, glyph) => "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\" data-target=\"#message-box\" title=\":${code}:\">${glyph}</button>" end }
-    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div>${composerPartial(title, picks.join(""))}</section>"
+    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div>${composerPartial("send", "message-box", "Message ${title}", picked("#message-box"), alone?)}</section>"
   end
 
   # What a conversation is called for this person: `# name` for a channel,
@@ -92,8 +136,10 @@ private do
     people.find { |person| person.id == other }.map { |person| person.shown }.or("Private chat")
   end
 
-  bubble : Message -> User -> [User] -> [Reaction] -> String
-  let bubble(message, user, people, reactions) do
+  # `inThread?` is whether it is shown in the thread pane, where a message
+  # has its own element id and no way to open the thread it is already in.
+  bubble : Message -> User -> [User] -> [Reaction] -> Bool -> String
+  let bubble(message, user, people, reactions, inThread?) do
     let author = people.find { |person| person.id == message.userId }.map { |person| person.shown }.or("Someone")
     let mine = reactions.filter { |reaction| reaction.messageId == message.id }
     let chips = mine.map { |reaction| reaction.emoji }.uniq.map { |glyph|
@@ -102,7 +148,7 @@ private do
     }
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
-      Bubble { key: message.id, author: author, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
+      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, author: author, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Models.Emoji.shown(message.body), own?: message.userId == user.id },
       chips.join(""), offers.join("")
     )
   end

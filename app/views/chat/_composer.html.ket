@@ -1,9 +1,9 @@
 ---
-params: [title: String, picks: String]
+params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool]
 ---
-<form class="composer" data-live="send" data-live-reset data-live-quiet>
+<form class="composer" data-live="<%= verb %>" data-live-reset data-live-quiet>
   <div class="composer-box">
-    <input id="message-box" name="body" placeholder="Message <%= title %>" maxlength="4000" autocomplete="off" autofocus>
+    <input id="<%= boxId %>" name="body" placeholder="<%= hint %>" maxlength="4000" autocomplete="off"<% if focused? %> autofocus<% end %>>
     <div class="composer-row">
       <div class="picks"><%== picks %></div>
       <button type="submit" class="send" title="Send">Send</button>

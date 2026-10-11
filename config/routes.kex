@@ -31,8 +31,17 @@ foul routes(store, hub) do
       plug(signedIn(database))
 
       get "/" do |env|
-        let user : User = visitor(database, env).try
-        page(App.Views.Chat.page(user.shown, App.Live.Chat.markup(database, user, App.Live.Tab.Tab {})))
+        redirectTo("/channels/general")
+      end
+
+      # A conversation has an address; the live view keeps the address bar
+      # on the one it is showing, and a reload comes back here.
+      get "/channels/:name" do |env|
+        chatting(database, env)
+      end
+
+      get "/dm/:person" do |env|
+        chatting(database, env)
       end
 
       post "/signout" do |env|
@@ -77,7 +86,7 @@ foul routes(store, hub) do
       if user.none?
         socket.close
       else
-        served(database, hub, socket, user.try)
+        served(database, hub, socket, user.try, env.query("at").or("/"))
       end
     end
 
@@ -117,11 +126,21 @@ private do
   visitor : Db -> Context -> User?
   foul visitor(database, env) = App.Services.Authentication.current(database, token(env))
 
+  # The chat page, opened at the conversation the address names.
+  foul chatting(database: Db, env: Context) -> Rodolfo.Reply do
+    let user : User = visitor(database, env).try
+    let tab = App.Live.Chat.arrived(database, user, env.request.target.string)
+    page(App.Views.Chat.page(user.shown, App.Live.Chat.markup(database, user, tab)))
+  end
+
   # Every tab is in one group: a message anywhere is news to every sidebar.
   # What a tab is then shown is still only what its person may read.
-  foul served(database: Db, hub: Server<Hub>, socket: Connection, user: User) -> Void do
+  #
+  # `location` is the address of the page the socket was opened from: the
+  # live view starts where the page was rendered.
+  foul served(database: Db, hub: Server<Hub>, socket: Connection, user: User, location: String) -> Void do
     Metro.Live.Socket.attached(
-      socket, hub, "everyone", App.Live.Tab.Tab {},
+      socket, hub, "everyone", App.Live.Chat.arrived(database, user, location),
       do |tab, event| App.Live.Chat.handled(database, user, tab, event) end,
       do |tab| App.Live.Chat.markup(database, user, tab) end
     )

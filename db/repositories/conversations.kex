@@ -26,6 +26,12 @@ make ConversationRepository do
       .map { |row| row.map { |found| decoded(found) } }
   end
 
+  # The channel of this name, or `None`.
+  foul titled(title: String) -> Result<Conversation?, String> do
+    return @db.select().from(DB.Schema.Conversations.definition).where(eq(DB.Schema.Conversations.slug, "#${title}")).first
+      .map { |row| row.map { |found| decoded(found) } }
+  end
+
   # Creates a channel. Fails when one of that name exists: the unique index
   # on `slug` decides.
   foul founded(title: String, by: String) -> Result<Conversation, String> do

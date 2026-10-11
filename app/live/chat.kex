@@ -46,11 +46,11 @@ foul markup(database, user, tab) do
   let people : [User] = UserRepository { db: database }.everyone.or([])
   let channels : [Conversation] = conversations.channels.or([])
   match visible(database, user, tab.conversation) do
-    None => return App.Views.Chat.index(tab, user, channels, people, None, [], [])
+    None => return App.Views.Chat.index(tab, user, channels, people, None, [], [], [])
     Just(conversation) => do
       let messages : [Message] = MessageRepository { db: database }.latest(conversation.id, WINDOW).or([])
       let reactions = ReactionRepository { db: database }.throughout(conversation.id).or([])
-      return App.Views.Chat.index(tab, user, channels, people, Just(conversation), messages, reactions)
+      return App.Views.Chat.index(tab, user, channels, people, Just(conversation), messages, reactions, unfolded(database, conversation, tab.thread))
     end
   end
 end
@@ -62,15 +62,42 @@ foul handled(database, user, tab, entries) do
   match field(entries, "event") do
     "open" => opened(database, user, tab, field(entries, "id"))
     "direct" => whispered(database, user, tab, field(entries, "user"))
-    "found" => (Tab { conversation: tab.conversation, founding?: true }, false)
+    "found" => (Tab { conversation: tab.conversation, thread: tab.thread, founding?: true }, false)
     "create" => founded(database, user, tab, field(entries, "title").trim.lowerCase)
     "send" => sent(database, user, tab, field(entries, "body").trim)
-    "retitle" => (Tab { conversation: tab.conversation, retitling?: true }, false)
+    "retitle" => (Tab { conversation: tab.conversation, thread: tab.thread, retitling?: true }, false)
     "topic" => retitled(database, user, tab, field(entries, "topic").trim)
     "react" => reacted(database, user, tab, field(entries, "message"), field(entries, "emoji"))
-    "cancel" => (Tab { conversation: tab.conversation }, false)
+    "cancel" => (Tab { conversation: tab.conversation, thread: tab.thread }, false)
+    "thread" => threaded(database, user, tab, field(entries, "message"))
+    "unthread" => (Tab { conversation: tab.conversation }, false)
+    "reply" => replied(database, user, tab, field(entries, "body").trim)
+    "visit" => (arrived(database, user, field(entries, "path")), false)
     _ => (tab, false)
   end
+end
+
+# The tab for an address: `/channels/general`, `/dm/<person>`, either with
+# `?thread=<message>`. Anything else, or a place this person may not be, is
+# the tab everyone starts with. A private chat is started by going to it.
+arrived : Db -> User -> String -> Tab
+foul arrived(database, user, location) do
+  let segments = location.split("?").first.or("").split("/").reject { |segment| segment.empty? }
+  let thread = location.split("thread=").drop(1).first.or("").split("&").first.or("")
+  let place = segments.first.or("")
+  let subject = segments.drop(1).first.or("")
+  return Tab {} if segments.count != 2
+
+  if place == "channels"
+    match ConversationRepository { db: database }.titled(subject) do
+      Ok(Just(channel)) => return Tab { conversation: channel.id, thread: thread }
+      _ => return Tab {}
+    end
+  end
+  return Tab {} if place != "dm"
+
+  let (chat, _) = whispered(database, user, Tab {}, subject)
+  return Tab { conversation: chat.conversation, thread: chat.conversation == "general" then "" else thread }
 end
 
 # The conversation with this id, if this person may read it.
@@ -83,6 +110,64 @@ foul visible(database, user, id) do
 end
 
 private do
+  # The message that starts the thread this message is in — itself, when it
+  # is not a reply — if it belongs to this conversation.
+  rooted : Db -> Conversation -> String -> Message?
+  foul rooted(database, conversation, id) do
+    return None if id.empty?
+
+    match MessageRepository { db: database }.single(id) do
+      Ok(Just(message)) => do
+        return None if message.conversationId != conversation.id
+        return Just(message) if message.parentId.empty?
+        return rooted(database, conversation, message.parentId)
+      end
+      _ => return None
+    end
+  end
+
+  # An open thread: the message that started it, then its replies. Empty
+  # when no thread is open, or the one asked for is not in this conversation.
+  unfolded : Db -> Conversation -> String -> [Message]
+  foul unfolded(database, conversation, id) do
+    match rooted(database, conversation, id) do
+      None => return []
+      Just(first) => do
+        let replies : [Message] = MessageRepository { db: database }.answering(first.id).or([])
+        return [first] + replies
+      end
+    end
+  end
+
+  threaded : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul threaded(database, user, tab, id) do
+    match visible(database, user, tab.conversation) do
+      None => return (tab, false)
+      Just(conversation) => match rooted(database, conversation, id) do
+        Just(first) => return (Tab { conversation: conversation.id, thread: first.id }, false)
+        None => return (tab, false)
+      end
+    end
+  end
+
+  # A reply goes into the thread the tab has open, and nowhere else.
+  replied : Db -> User -> Tab -> String -> (Tab, Bool)
+  foul replied(database, user, tab, body) do
+    let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
+    return (tab, false) if !problems.empty?
+
+    match visible(database, user, tab.conversation) do
+      None => return (tab, false)
+      Just(conversation) => match rooted(database, conversation, tab.thread) do
+        None => return (tab, false)
+        Just(first) => match MessageRepository { db: database }.said(conversation.id, user.id, body, first.id) do
+          Ok(_) => return (Tab { conversation: conversation.id, thread: first.id }, true)
+          Error(reason) => return (Tab { conversation: conversation.id, thread: first.id, failure: "Not sent: ${reason}" }, false)
+        end
+      end
+    end
+  end
+
   opened : Db -> User -> Tab -> String -> (Tab, Bool)
   foul opened(database, user, tab, id) do
     match visible(database, user, id) do
@@ -124,8 +209,8 @@ private do
 
     match visible(database, user, tab.conversation) do
       None => (tab, false)
-      Just(conversation) => match MessageRepository { db: database }.said(conversation.id, user.id, body) do
-        Ok(_) => (Tab { conversation: conversation.id }, true)
+      Just(conversation) => match MessageRepository { db: database }.said(conversation.id, user.id, body, "") do
+        Ok(_) => (Tab { conversation: conversation.id, thread: tab.thread }, true)
         Error(reason) => (Tab { conversation: conversation.id, failure: "Not sent: ${reason}" }, false)
       end
     end
@@ -139,7 +224,7 @@ private do
     match visible(database, user, tab.conversation) do
       None => (tab, false)
       Just(conversation) => match ConversationRepository { db: database }.retitled(conversation.id, topic) do
-        Ok(changed) => (Tab { conversation: conversation.id }, changed)
+        Ok(changed) => (Tab { conversation: conversation.id, thread: tab.thread }, changed)
         Error(reason) => (Tab { conversation: conversation.id, failure: reason }, false)
       end
     end

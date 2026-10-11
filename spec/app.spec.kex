@@ -16,7 +16,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_reactions"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_message_threads"))
   end
 
   it("turns shortcodes into emoji") do
@@ -115,6 +115,43 @@ describe("Slick") do
     Assert.falsy(wrongEmoji)
     let (_, wrongPlace) = stepped(database, bob, inRandom, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
     Assert.falsy(wrongPlace)
+
+    # Threads: replies stay out of the conversation, which counts them.
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_message_threads"))
+    let (bobThread, _) = stepped(database, bob, Tab {}, [("event", "thread"), ("message", messageId)])
+    Assert.equal(bobThread.thread, messageId)
+    Assert.truthy(App.Live.Chat.markup(database, bob, bobThread).contains?("No replies yet"))
+    let (_, replySent) = stepped(database, bob, bobThread, [("event", "reply"), ("body", "a reply in the thread")])
+    Assert.truthy(replySent)
+    stepped(database, ada, bobThread, [("event", "reply"), ("body", "and another")])
+    let outside = App.Live.Chat.markup(database, eve, Tab {})
+    Assert.falsy(outside.contains?("a reply in the thread"))
+    Assert.truthy(outside.contains?("2 replies"))
+    let inside = App.Live.Chat.markup(database, eve, bobThread)
+    Assert.truthy(inside.contains?("a reply in the thread"))
+    Assert.truthy(inside.contains?("and another"))
+    Assert.truthy(inside.contains?("id=\"thread-${messageId}\""))
+    Assert.truthy(inside.contains?("data-live-path=\"/channels/general?thread=${messageId}\""))
+    # A reply with no thread open goes nowhere; a thread from another
+    # conversation does not open here.
+    let (_, stray) = stepped(database, bob, Tab {}, [("event", "reply"), ("body", "lost")])
+    Assert.falsy(stray)
+    let (elsewhere, _) = stepped(database, bob, inRandom, [("event", "thread"), ("message", messageId)])
+    Assert.equal(elsewhere.thread, "")
+    # Sending in the conversation leaves the thread open beside it.
+    let (stillOpen, _) = stepped(database, bob, bobThread, [("event", "send"), ("body", "back in the channel")])
+    Assert.equal(stillOpen.thread, messageId)
+
+    # Addresses: a channel by name, a private chat by person, a thread.
+    Assert.equal(App.Live.Chat.arrived(database, eve, "/channels/random").conversation, inRandom.conversation)
+    Assert.equal(App.Live.Chat.arrived(database, eve, "/channels/general?thread=${messageId}").thread, messageId)
+    Assert.equal(App.Live.Chat.arrived(database, ada, "/dm/${bob.id}").conversation, adaPrivate.conversation)
+    Assert.equal(App.Live.Chat.arrived(database, eve, "/channels/nowhere").conversation, "general")
+    Assert.equal(App.Live.Chat.arrived(database, eve, "/dm/nobody").conversation, "general")
+    Assert.truthy(App.Live.Chat.markup(database, ada, adaPrivate).contains?("data-live-path=\"/dm/${bob.id}\""))
+    Assert.truthy(App.Live.Chat.markup(database, ada, inRandom).contains?("data-live-title=\"# random · Slick\""))
+    # Eve going to her own chat with Bob gets hers, not Ada's.
+    Assert.truthy(App.Live.Chat.arrived(database, eve, "/dm/${bob.id}").conversation != adaPrivate.conversation)
 
     App.Services.Authentication.signOut(database, Just(adaToken))
     Assert.equal(App.Services.Authentication.current(database, Just(adaToken)), None)

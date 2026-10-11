@@ -11,7 +11,9 @@ let definition = Table.define :messages do |t|
     t.text(:user_id),
     t.text(:body),
     t.bigint(:sent_at),
-    t.text(:sent_on)
+    t.text(:sent_on),
+    t.text(:parent_id, default: ""),
+    t.int(:reply_count, default: 0)
   ]
 end
 
@@ -23,3 +25,4 @@ let userId = DB.Schema.Messages.definition.textColumn(:user_id)
 let body = DB.Schema.Messages.definition.textColumn(:body)
 let sentAt = DB.Schema.Messages.definition.wholeColumn(:sent_at)
 let sentOn = DB.Schema.Messages.definition.textColumn(:sent_on)
+let parentId = DB.Schema.Messages.definition.textColumn(:parent_id)
