@@ -36,19 +36,32 @@ client-side application: the browser shows markup and sends events.
 
 The search box in the top bar is not wired to anything yet.
 
-## Getting started
+## Run it
 
-With Docker alone, Slick beside a PostgreSQL:
+With Docker alone — no toolchain, no clone. The published image beside a
+PostgreSQL; migrations run on start, data stays in a volume:
 
 ```sh
-docker compose up --build --detach
+curl -O https://raw.githubusercontent.com/akoskovacs/slick/main/docker-compose.image.yml
+POSTGRES_PASSWORD=choose-one docker compose -f docker-compose.image.yml up --detach
 ```
 
-Slick is then on http://localhost:4000: register, and create an
-organization of your own. Data and seeds are covered under Docker below.
+On http://localhost:4000: register, and create an organization of your
+own. Newer images, stopping, logs and your own database are all under
+Docker below.
 
-Or locally, with the Kex toolchain (0.4.0-rc.1 or newer), unixODBC and a
-SQLite ODBC driver (`brew install unixodbc sqliteodbc`):
+## Develop it
+
+With its sources, either Docker or the Kex toolchain (0.4.0-rc.1 or
+newer):
+
+```sh
+git clone https://github.com/akoskovacs/slick && cd slick
+docker compose up --build --detach   # needs only Docker
+```
+
+Or locally, with unixODBC and a SQLite ODBC driver too
+(`brew install unixodbc sqliteodbc`):
 
 ```sh
 sh script/setup.sh   # once: dependencies, the ODBC port program
@@ -177,19 +190,8 @@ twice plants once. Only development has any.
 
 CI publishes Slick as `ghcr.io/akoskovacs/slick`: `latest` is the newest
 main, `sha-…` one commit of it, and a release tagged `v1.2.3` is `1.2.3` and
-`1.2`. It comes for amd64 and arm64.
-
-`docker-compose.image.yml` runs it beside a PostgreSQL 17, with nothing
-built on the machine: that one file and Docker are all it needs.
-
-```sh
-curl -O https://raw.githubusercontent.com/akoskovacs/slick/main/docker-compose.image.yml
-POSTGRES_PASSWORD=choose-one docker compose -f docker-compose.image.yml up --detach
-```
-
-Slick is then on http://localhost:4000: register, and create an
-organization. Migrations run whenever the application starts, and the data
-is in a volume that outlives the containers.
+`1.2`. It comes for amd64 and arm64. The quickstart is under Run it above;
+here is everything around it.
 
 ```sh
 docker compose -f docker-compose.image.yml pull              # a newer image…
