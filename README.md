@@ -2,7 +2,7 @@
 
 A team chat: organizations, channels, threads, private chats, reactions and
 bots. It is written in [Kex](https://github.com/kexhq/kex), on
-[Metro](https://github.com/akoskovacs/metro) for the web and
+[Metro](https://github.com/kexhq/metro) for the web and
 [Harmat](https://github.com/kexhq/harmat) for the database. Pages are
 rendered on the server and kept current over a WebSocket, so there is no
 client-side application: the browser shows markup and sends events.
@@ -21,7 +21,8 @@ client-side application: the browser shows markup and sends events.
 - **Threads.** Any message can be replied to beside the conversation.
 - **Reactions.** 👍 ❤️ 😂 🎉 👀 🙏 on a message; a second click takes yours off.
 - **Rich text.** A light markup, read a line at a time (see below), and
-  `:tada:`-style names for emoji. Nothing typed is ever treated as HTML.
+  `:tada:`-style names for emoji; a message of nothing but emoji is shown
+  big. Nothing typed is ever treated as HTML.
 - **Presence.** Who has a tab open, who is typing, and a status of your own:
   an emoji and a few words.
 - **Live.** What one person does shows in everyone's open tabs at once.
@@ -37,8 +38,17 @@ The search box in the top bar is not wired to anything yet.
 
 ## Getting started
 
-Needs Kex 0.4.0-rc.1 or newer with Tey, unixODBC and a SQLite ODBC driver
-(`brew install unixodbc sqliteodbc`).
+With Docker alone, Slick beside a PostgreSQL:
+
+```sh
+docker compose up --build --detach
+```
+
+Slick is then on http://localhost:4000: register, and create an
+organization of your own. Data and seeds are covered under Docker below.
+
+Or locally, with the Kex toolchain (0.4.0-rc.1 or newer), unixODBC and a
+SQLite ODBC driver (`brew install unixodbc sqliteodbc`):
 
 ```sh
 sh script/setup.sh   # once: dependencies, the ODBC port program
@@ -80,6 +90,7 @@ your own.
 | `---` | a divider |
 | `*bold*` `_italic_` `~struck~` `` `code` `` | inside a line |
 | `:rocket:` | 🚀 |
+| a message of nothing but emoji | shown big |
 | `https://…` | a link |
 | `[?] Notes` | a form field to type in |
 | `[?] Deploy to: staging \| production` | a form field to choose in |
@@ -138,12 +149,10 @@ its `blocks`. A form is a block too: `{"type": "form", "fields": [{"label":
 notes"}]}`. The whole of it is described at the top of
 `app/controllers/api.kex`.
 
-`tey seed` makes development bots called `claude` and `codex`, with tokens
-`slick_bot_development_claude` and `slick_bot_development_codex`. Re-running
-it adds Codex to an existing development workspace too. The separate
-[Claude](../claude) and [Codex](../codex) projects answer when named in a
-channel or written to in private. Both support forms and operator-controlled
-tool permissions.
+`tey seed` makes a development bot called `claude`, with token
+`slick_bot_development_claude`. The separate [claude-bot](../claude-bot)
+project answers when named in a channel or written to in private; see its
+README for setup.
 
 ## Database
 
