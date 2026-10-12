@@ -6,18 +6,16 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 let definition = Table.define :conversations do |t|
-  [
-    t.text(:id, primaryKey: true),
-    t.text(:kind, oneOf: ["channel", "direct"]),
-    t.text(:slug),
-    t.text(:title, default: ""),
-    t.text(:topic, default: ""),
-    t.text(:first_user, default: ""),
-    t.text(:second_user, default: ""),
-    t.text(:created_by, default: ""),
-    t.text(:created_at),
-    t.text(:organization_id, default: "")
-  ]
+  t.text(:id, primaryKey: true)
+  t.text(:kind, oneOf: ["channel", "direct"])
+  t.text(:slug)
+  t.text(:title, default: "")
+  t.text(:topic, default: "")
+  t.text(:first_user, default: "")
+  t.text(:second_user, default: "")
+  t.text(:created_by, default: "")
+  t.text(:created_at)
+  t.text(:organization_id, default: "")
 end
 
 let table = DB.Schema.Conversations.definition.table

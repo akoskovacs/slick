@@ -9,22 +9,18 @@ using Harmat.Migration, only: [createTable, addColumn, addIndex]
 
 let change = Migration.define :create_organizations, follows: :add_message_threads do
   createTable(:organizations) do |t|
-    [
-      t.text(:id, primaryKey: true),
-      t.text(:slug),
-      t.text(:name),
-      t.text(:created_by, default: ""),
-      t.text(:created_at)
-    ]
+    t.text(:id, primaryKey: true)
+    t.text(:slug)
+    t.text(:name)
+    t.text(:created_by, default: "")
+    t.text(:created_at)
   end
   addIndex(:organizations, [:slug], unique: true)
   createTable(:memberships) do |t|
-    [
-      t.text(:id, primaryKey: true),
-      t.text(:organization_id),
-      t.text(:user_id),
-      t.text(:joined_at)
-    ]
+    t.text(:id, primaryKey: true)
+    t.text(:organization_id)
+    t.text(:user_id)
+    t.text(:joined_at)
   end
   addIndex(:memberships, [:organization_id, :user_id], unique: true)
   addIndex(:memberships, [:user_id])

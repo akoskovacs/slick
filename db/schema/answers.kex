@@ -6,17 +6,15 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 let definition = Table.define :answers do |t|
-  [
-    t.text(:id, primaryKey: true),
-    t.text(:message_id),
-    t.text(:conversation_id),
-    t.text(:organization_id),
-    t.text(:asker_id),
-    t.text(:user_id),
-    t.int(:form),
-    t.text(:answer),
-    t.bigint(:answered_at)
-  ]
+  t.text(:id, primaryKey: true)
+  t.text(:message_id)
+  t.text(:conversation_id)
+  t.text(:organization_id)
+  t.text(:asker_id)
+  t.text(:user_id)
+  t.int(:form)
+  t.text(:answer)
+  t.bigint(:answered_at)
 end
 
 let table = DB.Schema.Answers.definition.table

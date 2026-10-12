@@ -11,17 +11,15 @@ using Harmat.Migration, only: [createTable, addIndex]
 
 let change = Migration.define :create_answers, follows: :add_user_statuses do
   createTable(:answers) do |t|
-    [
-      t.text(:id, primaryKey: true),
-      t.text(:message_id),
-      t.text(:conversation_id),
-      t.text(:organization_id),
-      t.text(:asker_id),
-      t.text(:user_id),
-      t.int(:form),
-      t.text(:answer),
-      t.bigint(:answered_at)
-    ]
+    t.text(:id, primaryKey: true)
+    t.text(:message_id)
+    t.text(:conversation_id)
+    t.text(:organization_id)
+    t.text(:asker_id)
+    t.text(:user_id)
+    t.int(:form)
+    t.text(:answer)
+    t.bigint(:answered_at)
   end
   addIndex(:answers, [:conversation_id])
   addIndex(:answers, [:asker_id])

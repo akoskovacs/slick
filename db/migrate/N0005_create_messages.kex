@@ -8,14 +8,12 @@ using Harmat.Migration, only: [createTable, addIndex]
 
 let change = Migration.define :create_messages, follows: :create_conversations do
   createTable(:messages) do |t|
-    [
-      t.text(:id, primaryKey: true),
-      t.text(:conversation_id),
-      t.text(:user_id),
-      t.text(:body),
-      t.bigint(:sent_at),
-      t.text(:sent_on)
-    ]
+    t.text(:id, primaryKey: true)
+    t.text(:conversation_id)
+    t.text(:user_id)
+    t.text(:body)
+    t.bigint(:sent_at)
+    t.text(:sent_on)
   end
   addIndex(:messages, [:conversation_id, :sent_at])
 end

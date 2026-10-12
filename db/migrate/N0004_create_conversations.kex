@@ -8,17 +8,15 @@ using Harmat.Migration, only: [createTable, addIndex]
 
 let change = Migration.define :create_conversations, follows: :add_user_names do
   createTable(:conversations) do |t|
-    [
-      t.text(:id, primaryKey: true),
-      t.text(:kind, oneOf: ["channel", "direct"]),
-      t.text(:slug),
-      t.text(:title, default: ""),
-      t.text(:topic, default: ""),
-      t.text(:first_user, default: ""),
-      t.text(:second_user, default: ""),
-      t.text(:created_by, default: ""),
-      t.text(:created_at)
-    ]
+    t.text(:id, primaryKey: true)
+    t.text(:kind, oneOf: ["channel", "direct"])
+    t.text(:slug)
+    t.text(:title, default: "")
+    t.text(:topic, default: "")
+    t.text(:first_user, default: "")
+    t.text(:second_user, default: "")
+    t.text(:created_by, default: "")
+    t.text(:created_at)
   end
   addIndex(:conversations, [:slug], unique: true)
   addIndex(:conversations, [:kind, :title])

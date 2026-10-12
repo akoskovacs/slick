@@ -8,13 +8,11 @@ using Harmat.Migration, only: [createTable, addIndex]
 
 let change = Migration.define :create_reactions, follows: :create_messages do
   createTable(:reactions) do |t|
-    [
-      t.text(:id, primaryKey: true),
-      t.text(:conversation_id),
-      t.text(:message_id),
-      t.text(:user_id),
-      t.text(:emoji)
-    ]
+    t.text(:id, primaryKey: true)
+    t.text(:conversation_id)
+    t.text(:message_id)
+    t.text(:user_id)
+    t.text(:emoji)
   end
   addIndex(:reactions, [:conversation_id])
 end

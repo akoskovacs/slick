@@ -5,13 +5,11 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 let definition = Table.define :organizations do |t|
-  [
-    t.text(:id, primaryKey: true),
-    t.text(:slug),
-    t.text(:name),
-    t.text(:created_by, default: ""),
-    t.text(:created_at)
-  ]
+  t.text(:id, primaryKey: true)
+  t.text(:slug)
+  t.text(:name)
+  t.text(:created_by, default: "")
+  t.text(:created_at)
 end
 
 let table = DB.Schema.Organizations.definition.table

@@ -138,10 +138,12 @@ its `blocks`. A form is a block too: `{"type": "form", "fields": [{"label":
 notes"}]}`. The whole of it is described at the top of
 `app/controllers/api.kex`.
 
-`tey seed` makes a bot called `claude` in development, with the token
-`slick_bot_development_claude`. The `claude` project, a repository of its
-own, is a bot that answers with Claude when it is named in a channel or
-written to in private.
+`tey seed` makes development bots called `claude` and `codex`, with tokens
+`slick_bot_development_claude` and `slick_bot_development_codex`. Re-running
+it adds Codex to an existing development workspace too. The separate
+[Claude](../claude) and [Codex](../codex) projects answer when named in a
+channel or written to in private. Both support forms and operator-controlled
+tool permissions.
 
 ## Database
 

@@ -5,16 +5,14 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 let definition = Table.define :messages do |t|
-  [
-    t.text(:id, primaryKey: true),
-    t.text(:conversation_id),
-    t.text(:user_id),
-    t.text(:body),
-    t.bigint(:sent_at),
-    t.text(:sent_on),
-    t.text(:parent_id, default: ""),
-    t.int(:reply_count, default: 0)
-  ]
+  t.text(:id, primaryKey: true)
+  t.text(:conversation_id)
+  t.text(:user_id)
+  t.text(:body)
+  t.bigint(:sent_at)
+  t.text(:sent_on)
+  t.text(:parent_id, default: "")
+  t.int(:reply_count, default: 0)
 end
 
 let table = DB.Schema.Messages.definition.table
