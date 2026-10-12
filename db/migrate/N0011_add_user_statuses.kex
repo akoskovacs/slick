@@ -6,6 +6,6 @@ using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [addColumn]
 
 let change = Migration.define :add_user_statuses, follows: :add_bot_organizations do
-  addColumn(:users) do |t| t.text(:status_emoji, default: "") end
-  addColumn(:users) do |t| t.text(:status_text, default: "") end
+  addColumn(:users) { |t| t.text(:status_emoji, default: "") }
+  addColumn(:users) { |t| t.text(:status_text, default: "") }
 end

@@ -5,5 +5,5 @@ using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [addColumn]
 
 let change = Migration.define :add_user_names, follows: :create_sessions do
-  addColumn(:users) do |t| t.text(:name, default: "") end
+  addColumn(:users) { |t| t.text(:name, default: "") }
 end

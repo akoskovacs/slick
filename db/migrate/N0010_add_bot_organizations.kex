@@ -8,6 +8,6 @@ using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [addColumn, addIndex]
 
 let change = Migration.define :add_bot_organizations, follows: :add_bots do
-  addColumn(:users) do |t| t.text(:owner_organization_id, default: "") end
+  addColumn(:users) { |t| t.text(:owner_organization_id, default: "") }
   addIndex(:users, [:owner_organization_id])
 end

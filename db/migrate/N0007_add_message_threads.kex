@@ -7,7 +7,7 @@ using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [addColumn, addIndex]
 
 let change = Migration.define :add_message_threads, follows: :create_reactions do
-  addColumn(:messages) do |t| t.text(:parent_id, default: "") end
-  addColumn(:messages) do |t| t.int(:reply_count, default: 0) end
+  addColumn(:messages) { |t| t.text(:parent_id, default: "") }
+  addColumn(:messages) { |t| t.int(:reply_count, default: 0) }
   addIndex(:messages, [:parent_id, :sent_at])
 end
