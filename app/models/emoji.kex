@@ -37,5 +37,39 @@ let shown(body: String) -> String do
   end
 end
 
+# The codepoint ranges that read as emoji: ©® and ‼⁉, ™ℹ️ and the arrows,
+# the pictograph blocks through to flags and the supplemental symbols.
+let RANGES = [
+  0xA9..0xA9, 0xAE..0xAE, 0x203C..0x203C, 0x2049..0x2049,
+  0x2122..0x2122, 0x2139..0x2139, 0x2194..0x2199,
+  0x231A..0x231B, 0x2328..0x2328, 0x23E9..0x23F3, 0x23F8..0x23FA,
+  0x24C2..0x24C2, 0x25AA..0x25AB, 0x25B6..0x25B6, 0x25C0..0x25C0,
+  0x25FB..0x25FE, 0x2600..0x26FF, 0x2700..0x27BF,
+  0x2B05..0x2B07, 0x2B1B..0x2B1C, 0x2B50..0x2B50, 0x2B55..0x2B55,
+  0x3030..0x3030, 0x303D..0x303D, 0x3297..0x3297, 0x3299..0x3299,
+  0x1F000..0x1FAFF
+]
+
+# Whether a message is nothing but emoji: shortcodes expanded, then every
+# character an emoji or whitespace, with at least one emoji in there.
+# Punctuation, markup and letters all disqualify — as does an empty message.
+# A keycap such as 1️⃣ still reads as text: its digit is not an emoji character.
+let emojiOnly?(body: String) -> Bool do
+  let text = shown(body)
+  !text.trim.empty? && text.chars.all? { |char| char.space? || emoji?(char) } && text.chars.any? { |char| emoji?(char) }
+end
+
 # Whether an emoji is one a reaction may be.
 let reaction?(emoji: String) -> Bool = PALETTE.contains?(emoji)
+
+private do
+  # Whether a character is an emoji, or one of the invisible pieces emoji are
+  # made of: the zero-width joiner, the variation selector, the keycap mark
+  # and tag characters. Skin tones ride along in the pictograph range.
+  emoji? : Char -> Bool
+  let emoji?(char) do
+    let cp = char.codepoint
+    return true if RANGES.any? { |range| cp.in?(range) }
+    cp == 0x200D || cp == 0xFE0F || cp == 0x20E3 || cp.in?(0xE0020..0xE007F)
+  end
+end

@@ -333,6 +333,8 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 .byline strong { font-weight: 900; }
 .byline time { margin-left: 0.35rem; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .body { margin: 0; overflow-wrap: anywhere; }
+/* A message of nothing but emoji, shown big. */
+.big-emoji { font-size: 2.75rem; line-height: 1.35; }
 
 .reactions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .reactions:not(:empty) { margin-top: 0.25rem; }

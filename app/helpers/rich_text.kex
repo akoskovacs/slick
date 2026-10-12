@@ -67,12 +67,14 @@ html : String -> String
 let html(body) = shown(body, "", [])
 
 # A stored message as markup for the page: `key` is its id, which its forms
-# send back with an answer, and `given` the answers its forms have had.
+# send back with an answer, and `given` the answers its forms have had. A
+# message of nothing but emoji is wrapped for big rendering.
 shown : String -> String -> [Given] -> String
 let shown(body, key, given) do
-  blocks(body).mapIndexed { |block, index|
+  let content = blocks(body).mapIndexed { |block, index|
     rendered(block, key, index) + answers(block, given.filter { |each| each.form == index })
   }.join("")
+  App.Models.Emoji.emojiOnly?(body) then "<div class=\"big-emoji\">${content}</div>" else content
 end
 
 # What a form sent, as an answer to one of a message's forms: which block

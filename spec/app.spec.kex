@@ -25,6 +25,20 @@ describe("Slick") do
     Assert.equal(App.Models.Emoji.shown("10:30 :nope:"), "10:30 :nope:")
   end
 
+  it("shows a message of nothing but emoji big") do
+    Assert.truthy(App.Models.Emoji.emojiOnly?("🎉"))
+    Assert.truthy(App.Models.Emoji.emojiOnly?("🎉 🚀"))
+    Assert.truthy(App.Models.Emoji.emojiOnly?("👨‍👩‍👧 ❤️"))
+    Assert.truthy(App.Models.Emoji.emojiOnly?(":tada::rocket:"))
+    Assert.falsy(App.Models.Emoji.emojiOnly?(""))
+    Assert.falsy(App.Models.Emoji.emojiOnly?("   "))
+    Assert.falsy(App.Models.Emoji.emojiOnly?("🎉!"))
+    Assert.falsy(App.Models.Emoji.emojiOnly?("..."))
+    Assert.falsy(App.Models.Emoji.emojiOnly?("ship it :rocket:"))
+    Assert.equal(App.Helpers.RichText.html("🎉 🚀"), "<div class=\"big-emoji\"><p>🎉 🚀</p></div>")
+    Assert.equal(App.Helpers.RichText.html("🎉!"), "<p>🎉!</p>")
+  end
+
   it("reads a message as blocks of rich text, and nothing typed as markup") do
     Assert.equal(App.Helpers.RichText.html("hello"), "<p>hello</p>")
     Assert.equal(App.Helpers.RichText.html("*bold* _it_ ~gone~ `co*de*`"), "<p><strong>bold</strong> <em>it</em> <s>gone</s> <code>co*de*</code></p>")
