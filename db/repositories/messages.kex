@@ -18,6 +18,17 @@ foul latest(conversationId: String, limit: Integer) -> Result<[Message], String>
     .map { |rows| rows.map { |row| decoded(row) }.reverse }
 end
 
+# How many messages of a conversation are newer than `since`, in
+# milliseconds since 1970. Replies are not counted: they are read in their
+# thread.
+foul newer(conversationId: String, since: Integer) -> Result<Integer, String> do
+  return Database.select().from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.conversationId.eq(conversationId))
+    .where(DB.Schema.Messages.parentId.eq(""))
+    .where(DB.Schema.Messages.sentAt.gt(since))
+    .count
+end
+
 # The replies to a message, oldest first.
 foul answering(rootId: String) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)

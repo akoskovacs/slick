@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_drafts"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_readings"))
   end
 
   it("turns shortcodes into emoji") do
@@ -455,7 +455,7 @@ describe("Slick") do
       Assert.equal(App.Live.Chat.arrived(eve, "/acmecorp/dm/nobody").conversation, "")
       Assert.equal(App.Live.Chat.arrived(eve, "/nowhere/channels/general").organization, "")
       Assert.truthy(App.Live.Chat.markup(statuses, ada, adaPrivate).contains?("data-live-path=\"/acmecorp/dm/${bob.id}\""))
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("data-live-title=\"# random · Acme Corp\""))
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("# random · Acme Corp\">"))
       # Eve going to her own chat with Bob gets hers, not Ada's.
       Assert.truthy(App.Live.Chat.arrived(eve, "/acmecorp/dm/${bob.id}").conversation != adaPrivate.conversation)
 
@@ -550,6 +550,27 @@ describe("Slick") do
       Assert.equal(App.Live.Chat.visible(bob, adaAlone), None)
       Assert.falsy(App.Live.Chat.markup(statuses, bob, adaAlone).contains?("a note to self"))
       Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("This is your space"))
+
+      # Unread: what came since somebody last looked is counted beside the
+      # place, in the title, and in the rail for another organization; looking
+      # reads it.
+      App.Live.Chat.markup(statuses, eve, Tab {})
+      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
+      stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "one for later")])
+      stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "and another")])
+      let eveAway = App.Live.Chat.markup(statuses, eve, inRandom)
+      Assert.truthy(eveAway.contains?("# general\n      <span class=\"count\" aria-label=\"2 unread\">2</span>"))
+      Assert.truthy(eveAway.contains?("data-live-title=\"(2) # random"))
+      Assert.truthy(eveAway.contains?("class=\"entry unread\""))
+      App.Live.Chat.markup(statuses, eve, Tab {})
+      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
+      # Replies are read in their thread, and do not count.
+      stepped(statuses, bob, bobThread, [("event", "reply"), ("body", "a quiet reply")])
+      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
+      # A private chat is counted by the person it is with.
+      let (bobToEve, _) = stepped(statuses, bob, Tab {}, [("event", "direct"), ("user", eve.id)])
+      stepped(statuses, bob, bobToEve, [("event", "send"), ("body", "psst, eve")])
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"count\""))
 
       # Drafts: what is written and not sent is kept, for its writer alone,
       # until it is sent; a conversation with one is marked in the sidebar.

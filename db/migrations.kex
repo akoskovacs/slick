@@ -13,7 +13,8 @@
 #   db/migrate/N0011_add_user_statuses.kex
 #   db/migrate/N0012_create_answers.kex
 #   db/migrate/N0013_add_user_details.kex
-#   db/migrate/N0014_create_drafts.kex          ← head
+#   db/migrate/N0014_create_drafts.kex
+#   db/migrate/N0015_create_readings.kex        ← head
 #
 # `N0001` is "number 1": the number keeps the folder in order, and the next
 # migration takes the next one. What decides the order a database runs them
@@ -51,5 +52,6 @@ let all = [
   DB.Migrate.N0011AddUserStatuses.change,
   DB.Migrate.N0012CreateAnswers.change,
   DB.Migrate.N0013AddUserDetails.change,
-  DB.Migrate.N0014CreateDrafts.change
+  DB.Migrate.N0014CreateDrafts.change,
+  DB.Migrate.N0015CreateReadings.change
 ]

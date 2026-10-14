@@ -8,6 +8,7 @@
 module App.Views.Chat
 
 using App.Live.Tab, only: [Tab]
+using App.Live.Unread, only: [Unread]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
@@ -35,6 +36,8 @@ record Entry do
   emblemNote : String = ""
   # Whether something is written there and not sent, and so marked ✏️.
   drafted? : Bool = false
+  # How many messages there are not read yet: "3", "99+", or "".
+  unread : String = ""
 end
 
 # One of my bots, in the bots dialog.
@@ -54,6 +57,8 @@ record Badge do
   glyph : String
   caption : String
   current? : Bool
+  # How many messages there are not read yet, all of it together.
+  unread : String = ""
 end
 
 # One message.
@@ -183,20 +188,22 @@ let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProble
 # `bots` are the ones this person may look after here — the organization's
 # and their own — and only asked for while their dialog is open.
 #
-# `drafts` are what this person has written and not sent, anywhere.
+# `drafts` are what this person has written and not sent, anywhere, and
+# `unread` how much they have not read.
 #
 # `doing` is what other people there are in the middle of right now.
 #
 # `online` are the ids of the people with a tab open.
-index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> [Draft] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
-let index(tab, user, organizations, organization, channels, people, online, bots, drafts, conversation, messages, reactions, responses, thread, doing) do
+index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> [Draft] -> Unread -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
+let index(tab, user, organizations, organization, channels, people, online, bots, drafts, unread, conversation, messages, reactions, responses, thread, doing) do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
-    badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id })
+    let waiting = unread.organizations.get(each.id).or(0)
+    badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id, unread: counted(waiting) })
   }
   let channelLines = channels.map { |channel|
     let drafted = channel.id != shown && drafts.any? { |draft| draft.conversationId == channel.id }
-    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == shown, drafted?: drafted })
+    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == shown, drafted?: drafted, unread: counted(unread.channels.get(channel.id).or(0)) })
   }
   # A person's own bots have a list of their own; everybody else's, and the
   # organization's, are among the people, marked as bots.
@@ -204,19 +211,20 @@ let index(tab, user, organizations, organization, channels, people, online, bots
   # know of a status set since.
   let me = people.find { |person| person.id == user.id }.or(user)
   let alone = conversation.map { |open| open.solo? && open.admits?(user.id) }.or(false)
-  let selfLine = entryPartial(Entry { action: "direct", subject: "user", key: user.id, caption: "${me.shown} (you)", current?: alone, online?: online.contains?(user.id), emblem: me.statusEmoji, emblemNote: me.statusText, drafted?: !alone && waiting(drafts, user.id) })
+  let selfLine = entryPartial(Entry { action: "direct", subject: "user", key: user.id, caption: "${me.shown} (you)", current?: alone, online?: online.contains?(user.id), emblem: me.statusEmoji, emblemNote: me.statusText, drafted?: !alone && waiting(drafts, user.id), unread: counted(unread.people.get(user.id).or(0)) })
   let personLines = people.reject { |person| person.id == user.id || person.ownerId == user.id }.map { |person|
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText, drafted?: !chatting && waiting(drafts, person.id) })
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText, drafted?: !chatting && waiting(drafts, person.id), unread: counted(unread.people.get(person.id).or(0)) })
   }
   let robotLines = people.filter { |person| person.ownerId == user.id }.map { |person|
     let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText, drafted?: !chatting && waiting(drafts, person.id) })
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText, drafted?: !chatting && waiting(drafts, person.id), unread: counted(unread.people.get(person.id).or(0)) })
   }
   let unsent = { |threadId| drafts.find { |draft| draft.conversationId == shown && draft.threadId == threadId }.map { |draft| draft.body }.or("") }
   let beside = thread.empty? then profilePane(tab, user, organization, people, online) else threadPane(user, people, reactions, responses, thread, unsent(opened(thread)))
   let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
-  let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
+  let named = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
+  let caption = unread.total > 0 then "(${counted(unread.total)}) ${named}" else named
   frame(
     tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), ([selfLine] + personLines).join("\n"), robotLines.join("\n"), topbar(me, true),
     pane(tab, user, people, conversation, messages, reactions, responses, thread.empty? && tab.dialog.empty?, doing, unsent("")) + beside,
@@ -354,6 +362,11 @@ private do
   let tallied(replies) = "${replies} replies"
 
   # The thread beside the conversation: its first message, then the replies.
+  # A number of unread messages as a badge shows it; nothing for none.
+  counted : Integer -> String
+  let counted(0) = ""
+  let counted(count) = count > 99 then "99+" else "${count}"
+
   # Whether a private chat with somebody has something written and not sent.
   waiting : [Draft] -> String -> Bool
   let waiting(drafts, personId) = drafts.any? { |draft| !draft.personId.empty? && draft.personId == personId }

@@ -1,0 +1,17 @@
+# How far into each conversation somebody has read: the moment of the
+# newest message they have been shown there. What is newer is unread. The
+# id is the person and the conversation together.
+module DB.Migrate.N0015CreateReadings
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_readings, follows: :create_drafts do
+  createTable(:readings) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:user_id)
+    t.text(:conversation_id)
+    t.bigint(:read_at)
+  end
+  addIndex(:readings, [:user_id])
+end

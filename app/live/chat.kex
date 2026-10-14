@@ -16,6 +16,7 @@ using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field]
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using App.Live.Tab, only: [Tab]
+using App.Live.Unread, only: [Unread]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
@@ -26,6 +27,7 @@ using DB.Repositories.Drafts, as: Drafts
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Organizations, as: Organizations
+using DB.Repositories.Readings, as: Readings
 using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Answers, as: Answers
 using DB.Repositories.Users, as: Users
@@ -73,14 +75,25 @@ foul markup(statuses, user, tab) do
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
       let drafts : [Draft] = Drafts.pending(user.id).or([])
+      let marks : {String: Integer} = Readings.marks(user.id).or({})
       match visible(user, tab) do
-        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, None, [], [], [], [], [])
+        None => do
+          let unread = tallied(user, organization, mine, marks, "")
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, None, [], [], [], [], [])
+        end
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
+          # A tab showing a conversation is reading it, as far as its
+          # newest message.
+          let newest = messages.last.map { |message| message.sentAt }.or(0)
+          if newest > marks.get(conversation.id).or(0)
+            Readings.reached(user.id, conversation.id, newest)
+          end
+          let unread = tallied(user, organization, mine, marks, conversation.id)
           let reactions = Reactions.throughout(conversation.id).or([])
           let responses = Answers.collected(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, Just(conversation), messages, reactions, responses, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, Just(conversation), messages, reactions, responses, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
         end
       end
     end
@@ -249,6 +262,48 @@ foul organizations(user) do
 end
 
 private do
+  # How much somebody has not read: in the organization the tab is in, by
+  # channel and by private chat, and in each of the others altogether.
+  # `marks` are how far they have read (`Readings.marks`), and `open` the
+  # conversation the tab shows, which they are reading now.
+  tallied : User -> Organization -> [Organization] -> {String: Integer} -> String -> Unread
+  foul tallied(user, current, mine, marks, open) do
+    let (channels, people) = unreadIn(user, current, marks, open)
+    let others = mine.reject { |each| each.id == current.id }
+    let elsewhere = others.reduce({}) { |found, other|
+      let (theirChannels, theirPeople) = unreadIn(user, other, marks, "")
+      found.put(other.id, summed(theirChannels) + summed(theirPeople))
+    }
+    return Unread {
+      channels: channels,
+      people: people,
+      organizations: elsewhere,
+      total: summed(channels) + summed(people) + summed(elsewhere)
+    }
+  end
+
+  # The newer messages of each channel of an organization, by id, and of
+  # each of this person's private chats there, by the person it is with.
+  # Where they have never read, what came before they joined is not news.
+  unreadIn : User -> Organization -> {String: Integer} -> String -> ({String: Integer}, {String: Integer})
+  foul unreadIn(user, organization, marks, open) do
+    let since = Memberships.joined(organization.id, user.id)
+    let channels : [Conversation] = Conversations.channels(organization.id).or([])
+    let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
+    let byChannel = channels.reduce({}) { |found, channel| found.put(channel.id, unseen(channel, marks, since, open)) }
+    let byPerson = chats.reduce({}) { |found, chat| found.put(chat.counterpart(user.id), unseen(chat, marks, since, open)) }
+    return (byChannel, byPerson)
+  end
+
+  unseen : Conversation -> {String: Integer} -> Integer -> String -> Integer
+  foul unseen(conversation, marks, since, open) do
+    return 0 if conversation.id == open
+    return Messages.newer(conversation.id, marks.get(conversation.id).or(since)).or(0)
+  end
+
+  summed : {String: Integer} -> Integer
+  let summed(counts) = counts.entries.reduce(0) { |sum, entry| match entry do (_, count) => sum + count end }
+
   # A tab with nothing open over the conversation: no form, no dialog, no
   # message left from the last thing tried.
   settled : Tab -> Tab

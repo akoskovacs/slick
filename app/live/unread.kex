@@ -1,0 +1,15 @@
+# How much somebody has not read, as the sidebar, the rail and the title
+# show it: a count of messages for each place, and nothing for a place read
+# to its end.
+module App.Live.Unread
+
+record Unread do
+  # Each channel of the organization the tab is in, by id.
+  channels : {String: Integer} = {}
+  # Each private chat there, by the person it is with.
+  people : {String: Integer} = {}
+  # Every other organization they are in, all of it together, by id.
+  organizations : {String: Integer} = {}
+  # Everywhere.
+  total : Integer = 0
+end

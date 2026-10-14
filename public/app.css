@@ -406,6 +406,16 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
   .workspace:has(.thread, .profile) { grid-template-columns: 3.25rem minmax(0, 1fr); }
 }
 
+/* Unread: the place in bold, and how many messages beside it. */
+.entry.unread { color: var(--rail-strong); font-weight: 700; }
+.entry .count { float: right; margin: 0.1rem 0 0 0.4rem; }
+.count {
+  min-width: 1.15rem; padding: 0 0.35rem; border-radius: 999px;
+  background: #cd2553; color: #fff; font-size: 0.72rem; font-weight: 700; line-height: 1.15rem; text-align: center;
+}
+.badge { position: relative; }
+.badge .count { position: absolute; top: -0.4rem; right: -0.45rem; margin: 0; box-shadow: 0 0 0 2px var(--rail-top); }
+
 /* A conversation with something written in it and not sent. */
 .entry .drafted { margin-left: 0.25rem; font-size: 0.8em; opacity: 0.85; }
 

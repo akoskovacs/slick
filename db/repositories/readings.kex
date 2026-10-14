@@ -1,0 +1,36 @@
+# How far people have read.
+#
+#   DB.Repositories.Readings.reached(user.id, conversation.id, message.sentAt)
+module DB.Repositories.Readings
+
+using Harmat.Database, as: Database
+
+# How far a person has read in every conversation they have read in: the
+# conversation's id, and the `sent_at` of the newest message they were
+# shown there.
+foul marks(userId: String) -> Result<{String: Integer}, String> do
+  return Database.select([:conversation_id, :read_at]).from(DB.Schema.Readings)
+    .where(DB.Schema.Readings.userId.eq(userId))
+    .all
+    .map { |rows|
+      rows.reduce({}) { |found, row| found.put(row.get("conversation_id").or(""), row.get("read_at").or("0").to(Integer).or(0)) }
+    }
+end
+
+# Notes that a person has read a conversation as far as `at`.
+foul reached(userId: String, conversationId: String, at: Integer) -> Result<Integer, String> do
+  let id = "${userId}:${conversationId}"
+  Database.delete(DB.Schema.Readings)
+    .where(DB.Schema.Readings.id.eq(id))
+    .run
+    .try
+  let row = {
+    id: id,
+    user_id: userId,
+    conversation_id: conversationId,
+    read_at: at
+  }
+  return Database.insert(DB.Schema.Readings)
+    .values(row)
+    .run
+end
