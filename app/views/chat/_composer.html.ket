@@ -1,7 +1,8 @@
 ---
-params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool]
+params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool, unsent: String]
 ---
-<form class="composer" data-live="<%= verb %>" data-live-reset data-live-quiet data-live-typing>
+<form class="composer" data-live="<%= verb %>" data-live-reset data-live-change="draft" data-live-pause="1000" data-live-typing>
+  <input type="hidden" name="place" value="<%= verb %>">
   <div class="composer-box">
     <div class="formats">
       <button type="button" class="quiet" data-wrap="*" data-target="#<%= boxId %>" title="Bold: *text*"><strong>B</strong></button>
@@ -10,7 +11,7 @@ params: [verb: String, boxId: String, hint: String, picks: String, focused?: Boo
       <button type="button" class="quiet" data-wrap="`" data-target="#<%= boxId %>" title="Code: `text`"><code>&lt;/&gt;</code></button>
       <span class="hint">Shift+Enter for a new line · # heading · - list · &gt; quote · ``` code</span>
     </div>
-    <textarea id="<%= boxId %>" name="body" rows="1" placeholder="<%= hint %>" maxlength="4000" autocomplete="off" data-live-enter<% if focused? %> autofocus<% end %>></textarea>
+    <textarea id="<%= boxId %>" name="body" rows="1" placeholder="<%= hint %>" maxlength="4000" autocomplete="off" data-live-enter<% if focused? %> autofocus<% end %>><%= unsent %></textarea>
     <div class="composer-row">
       <div class="picks"><%== picks %></div>
       <button type="submit" class="send" title="Send">Send</button>

@@ -406,6 +406,18 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
   .workspace:has(.thread, .profile) { grid-template-columns: 3.25rem minmax(0, 1fr); }
 }
 
+/* A conversation with something written in it and not sent. */
+.entry .drafted { margin-left: 0.25rem; font-size: 0.8em; opacity: 0.85; }
+
+/* --- Your own space ------------------------------------------------------- */
+
+.intro { margin: 0 1.25rem 0.75rem; padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 8px; font-size: 0.92rem; }
+.intro h2 { margin: 0 0 0.3rem; font-size: 1.05rem; font-weight: 900; }
+.intro p { margin: 0 0 0.4rem; color: var(--muted); }
+.intro ul { margin: 0; padding-left: 1.2rem; }
+.intro li + li { margin-top: 0.2rem; }
+.intro code { padding: 0.05rem 0.3rem; border: 1px solid var(--line); border-radius: 4px; background: var(--hover); font-size: 0.85em; }
+
 /* --- Profiles --------------------------------------------------------------- */
 
 /* A name or a picture on a message opens its author's profile. */

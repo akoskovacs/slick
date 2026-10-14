@@ -15,6 +15,7 @@ let Reactions = DB.Schema.Reactions.definition
 let Organizations = DB.Schema.Organizations.definition
 let Memberships = DB.Schema.Memberships.definition
 let Answers = DB.Schema.Answers.definition
+let Drafts = DB.Schema.Drafts.definition
 
 tables : [Definition]
 let tables = [
@@ -25,5 +26,6 @@ let tables = [
   DB.Schema.Reactions,
   DB.Schema.Organizations,
   DB.Schema.Memberships,
-  DB.Schema.Answers
+  DB.Schema.Answers,
+  DB.Schema.Drafts
 ]

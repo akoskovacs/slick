@@ -33,6 +33,9 @@ make Conversation do
   # chat.
   let admits?(userId: String) -> Bool = @kind == "channel" || @firstUser == userId || @secondUser == userId
 
+  # Whether it is somebody's chat with themselves.
+  let solo? -> Bool = @kind == "direct" && @firstUser == @secondUser
+
   # The other person of a private chat.
   let counterpart(userId: String) -> String = @firstUser == userId then @secondUser else @firstUser
 end

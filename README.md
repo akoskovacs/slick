@@ -16,9 +16,14 @@ client-side application: the browser shows markup and sends events.
 - **Organizations.** Each has its own channels and people. Whoever creates
   one is its first member, and adds others by the email they registered with.
 - **Channels and private chats.** A channel has a name and a topic and is
-  open to everyone in its organization; a private chat is between two people.
+  open to everyone in its organization; a private chat is between two people,
+  or one person and themselves: a space of their own for notes, which
+  explains how to try Slick out.
   Every conversation has an address, which the address bar follows.
 - **Threads.** Any message can be replied to beside the conversation.
+- **Drafts.** What is written in a message box and not sent is saved as it
+  is typed, on the server: it is there again after switching conversations,
+  reloading, or on another device, and the sidebar marks where one is ✏️.
 - **Reactions.** 👍 ❤️ 😂 🎉 👀 🙏 on a message; a second click takes yours off.
 - **Rich text.** A light markup, read a line at a time (see below), and
   `:tada:`-style names for emoji; a message of nothing but emoji is shown

@@ -17,10 +17,12 @@ using Metro.Live.Socket, only: [field]
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Drafts, as: Drafts
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Organizations, as: Organizations
@@ -70,14 +72,15 @@ foul markup(statuses, user, tab) do
       let now = Metro.Clock.milliseconds()
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
+      let drafts : [Draft] = Drafts.pending(user.id).or([])
       match visible(user, tab) do
-        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, None, [], [], [], [], [])
+        None => return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, None, [], [], [], [], [])
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
           let reactions = Reactions.throughout(conversation.id).or([])
           let responses = Answers.collected(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, Just(conversation), messages, reactions, responses, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, Just(conversation), messages, reactions, responses, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
         end
       end
     end
@@ -94,6 +97,7 @@ foul handled(statuses, user, tab, entries) do
     "found" => (Tab { ...settled(tab), dialog: "channel" }, false)
     "create" => established(user, tab, field(entries, "title").trim.lowerCase)
     "send" => sent(statuses, user, tab, field(entries, "body").trim)
+    "draft" => drafted(user, tab, field(entries, "place"), field(entries, "body"))
     "typing" => typing(statuses, user, tab)
     "retitle" => (Tab { ...settled(tab), retitling?: true }, false)
     "topic" => retitled(user, tab, field(entries, "topic").trim)
@@ -488,6 +492,30 @@ private do
     end
   end
 
+  # Keeps what is being written in one of the tab's message boxes, as it is
+  # written: `place` is "reply" for the open thread's, and anything else for
+  # the conversation's. Where it is kept is the tab's to say, not the
+  # browser's. Nobody else is shown it, so no other tab is told.
+  drafted : User -> Tab -> String -> String -> (Tab, Bool)
+  foul drafted(user, tab, place, body) do
+    match visible(user, tab) do
+      None => return (tab, false)
+      Just(conversation) => do
+        let thread = place == "reply" then rooted(conversation, tab.thread).map { |first| first.id }.or("") else ""
+        return (tab, false) if place == "reply" && thread.empty?
+
+        let draft = Draft {
+          conversationId: conversation.id,
+          threadId: thread,
+          personId: conversation.channel? then "" else conversation.counterpart(user.id),
+          body: body.take(App.Models.Message.LONGEST)
+        }
+        Drafts.kept(user.id, draft)
+        return (tab, false)
+      end
+    end
+  end
+
   # A reply goes into the thread the tab has open, and nowhere else.
   replied : Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
   foul replied(statuses, user, tab, body) do
@@ -501,6 +529,7 @@ private do
         Just(first) => match Messages.said(conversation.id, user.id, body, first.id) do
           Ok(_) => do
             statuses.lifted(conversation.id, user.id)
+            Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: first.id, body: "" })
             return (Tab { ...settled(tab), thread: first.id }, true)
           end
           Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
@@ -520,13 +549,14 @@ private do
   end
 
   # Opens the private chat with another person of the organization, starting
-  # it if need be.
+  # it if need be — or with themselves: a place of their own, where nobody
+  # else looks, to keep notes in and try Slick out.
   whispered : User -> Tab -> String -> (Tab, Bool)
   foul whispered(user, tab, other) do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        return (tab, false) if other == user.id || !Memberships.affiliated?(organization.id, other)
+        return (tab, false) if !Memberships.affiliated?(organization.id, other)
 
         match Conversations.between(organization.id, user.id, other) do
           Ok(conversation) => return (Tab { organization: organization.id, conversation: conversation.id }, false)
@@ -565,6 +595,7 @@ private do
         Ok(_) => do
           # Whatever they were said to be doing, they have done.
           statuses.lifted(conversation.id, user.id)
+          Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" })
           return (settled(tab), true)
         end
         Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)

@@ -6,6 +6,9 @@ params: [entry: Entry]
     <% if !entry.emblem.empty? %>
       <span class="emblem" title="<%= entry.emblemNote %>"><%= entry.emblem %></span>
     <% end %>
+    <% if entry.drafted? %>
+      <span class="drafted" title="Written and not sent">✏️</span>
+    <% end %>
     <% if !entry.badged.empty? %>
       <span class="flag"><%= entry.badged %></span>
     <% end %>

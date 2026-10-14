@@ -1,0 +1,23 @@
+# The `drafts` table. `thread_id` is the message a thread starts with, or ""
+# for the conversation's own message box; `person_id` who a private chat is
+# with, and "" in a channel.
+module DB.Schema.Drafts
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :drafts do |t|
+  t.text(:id, primaryKey: true)
+  t.text(:user_id)
+  t.text(:conversation_id)
+  t.text(:thread_id)
+  t.text(:person_id)
+  t.text(:body)
+  t.bigint(:saved_at)
+end
+
+let table = DB.Schema.Drafts.definition.table
+
+let id = DB.Schema.Drafts.definition.textColumn(:id)
+let userId = DB.Schema.Drafts.definition.textColumn(:user_id)
+let conversationId = DB.Schema.Drafts.definition.textColumn(:conversation_id)

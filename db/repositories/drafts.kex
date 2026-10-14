@@ -1,0 +1,48 @@
+# Unsent messages, kept as they are typed.
+#
+#   DB.Repositories.Drafts.kept(user.id, Draft { conversationId: chat.id, body: "half a tho" })
+module DB.Repositories.Drafts
+
+using Harmat.Database, as: Database
+using App.Models.Draft, only: [Draft]
+
+# Everything a person has started writing and not sent.
+foul pending(userId: String) -> Result<[Draft], String> do
+  return Database.select().from(DB.Schema.Drafts)
+    .where(DB.Schema.Drafts.userId.eq(userId))
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
+# Keeps what a person has written in one message box, in place of what was
+# kept before; nothing written takes it away.
+foul kept(userId: String, draft: Draft) -> Result<Integer, String> do
+  let id = "${userId}:${draft.conversationId}:${draft.threadId}"
+  let cleared = Database.delete(DB.Schema.Drafts)
+    .where(DB.Schema.Drafts.id.eq(id))
+    .run
+  return cleared if draft.body.trim.empty? || cleared.error?
+
+  let row = {
+    id: id,
+    user_id: userId,
+    conversation_id: draft.conversationId,
+    thread_id: draft.threadId,
+    person_id: draft.personId,
+    body: draft.body,
+    saved_at: Metro.Clock.milliseconds()
+  }
+  return Database.insert(DB.Schema.Drafts)
+    .values(row)
+    .run
+end
+
+private do
+  decoded : {String: String} -> Draft
+  let decoded(row) = Draft {
+    conversationId: row.get("conversation_id").or(""),
+    threadId: row.get("thread_id").or(""),
+    personId: row.get("person_id").or(""),
+    body: row.get("body").or("")
+  }
+end

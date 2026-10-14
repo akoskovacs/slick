@@ -13,6 +13,7 @@ using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
 using App.Models.Answer, only: [Answer]
+using App.Models.Draft, only: [Draft]
 using App.Helpers.RichText, only: [Given]
 using App.Models.User, only: [User]
 using Metro.Live.Presence, only: [Note]
@@ -32,6 +33,8 @@ record Entry do
   # The emoji of their status, and its words for whoever points at it.
   emblem : String = ""
   emblemNote : String = ""
+  # Whether something is written there and not sent, and so marked ✏️.
+  drafted? : Bool = false
 end
 
 # One of my bots, in the bots dialog.
@@ -180,37 +183,43 @@ let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProble
 # `bots` are the ones this person may look after here — the organization's
 # and their own — and only asked for while their dialog is open.
 #
+# `drafts` are what this person has written and not sent, anywhere.
+#
 # `doing` is what other people there are in the middle of right now.
 #
 # `online` are the ids of the people with a tab open.
-index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
-let index(tab, user, organizations, organization, channels, people, online, bots, conversation, messages, reactions, responses, thread, doing) do
+index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> [Draft] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
+let index(tab, user, organizations, organization, channels, people, online, bots, drafts, conversation, messages, reactions, responses, thread, doing) do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
     badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id })
   }
   let channelLines = channels.map { |channel|
-    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == shown })
+    let drafted = channel.id != shown && drafts.any? { |draft| draft.conversationId == channel.id }
+    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == shown, drafted?: drafted })
   }
   # A person's own bots have a list of their own; everybody else's, and the
   # organization's, are among the people, marked as bots.
-  let personLines = people.reject { |person| person.id == user.id || person.ownerId == user.id }.map { |person|
-    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
-  }
-  let robotLines = people.filter { |person| person.ownerId == user.id }.map { |person|
-    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
-  }
-  let beside = thread.empty? then profilePane(tab, user, organization, people, online) else threadPane(user, people, reactions, responses, thread)
-  let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
-  let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
   # This person as stored now: the `user` a tab was opened with does not
   # know of a status set since.
   let me = people.find { |person| person.id == user.id }.or(user)
+  let alone = conversation.map { |open| open.solo? && open.admits?(user.id) }.or(false)
+  let selfLine = entryPartial(Entry { action: "direct", subject: "user", key: user.id, caption: "${me.shown} (you)", current?: alone, online?: online.contains?(user.id), emblem: me.statusEmoji, emblemNote: me.statusText, drafted?: !alone && waiting(drafts, user.id) })
+  let personLines = people.reject { |person| person.id == user.id || person.ownerId == user.id }.map { |person|
+    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText, drafted?: !chatting && waiting(drafts, person.id) })
+  }
+  let robotLines = people.filter { |person| person.ownerId == user.id }.map { |person|
+    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
+    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText, drafted?: !chatting && waiting(drafts, person.id) })
+  }
+  let unsent = { |threadId| drafts.find { |draft| draft.conversationId == shown && draft.threadId == threadId }.map { |draft| draft.body }.or("") }
+  let beside = thread.empty? then profilePane(tab, user, organization, people, online) else threadPane(user, people, reactions, responses, thread, unsent(opened(thread)))
+  let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
+  let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
   frame(
-    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), personLines.join("\n"), robotLines.join("\n"), topbar(me, true),
-    pane(tab, user, people, conversation, messages, reactions, responses, thread.empty? && tab.dialog.empty?, doing) + beside,
+    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), ([selfLine] + personLines).join("\n"), robotLines.join("\n"), topbar(me, true),
+    pane(tab, user, people, conversation, messages, reactions, responses, thread.empty? && tab.dialog.empty?, doing, unsent("")) + beside,
     asking(tab, organization, people, bots, me), place, caption
   )
 end
@@ -345,23 +354,31 @@ private do
   let tallied(replies) = "${replies} replies"
 
   # The thread beside the conversation: its first message, then the replies.
-  threadPane : User -> [User] -> [Reaction] -> [Answer] -> [Message] -> String
-  let threadPane(user, people, reactions, responses, thread) do
+  # Whether a private chat with somebody has something written and not sent.
+  waiting : [Draft] -> String -> Bool
+  let waiting(drafts, personId) = drafts.any? { |draft| !draft.personId.empty? && draft.personId == personId }
+
+  threadPane : User -> [User] -> [Reaction] -> [Answer] -> [Message] -> String -> String
+  let threadPane(user, people, reactions, responses, thread, unsent) do
     let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, responses, true, false) }.join("")
     let followups = sequence(thread.drop(1), "", 0, user, people, reactions, responses, true)
     let summary = followups.empty? then "No replies yet" else tallied(followups.count)
-    threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true))
+    threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true, unsent))
   end
 
-  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> Bool -> [Note] -> String
-  let pane(tab, user, people, None, messages, reactions, responses, alone?, doing) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
-  let pane(tab, user, people, Just(conversation), messages, reactions, responses, alone?, doing) do
+  # `unsent` is what is written in its message box and not sent yet.
+  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> Bool -> [Note] -> String -> String
+  let pane(tab, user, people, None, messages, reactions, responses, alone?, doing, unsent) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
+  let pane(tab, user, people, Just(conversation), messages, reactions, responses, alone?, doing, unsent) do
     let title = titled(conversation, user, people)
     let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
     let bubbles = sequence(messages, "", 0, user, people, reactions, responses, false)
-    let emptied = messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
-    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div><p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">${statuses(doing, people)}</p>${composerPartial("send", "message-box", "Message ${title}", picked("#message-box"), alone?)}</section>"
+    let emptied = conversation.solo? then soloIntro else (messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else "")
+    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div><p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">${statuses(doing, people)}</p>${composerPartial("send", "message-box", conversation.solo? then "Jot something down…" else "Message ${title}", picked("#message-box"), alone?, unsent)}</section>"
   end
+
+  # What somebody's chat with themselves is for, at the start of it.
+  let soloIntro = Kex.embed("chat/_solo.html")
 
   # "Ada is typing…", or what a bot says it is doing: "deploy-bot Deploying…".
   statuses : [Note] -> [User] -> String
@@ -380,6 +397,7 @@ private do
     return "# ${conversation.title}" if conversation.channel?
 
     let other = conversation.counterpart(user.id)
+    return "${people.find { |person| person.id == other }.map { |person| person.shown }.or(user.shown)} (you)" if other == user.id
     people.find { |person| person.id == other }.map { |person| person.shown }.or("Private chat")
   end
 

@@ -1,0 +1,21 @@
+# What somebody has written in a message box and not sent yet, kept as they
+# type: one for each conversation, and one for each thread in it, they have
+# started writing in. The id is the three together. Sending takes it away.
+# `person_id` is who a private chat is with, for the sidebar to mark them.
+module DB.Migrate.N0014CreateDrafts
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_drafts, follows: :add_user_details do
+  createTable(:drafts) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:user_id)
+    t.text(:conversation_id)
+    t.text(:thread_id)
+    t.text(:person_id)
+    t.text(:body)
+    t.bigint(:saved_at)
+  end
+  addIndex(:drafts, [:user_id])
+end

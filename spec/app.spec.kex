@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_user_details"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_drafts"))
   end
 
   it("turns shortcodes into emoji") do
@@ -534,6 +534,49 @@ describe("Slick") do
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("deployed 🚀"))
       Assert.equal(App.Live.Chat.arrived(deployBot, "/other/channels/general"), Tab {})
       Assert.equal(App.Live.Chat.visible(deployBot, adaPrivate), None)
+
+      # Somebody can write to themselves, to try things out; nobody else
+      # can read it, and it is explained to them.
+      let (adaAlone, _) = stepped(statuses, ada, Tab {}, [("event", "direct"), ("user", ada.id)])
+      Assert.truthy(!adaAlone.conversation.empty?)
+      let (_, aloneSent) = stepped(statuses, ada, adaAlone, [("event", "send"), ("body", "a note to self")])
+      Assert.truthy(aloneSent)
+      let ownSpace = App.Live.Chat.markup(statuses, ada, adaAlone)
+      Assert.truthy(ownSpace.contains?("This is your space"))
+      Assert.truthy(ownSpace.contains?("a note to self"))
+      Assert.truthy(ownSpace.contains?("Ada (you)"))
+      Assert.truthy(ownSpace.contains?("data-live-path=\"/acmecorp/dm/${ada.id}\""))
+      Assert.equal(App.Live.Chat.arrived(ada, "/acmecorp/dm/${ada.id}").conversation, adaAlone.conversation)
+      Assert.equal(App.Live.Chat.visible(bob, adaAlone), None)
+      Assert.falsy(App.Live.Chat.markup(statuses, bob, adaAlone).contains?("a note to self"))
+      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("This is your space"))
+
+      # Drafts: what is written and not sent is kept, for its writer alone,
+      # until it is sent; a conversation with one is marked in the sidebar.
+      stepped(statuses, ada, Tab {}, [("event", "draft"), ("place", "send"), ("body", "half a <tho")])
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("autofocus>half a &lt;tho</textarea>"))
+      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("half a"))
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("# general\n      <span class=\"drafted\""))
+      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("class=\"drafted\""))
+      stepped(statuses, ada, Tab {}, [("event", "draft"), ("place", "send"), ("body", "half a thought")])
+      Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]).count, 1)
+      # A thread's box keeps its own.
+      let adaThread = Tab { ...bobThread }
+      stepped(statuses, ada, adaThread, [("event", "draft"), ("place", "reply"), ("body", "a reply, later")])
+      let bothBoxes = App.Live.Chat.markup(statuses, ada, adaThread)
+      Assert.truthy(bothBoxes.contains?(">a reply, later</textarea>"))
+      Assert.truthy(bothBoxes.contains?(">half a thought</textarea>"))
+      stepped(statuses, ada, adaThread, [("event", "reply"), ("body", "a reply, now")])
+      Assert.falsy(App.Live.Chat.markup(statuses, ada, adaThread).contains?("a reply, later"))
+      # A private chat is marked by the person it is with.
+      stepped(statuses, ada, adaPrivate, [("event", "draft"), ("place", "send"), ("body", "psst")])
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"drafted\""))
+      stepped(statuses, ada, adaPrivate, [("event", "draft"), ("place", "send"), ("body", "  ")])
+      # Sending takes it away; nobody keeps a draft where they cannot write.
+      stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "half a thought, finished")])
+      Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]), [])
+      stepped(statuses, mal, malForged, [("event", "draft"), ("place", "send"), ("body", "sneaky")])
+      Assert.equal(DB.Repositories.Drafts.pending(mal.id).or([]), [])
 
       # Profiles: a name or a picture on a message opens its author's beside
       # the conversation; a bot's says whose it is.
