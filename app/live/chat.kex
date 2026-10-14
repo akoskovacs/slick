@@ -102,6 +102,10 @@ foul handled(statuses, user, tab, entries) do
     "cancel" => (settled(tab), false)
     "thread" => threaded(user, tab, field(entries, "message"))
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
+    "profile" => profiled(user, tab, field(entries, "user"))
+    "unprofile" => (Tab { ...settled(tab), profile: "" }, false)
+    "profile-edit" => (Tab { ...settled(tab), dialog: "profile" }, false)
+    "profile-set" => redescribed(user, tab, entries)
     "reply" => replied(statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(user, field(entries, "path")), false)
     "organization" => switched(user, tab, field(entries, "id"))
@@ -244,7 +248,7 @@ private do
   # A tab with nothing open over the conversation: no form, no dialog, no
   # message left from the last thing tried.
   settled : Tab -> Tab
-  let settled(tab) = Tab { organization: tab.organization, conversation: tab.conversation, thread: tab.thread }
+  let settled(tab) = Tab { organization: tab.organization, conversation: tab.conversation, thread: tab.thread, profile: tab.profile }
 
   switched : User -> Tab -> String -> (Tab, Bool)
   foul switched(user, tab, id) do
@@ -378,6 +382,55 @@ private do
     end
   end
 
+  # Changes somebody's own details. One a sync has taken over keeps what is
+  # stored, whatever was sent for it: the form shows it, but only to read.
+  redescribed : User -> Tab -> [(String, String?)] -> (Tab, Bool)
+  foul redescribed(user, tab, entries) do
+    let refused = Tab { ...settled(tab), dialog: "profile" }
+    match Users.member(user.id) do
+      Ok(Just(stored)) => do
+        let given = App.Models.User.DETAILS.map { |entry|
+          match entry do
+            (column, _, _) => (column, stored.locked?(column) then stored.detail(column) else field(entries, column).trim)
+          end
+        }
+        let problems = App.Models.User.DETAILS.flatMap { |entry|
+          match entry do
+            (column, label, longest) => faults(column, label, longest, givenFor(given, column))
+          end
+        }
+        return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
+
+        let changed = User {
+          ...stored,
+          name: givenFor(given, "name"),
+          title: givenFor(given, "title"),
+          department: givenFor(given, "department"),
+          phone: givenFor(given, "phone"),
+          timeZone: givenFor(given, "time_zone"),
+          bio: givenFor(given, "bio"),
+          nickname: givenFor(given, "nickname"),
+          nicknameShown?: field(entries, "show_nickname") == "yes"
+        }
+        match Users.described(changed) do
+          Ok(_) => return (settled(tab), true)
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        end
+      end
+      _ => return (tab, false)
+    end
+  end
+
+  # What was given for one detail.
+  givenFor : [(String, String)] -> String -> String
+  let givenFor(pairs, column) = pairs.flatMap { |pair| match pair do (key, value) => key == column then [value] else [] end }.first.or("")
+
+  # What is wrong with what was given for one detail: a display name is
+  # needed, and none may be longer than it may.
+  faults : String -> String -> Integer -> String -> [String]
+  let faults("name", label, longest, "") = ["${label} cannot be empty."]
+  let faults(column, label, longest, text) = text.chars.count > longest then ["${label} cannot be longer than ${longest} characters."] else []
+
   # Somebody is typing: said for a few seconds, to everyone else there.
   typing : Server<Presence> -> User -> Tab -> (Tab, Bool)
   foul typing(statuses, user, tab) = (tab, noting(statuses, user, tab, "", TYPING_FOR))
@@ -416,8 +469,21 @@ private do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => match rooted(conversation, id) do
-        Just(first) => return (Tab { ...settled(tab), thread: first.id }, false)
+        Just(first) => return (Tab { ...settled(tab), thread: first.id, profile: "" }, false)
         None => return (tab, false)
+      end
+    end
+  end
+
+  # Opens somebody's profile beside the conversation, in place of a thread:
+  # only of somebody in the tab's organization.
+  profiled : User -> Tab -> String -> (Tab, Bool)
+  foul profiled(user, tab, id) do
+    match home(user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        return (tab, false) if !Memberships.affiliated?(organization.id, id)
+        return (Tab { ...settled(tab), thread: "", profile: id }, false)
       end
     end
   end

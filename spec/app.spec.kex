@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_answers"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_user_details"))
   end
 
   it("turns shortcodes into emoji") do
@@ -534,6 +534,63 @@ describe("Slick") do
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("deployed 🚀"))
       Assert.equal(App.Live.Chat.arrived(deployBot, "/other/channels/general"), Tab {})
       Assert.equal(App.Live.Chat.visible(deployBot, adaPrivate), None)
+
+      # Profiles: a name or a picture on a message opens its author's beside
+      # the conversation; a bot's says whose it is.
+      let (bobProfile, _) = stepped(statuses, ada, Tab {}, [("event", "profile"), ("user", bob.id)])
+      Assert.equal(bobProfile.profile, bob.id)
+      let bobCard = App.Live.Chat.markup(statuses, ada, bobProfile)
+      Assert.truthy(bobCard.contains?("aria-label=\"Profile of Bob\""))
+      Assert.truthy(bobCard.contains?("mailto:bob@example.com"))
+      Assert.truthy(bobCard.contains?("data-event=\"direct\" data-user=\"${bob.id}\""))
+      Assert.truthy(bobCard.contains?("data-event=\"profile\" data-user=\"${deployBot.id}\""))
+      let (botProfile, _) = stepped(statuses, ada, Tab {}, [("event", "profile"), ("user", deployBot.id)])
+      let botCard = App.Live.Chat.markup(statuses, ada, botProfile)
+      Assert.truthy(botCard.contains?("Belongs to"))
+      Assert.truthy(botCard.contains?("data-event=\"profile\" data-user=\"${bob.id}\">Bob</button>"))
+      Assert.falsy(botCard.contains?("mailto:"))
+      # It stays open over other events, and a thread takes its place.
+      let (stillProfiled, _) = stepped(statuses, ada, bobProfile, [("event", "cancel")])
+      Assert.equal(stillProfiled.profile, bob.id)
+      let (threadInstead, _) = stepped(statuses, ada, bobProfile, [("event", "thread"), ("message", messageId)])
+      Assert.equal(threadInstead.profile, "")
+      Assert.equal(threadInstead.thread, messageId)
+      let (closed, _) = stepped(statuses, ada, bobProfile, [("event", "unprofile")])
+      Assert.equal(closed.profile, "")
+      # Somebody fills in their own profile; a name cannot be emptied.
+      let profileForm = [("event", "profile-set"), ("name", "Bob"), ("title", "Engineer"), ("department", "Platform"), ("phone", "+36 1 234"), ("time_zone", "Europe/Budapest"), ("bio", "Builds <things>"), ("nickname", "Bobby")]
+      let (_, bobDescribed) = stepped(statuses, bob, Tab {}, profileForm)
+      Assert.truthy(bobDescribed)
+      let bobFilled = App.Live.Chat.markup(statuses, ada, bobProfile)
+      Assert.truthy(bobFilled.contains?("Engineer"))
+      Assert.truthy(bobFilled.contains?("Europe/Budapest"))
+      Assert.truthy(bobFilled.contains?("Builds &lt;things&gt;"))
+      Assert.falsy(bobFilled.contains?("Bobby"))
+      let (unnamedBob, _) = stepped(statuses, bob, Tab {}, [("event", "profile-set"), ("name", "  ")])
+      Assert.truthy(unnamedBob.dialogProblem.contains?("Name cannot be empty"))
+      # Going by a nickname shows it everywhere, with the name on the profile.
+      let (_, nicknamed) = stepped(statuses, bob, Tab {}, profileForm + [("show_nickname", "yes")])
+      Assert.truthy(nicknamed)
+      let byNickname = App.Live.Chat.markup(statuses, ada, bobProfile)
+      Assert.truthy(byNickname.contains?("aria-label=\"Profile of Bobby\""))
+      Assert.truthy(byNickname.contains?("<p class=\"formal\">Bob</p>"))
+      # What a sync has taken over stays as it is, and the form shows it locked.
+      DB.Repositories.Users.managing(bob.id, ["name", "title"])
+      stepped(statuses, bob, Tab {}, [("event", "profile-set"), ("name", "Hacked"), ("title", "CEO"), ("department", "Sales")])
+      let synced = App.Live.Chat.markup(statuses, ada, bobProfile)
+      Assert.truthy(synced.contains?("Engineer"))
+      Assert.truthy(synced.contains?("Sales"))
+      Assert.falsy(synced.contains?("Hacked"))
+      Assert.falsy(synced.contains?("CEO"))
+      let lockedForm = App.Live.Chat.markup(statuses, bob, Tab { dialog: "profile" })
+      Assert.truthy(lockedForm.contains?("name=\"title\" value=\"Engineer\" maxlength=\"80\" placeholder=\"\" autocomplete=\"off\" readonly"))
+      Assert.falsy(lockedForm.contains?("name=\"department\" value=\"Sales\" maxlength=\"80\" placeholder=\"\" autocomplete=\"off\" readonly"))
+      DB.Repositories.Users.managing(bob.id, [])
+      stepped(statuses, bob, Tab {}, [("event", "profile-set"), ("name", "Bob")])
+      # Nobody outside the organization is shown, whatever the tab names.
+      let (malProfile, _) = stepped(statuses, mal, Tab {}, [("event", "profile"), ("user", eve.id)])
+      Assert.equal(malProfile.profile, "")
+      Assert.falsy(App.Live.Chat.markup(statuses, mal, Tab { profile: eve.id }).contains?("Profile of Eve"))
       # Only its owner gives it a new token, and the old one stops working.
       let (adaTries, _) = stepped(statuses, ada, Tab {}, [("event", "bot-rekey"), ("id", deployBot.id)])
       Assert.equal(adaTries.secret, "")

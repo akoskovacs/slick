@@ -1,0 +1,64 @@
+---
+params: [card: Card]
+---
+<aside class="profile" aria-label="Profile of <%= card.caption %>">
+  <header class="heading thread-head">
+    <h1>Profile</h1>
+    <button type="button" class="quiet" data-event="unprofile" title="Close profile">✕</button>
+  </header>
+  <div class="profile-body">
+    <span class="portrait tint-<%= card.tint %>" aria-hidden="true"><%= card.initial %></span>
+    <h2><%= card.caption %>
+    <% if !card.badged.empty? %>
+      <span class="flag"><%= card.badged %></span>
+    <% end %>
+    </h2>
+    <% if !card.alias.empty? %>
+      <p class="formal"><%= card.alias %></p>
+    <% end %>
+    <% if !card.role.empty? %>
+      <p class="role"><%= card.role %></p>
+    <% end %>
+    <p class="presence<% if card.active? %> active<% end %>"><%= card.presence %></p>
+    <% if !card.emblem.empty? || !card.motto.empty? %>
+      <p class="motto"><%= card.emblem %> <%= card.motto %></p>
+    <% end %>
+    <% if !card.about.empty? %>
+      <p class="bio"><%= card.about %></p>
+    <% end %>
+    <div class="actions">
+    <% if card.own? %>
+      <button type="button" data-event="profile-edit">Edit profile</button>
+      <button type="button" data-event="status">Set a status…</button>
+    <% else %>
+      <button type="button" class="primary" data-event="direct" data-user="<%= card.key %>">Message</button>
+    <% end %>
+    </div>
+    <dl class="details">
+    <% if !card.team.empty? %>
+      <dt>Department</dt>
+      <dd><%= card.team %></dd>
+    <% end %>
+    <% if !card.mail.empty? %>
+      <dt>Email</dt>
+      <dd><a href="mailto:<%= card.mail %>"><%= card.mail %></a></dd>
+    <% end %>
+    <% if !card.dial.empty? %>
+      <dt>Phone</dt>
+      <dd><a href="tel:<%= card.dial %>"><%= card.dial %></a></dd>
+    <% end %>
+    <% if !card.zone.empty? %>
+      <dt>Time zone</dt>
+      <dd><%= card.zone %></dd>
+    <% end %>
+    <% if !card.keeper.empty? %>
+      <dt>Belongs to</dt>
+      <% if card.keeperKey.empty? %>
+        <dd><%= card.keeper %></dd>
+      <% else %>
+        <dd><button type="button" class="link" data-event="profile" data-user="<%= card.keeperKey %>"><%= card.keeper %></button></dd>
+      <% end %>
+    <% end %>
+    </dl>
+  </div>
+</aside>

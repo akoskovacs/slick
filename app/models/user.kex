@@ -20,12 +20,58 @@ record User do
   # both, or neither.
   statusEmoji : String = ""
   statusText : String = ""
+  # What their profile says about them, each as they gave it. Each is an
+  # attribute of the SCIM user they would be synced from, as `name` is its
+  # `name.formatted`: `title`, the enterprise extension's `department`, a
+  # work number of `phoneNumbers`, `timezone` — an IANA name,
+  # "Europe/Budapest" — and `nickName`. SCIM has no bio, a few lines about
+  # themselves: that one is theirs alone.
+  title : String = ""
+  department : String = ""
+  bio : String = ""
+  # A name they may go by instead, everywhere they are shown, when they
+  # choose to.
+  nickname : String = ""
+  nicknameShown? : Bool = false
+  phone : String = ""
+  timeZone : String = ""
+  # The details a sync has taken over, by column: they are shown, and are
+  # not theirs to change while it has them.
+  managed : [String] = []
 end
+
+# The details a profile has, by the column each is kept in, with what each
+# is called and how long it may be. `name` is the one shown everywhere,
+# unless they go by their nickname.
+let DETAILS = [
+  ("name", "Name", 40),
+  ("nickname", "Nickname", 40),
+  ("title", "Title", 80),
+  ("department", "Department", 80),
+  ("phone", "Phone", 30),
+  ("time_zone", "Time zone", 60),
+  ("bio", "Bio", 300)
+]
 
 make User do
   let bot? -> Bool = @kind == "bot"
 
-  # What to call them: their name, or the front of their email until they
-  # have one.
-  let shown -> String = @name.empty? then @email.split("@").first.or(@email) else @name
+  # What to call them: their nickname, if they go by it; else their name,
+  # or the front of their email until they have one.
+  let shown -> String = @nicknameShown? && !@nickname.empty? then @nickname else (@name.empty? then @email.split("@").first.or(@email) else @name)
+
+  # One of their details, by its column; "" for no such column.
+  let detail(column: String) -> String = match column do
+    "name" => @name
+    "nickname" => @nickname
+    "title" => @title
+    "department" => @department
+    "phone" => @phone
+    "time_zone" => @timeZone
+    "bio" => @bio
+    _ => ""
+  end
+
+  # Whether a sync has taken a detail over.
+  let locked?(column: String) -> Bool = @managed.contains?(column)
 end

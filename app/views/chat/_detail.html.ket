@@ -1,0 +1,11 @@
+---
+params: [detail: Detail]
+---
+<label class="detail<% if detail.locked? %> locked<% end %>">
+  <span><%= detail.caption %><% if detail.locked? %> 🔒<% end %></span>
+<% if detail.long? %>
+  <textarea name="<%= detail.key %>" rows="3" maxlength="<%= detail.longest %>"<% if detail.locked? %> readonly title="Kept in sync from your organization's directory"<% end %>><%= detail.worth %></textarea>
+<% else %>
+  <input name="<%= detail.key %>" value="<%= detail.worth %>" maxlength="<%= detail.longest %>" placeholder="<%= detail.hint %>" autocomplete="off"<% if detail.locked? %> readonly title="Kept in sync from your organization's directory"<% end %>>
+<% end %>
+</label>

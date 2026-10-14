@@ -385,8 +385,8 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 
 /* --- Threads ---------------------------------------------------------------- */
 
-.workspace:has(.thread) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr) minmax(18rem, 26rem); }
-.thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); border-left: 1px solid var(--line); }
+.workspace:has(.thread, .profile) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr) minmax(18rem, 26rem); }
+.thread, .profile { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); border-left: 1px solid var(--line); }
 .thread-head { display: flex; align-items: center; justify-content: space-between; }
 .thread-head button { font-size: 1rem; padding: 0.1rem 0.5rem; }
 .thread .messages > :first-child { margin-top: 0; }
@@ -399,12 +399,48 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 .answers:hover { background: var(--pane); border-color: var(--line); }
 
 @media (max-width: 60rem) {
-  .workspace:has(.thread) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr); }
-  .workspace:has(.thread) > .pane { display: none; }
+  .workspace:has(.thread, .profile) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr); }
+  .workspace:has(.thread, .profile) > .pane { display: none; }
 }
 @media (max-width: 44rem) {
-  .workspace:has(.thread) { grid-template-columns: 3.25rem minmax(0, 1fr); }
+  .workspace:has(.thread, .profile) { grid-template-columns: 3.25rem minmax(0, 1fr); }
 }
+
+/* --- Profiles --------------------------------------------------------------- */
+
+/* A name or a picture on a message opens its author's profile. */
+.message button.avatar { border: 0; padding: 0; cursor: pointer; }
+.byline .author { border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.byline .author:hover strong { text-decoration: underline; }
+.profile-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 1.25rem; }
+.portrait {
+  display: grid; place-items: center; width: 100%; max-width: 15rem; aspect-ratio: 1; border-radius: 12px;
+  color: #fff; font-weight: 900; font-size: 5rem;
+}
+.profile-body h2 { margin: 1rem 0 0.15rem; font-size: 1.35rem; font-weight: 900; overflow-wrap: anywhere; }
+.presence { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.presence::before {
+  content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.4rem;
+  border: 1.5px solid currentColor; border-radius: 50%;
+}
+.presence.active::before { background: #2bac76; border-color: #2bac76; }
+.motto { margin: 0.5rem 0 0; overflow-wrap: anywhere; }
+.bio { margin: 0.75rem 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+.formal, .role { margin: 0 0 0.2rem; overflow-wrap: anywhere; }
+.formal { color: var(--muted); }
+.details-form { display: flex; flex-direction: column; gap: 0.6rem; }
+.detail { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.85rem; font-weight: 600; }
+.detail input, .detail textarea { font: inherit; font-weight: 400; }
+.detail textarea { resize: vertical; }
+.details-form .choice { display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; }
+.detail.locked input, .detail.locked textarea { background: var(--hover); color: var(--muted); cursor: not-allowed; }
+.profile-body .actions { margin: 1rem 0; }
+.profile-body .details { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; margin: 0; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.9rem; }
+.profile-body .details dt { color: var(--muted); font-weight: 700; }
+.profile-body .details dd { margin: 0; overflow-wrap: anywhere; }
+.profile-body .details a, .profile-body .link { color: var(--link); }
+.profile-body .link { border: 0; padding: 0; background: none; font: inherit; cursor: pointer; }
+.profile-body .link:hover { text-decoration: underline; }
 
 /* --- Organizations ---------------------------------------------------------- */
 

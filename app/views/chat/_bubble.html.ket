@@ -5,11 +5,11 @@ params: [bubble: Bubble, chips: String, offers: String]
 <% if bubble.continued? %>
   <time class="gutter"><%= bubble.stamp %></time>
 <% else %>
-  <span class="avatar tint-<%= bubble.tint %>" aria-hidden="true"><%= bubble.initial %></span>
+  <button type="button" class="avatar tint-<%= bubble.tint %>" data-event="profile" data-user="<%= bubble.writer %>" tabindex="-1" aria-hidden="true"><%= bubble.initial %></button>
 <% end %>
   <div class="said">
   <% if !bubble.continued? %>
-    <p class="byline"><strong><%= bubble.author %></strong>
+    <p class="byline"><button type="button" class="author" data-event="profile" data-user="<%= bubble.writer %>"><strong><%= bubble.author %></strong></button>
     <% if !bubble.emblem.empty? %>
       <span class="emblem" title="<%= bubble.emblemNote %>"><%= bubble.emblem %></span>
     <% end %>

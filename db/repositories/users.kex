@@ -105,6 +105,34 @@ foul restyled(id: String, emoji: String, saying: String) -> Result<Integer, Stri
     .run
 end
 
+# Sets the details a profile shows, each as it is on `user`. Whatever a sync
+# has taken over is for the caller to have kept: `App.Live.Chat` does.
+foul described(user: User) -> Result<Integer, String> do
+  let row = {
+    name: user.name,
+    title: user.title,
+    department: user.department,
+    phone: user.phone,
+    time_zone: user.timeZone,
+    bio: user.bio,
+    nickname: user.nickname,
+    show_nickname: user.nicknameShown? then "yes" else ""
+  }
+  return Database.update(DB.Schema.Users)
+    .set(row)
+    .where(DB.Schema.Users.id.eq(user.id))
+    .run
+end
+
+# Hands details over to a sync, by column, or back with `[]`: what it has
+# taken over cannot be changed from a profile.
+foul managing(id: String, columns: [String]) -> Result<Integer, String> do
+  return Database.update(DB.Schema.Users)
+    .set({managed: columns.join(",")})
+    .where(DB.Schema.Users.id.eq(id))
+    .run
+end
+
 foul member(id: String) -> Result<User?, String> do
   return Database.select().from(DB.Schema.Users)
     .where(DB.Schema.Users.id.eq(id))
@@ -131,7 +159,15 @@ private do
     :owner_id,
     :owner_organization_id,
     :status_emoji,
-    :status_text
+    :status_text,
+    :title,
+    :department,
+    :phone,
+    :time_zone,
+    :bio,
+    :nickname,
+    :show_nickname,
+    :managed
   ]
 
   decoded : {String: String} -> User
@@ -143,6 +179,14 @@ private do
     ownerId: row.get("owner_id").or(""),
     ownerOrganizationId: row.get("owner_organization_id").or(""),
     statusEmoji: row.get("status_emoji").or(""),
-    statusText: row.get("status_text").or("")
+    statusText: row.get("status_text").or(""),
+    title: row.get("title").or(""),
+    department: row.get("department").or(""),
+    phone: row.get("phone").or(""),
+    timeZone: row.get("time_zone").or(""),
+    bio: row.get("bio").or(""),
+    nickname: row.get("nickname").or(""),
+    nicknameShown?: row.get("show_nickname").or("") == "yes",
+    managed: row.get("managed").or("").split(",").reject { |column| column.empty? }
   }
 end

@@ -11,6 +11,9 @@ record Tab do
   conversation : String = ""
   # The message whose thread is open beside it, by id; "" when none is.
   thread : String = ""
+  # The person or bot whose profile is open beside it, by id; "" when none
+  # is. A profile and a thread take the same place, so one closes the other.
+  profile : String = ""
   # Whether the topic is being edited.
   retitling? : Bool = false
   # The dialog that is open — "channel", "organization", "invite", "status"

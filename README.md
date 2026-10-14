@@ -25,6 +25,11 @@ client-side application: the browser shows markup and sends events.
   big. Nothing typed is ever treated as HTML.
 - **Presence.** Who has a tab open, who is typing, and a status of your own:
   an emoji and a few words.
+- **Profiles.** A name or picture on a message opens that person's profile
+  beside the conversation: their status, whether they are around, title,
+  department, phone, time zone, a bio, and a way to write to them. A bot's
+  says whose it is. Anyone can go by a nickname instead of their name.
+  Details a directory sync takes over are locked: shown, not changed.
 - **Live.** What one person does shows in everyone's open tabs at once.
 - **Bots.** A bot is a member like any other, and uses Slick through a JSON
   API with a token.
