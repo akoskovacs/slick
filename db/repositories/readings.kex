@@ -1,25 +1,24 @@
-# How far people have read.
+# How far people have read, in conversations and in the threads they
+# follow.
 #
-#   DB.Repositories.Readings.reached(user.id, conversation.id, message.sentAt)
+#   DB.Repositories.Readings.reached(user.id, Reading { conversationId: chat.id, readAt: message.sentAt })
 module DB.Repositories.Readings
 
 using Harmat.Database, as: Database
+using App.Models.Reading, only: [Reading]
 
-# How far a person has read in every conversation they have read in: the
-# conversation's id, and the `sent_at` of the newest message they were
-# shown there.
-foul marks(userId: String) -> Result<{String: Integer}, String> do
-  return Database.select([:conversation_id, :read_at]).from(DB.Schema.Readings)
+# Everywhere a person has read: each conversation, and each thread they
+# follow.
+foul marks(userId: String) -> Result<[Reading], String> do
+  return Database.select([:conversation_id, :thread_id, :read_at]).from(DB.Schema.Readings)
     .where(DB.Schema.Readings.userId.eq(userId))
     .all
-    .map { |rows|
-      rows.reduce({}) { |found, row| found.put(row.get("conversation_id").or(""), row.get("read_at").or("0").to(Integer).or(0)) }
-    }
+    .map { |rows| rows.map { |row| decoded(row) } }
 end
 
-# Notes that a person has read a conversation as far as `at`.
-foul reached(userId: String, conversationId: String, at: Integer) -> Result<Integer, String> do
-  let id = "${userId}:${conversationId}"
+# Notes how far a person has read a conversation, or a thread of it.
+foul reached(userId: String, reading: Reading) -> Result<Integer, String> do
+  let id = reading.threadId.empty? then "${userId}:${reading.conversationId}" else "${userId}:${reading.conversationId}:${reading.threadId}"
   Database.delete(DB.Schema.Readings)
     .where(DB.Schema.Readings.id.eq(id))
     .run
@@ -27,10 +26,20 @@ foul reached(userId: String, conversationId: String, at: Integer) -> Result<Inte
   let row = {
     id: id,
     user_id: userId,
-    conversation_id: conversationId,
-    read_at: at
+    conversation_id: reading.conversationId,
+    thread_id: reading.threadId,
+    read_at: reading.readAt
   }
   return Database.insert(DB.Schema.Readings)
     .values(row)
     .run
+end
+
+private do
+  decoded : {String: String} -> Reading
+  let decoded(row) = Reading {
+    conversationId: row.get("conversation_id").or(""),
+    threadId: row.get("thread_id").or(""),
+    readAt: row.get("read_at").or("0").to(Integer).or(0)
+  }
 end

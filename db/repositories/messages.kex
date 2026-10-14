@@ -29,6 +29,16 @@ foul newer(conversationId: String, since: Integer) -> Result<Integer, String> do
     .count
 end
 
+# The replies to any of these messages newer than `since`, oldest first.
+foul replyingTo(rootIds: [String], since: Integer) -> Result<[Message], String> do
+  return Database.select().from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.parentId.in(rootIds))
+    .where(DB.Schema.Messages.sentAt.gt(since))
+    .orderBy([:sent_at, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
 # The replies to a message, oldest first.
 foul answering(rootId: String) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)

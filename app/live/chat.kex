@@ -20,6 +20,7 @@ using App.Live.Unread, only: [Unread]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
+using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
@@ -75,25 +76,31 @@ foul markup(statuses, user, tab) do
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
       let drafts : [Draft] = Drafts.pending(user.id).or([])
-      let marks : {String: Integer} = Readings.marks(user.id).or({})
+      let marks : [Reading] = Readings.marks(user.id).or([])
       match visible(user, tab) do
         None => do
-          let unread = tallied(user, organization, mine, marks, "")
+          let unread = tallied(user, organization, mine, marks, "", "")
           return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, None, [], [], [], [], [])
         end
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
-          # A tab showing a conversation is reading it, as far as its
-          # newest message.
-          let newest = messages.last.map { |message| message.sentAt }.or(0)
-          if newest > marks.get(conversation.id).or(0)
-            Readings.reached(user.id, conversation.id, newest)
+          let thread = unfolded(conversation, tab.thread)
+          # Somebody looking at a conversation reads it as far as its newest
+          # message, and the thread open beside it, if they follow it, as
+          # far as its newest reply.
+          let reading = tab.attentive? then conversation.id else ""
+          let readingThread = tab.attentive? then thread.first.map { |first| first.id }.or("") else ""
+          if tab.attentive?
+            noted(user, marks, Reading { conversationId: conversation.id, readAt: messages.last.map { |message| message.sentAt }.or(0) })
+            if followed(marks, readingThread)
+              noted(user, marks, Reading { conversationId: conversation.id, threadId: readingThread, readAt: thread.last.map { |message| message.sentAt }.or(0) })
+            end
           end
-          let unread = tallied(user, organization, mine, marks, conversation.id)
+          let unread = tallied(user, organization, mine, marks, reading, readingThread)
           let reactions = Reactions.throughout(conversation.id).or([])
           let responses = Answers.collected(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, Just(conversation), messages, reactions, responses, unfolded(conversation, tab.thread), doing.reject { |note| note.member == user.id })
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, Just(conversation), messages, reactions, responses, thread, doing.reject { |note| note.member == user.id })
         end
       end
     end
@@ -121,6 +128,7 @@ foul handled(statuses, user, tab, entries) do
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
     "profile" => profiled(user, tab, field(entries, "user"))
     "unprofile" => (Tab { ...settled(tab), profile: "" }, false)
+    "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
     "profile-edit" => (Tab { ...settled(tab), dialog: "profile" }, false)
     "profile-set" => redescribed(user, tab, entries)
     "reply" => replied(statuses, user, tab, field(entries, "body").trim)
@@ -264,14 +272,14 @@ end
 private do
   # How much somebody has not read: in the organization the tab is in, by
   # channel and by private chat, and in each of the others altogether.
-  # `marks` are how far they have read (`Readings.marks`), and `open` the
-  # conversation the tab shows, which they are reading now.
-  tallied : User -> Organization -> [Organization] -> {String: Integer} -> String -> Unread
-  foul tallied(user, current, mine, marks, open) do
-    let (channels, people) = unreadIn(user, current, marks, open)
+  # `marks` are how far they have read (`Readings.marks`); `open` and
+  # `openThread` are what the tab shows them right now, if they are looking.
+  tallied : User -> Organization -> [Organization] -> [Reading] -> String -> String -> Unread
+  foul tallied(user, current, mine, marks, open, openThread) do
+    let (channels, people) = unreadIn(user, current, marks, open, openThread)
     let others = mine.reject { |each| each.id == current.id }
     let elsewhere = others.reduce({}) { |found, other|
-      let (theirChannels, theirPeople) = unreadIn(user, other, marks, "")
+      let (theirChannels, theirPeople) = unreadIn(user, other, marks, "", "")
       found.put(other.id, summed(theirChannels) + summed(theirPeople))
     }
     return Unread {
@@ -282,23 +290,47 @@ private do
     }
   end
 
-  # The newer messages of each channel of an organization, by id, and of
-  # each of this person's private chats there, by the person it is with.
-  # Where they have never read, what came before they joined is not news.
-  unreadIn : User -> Organization -> {String: Integer} -> String -> ({String: Integer}, {String: Integer})
-  foul unreadIn(user, organization, marks, open) do
+  # What is new in each channel of an organization, by id, and in each of
+  # this person's private chats there, by the person it is with: messages
+  # since they last read there — since they joined, where they never have —
+  # and other people's replies in the threads they follow since they last
+  # read those.
+  unreadIn : User -> Organization -> [Reading] -> String -> String -> ({String: Integer}, {String: Integer})
+  foul unreadIn(user, organization, marks, open, openThread) do
     let since = Memberships.joined(organization.id, user.id)
     let channels : [Conversation] = Conversations.channels(organization.id).or([])
     let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
-    let byChannel = channels.reduce({}) { |found, channel| found.put(channel.id, unseen(channel, marks, since, open)) }
-    let byPerson = chats.reduce({}) { |found, chat| found.put(chat.counterpart(user.id), unseen(chat, marks, since, open)) }
+    let places = (channels + chats).map { |conversation| conversation.id }
+    let follows = marks.filter { |mark| !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId) }
+    let oldest = follows.map { |mark| mark.readAt }.min.or(0)
+    let replies : [Message] = follows.empty? then [] else Messages.replyingTo(follows.map { |mark| mark.threadId }, oldest).or([])
+    let answered = replies.filter { |reply|
+      reply.userId != user.id && follows.any? { |mark| mark.threadId == reply.parentId && reply.sentAt > mark.readAt }
+    }
+    let counted = { |conversation| unseen(conversation, marks, since, open) + answered.count { |reply| reply.conversationId == conversation.id } }
+    let byChannel = channels.reduce({}) { |found, channel| found.put(channel.id, counted(channel)) }
+    let byPerson = chats.reduce({}) { |found, chat| found.put(chat.counterpart(user.id), counted(chat)) }
     return (byChannel, byPerson)
   end
 
-  unseen : Conversation -> {String: Integer} -> Integer -> String -> Integer
+  # The messages of a conversation newer than how far this person has read
+  # there; none in the one they are reading.
+  unseen : Conversation -> [Reading] -> Integer -> String -> Integer
   foul unseen(conversation, marks, since, open) do
     return 0 if conversation.id == open
-    return Messages.newer(conversation.id, marks.get(conversation.id).or(since)).or(0)
+    let mark = marks.find { |each| each.conversationId == conversation.id && each.threadId.empty? }
+    return Messages.newer(conversation.id, mark.map { |each| each.readAt }.or(since)).or(0)
+  end
+
+  # Whether this person follows the thread a message starts.
+  followed : [Reading] -> String -> Bool
+  let followed(marks, threadId) = !threadId.empty? && marks.any? { |mark| mark.threadId == threadId }
+
+  # Notes how far somebody has read, if it is further than before.
+  noted : User -> [Reading] -> Reading -> Void
+  foul noted(user, marks, reading) do
+    let before = marks.find { |mark| mark.conversationId == reading.conversationId && mark.threadId == reading.threadId }.map { |mark| mark.readAt }.or(0)
+    Readings.reached(user.id, reading) if reading.readAt > before
   end
 
   summed : {String: Integer} -> Integer
@@ -582,8 +614,10 @@ private do
       Just(conversation) => match rooted(conversation, tab.thread) do
         None => return (tab, false)
         Just(first) => match Messages.said(conversation.id, user.id, body, first.id) do
-          Ok(_) => do
+          Ok(reply) => do
             statuses.lifted(conversation.id, user.id)
+            # Who replies in a thread follows it, and has read it so far.
+            Readings.reached(user.id, Reading { conversationId: conversation.id, threadId: first.id, readAt: reply.sentAt })
             Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: first.id, body: "" })
             return (Tab { ...settled(tab), thread: first.id }, true)
           end
@@ -647,9 +681,11 @@ private do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => match Messages.said(conversation.id, user.id, body, "") do
-        Ok(_) => do
+        Ok(message) => do
           # Whatever they were said to be doing, they have done.
           statuses.lifted(conversation.id, user.id)
+          # Who starts a thread follows it.
+          Readings.reached(user.id, Reading { conversationId: conversation.id, threadId: message.id, readAt: message.sentAt })
           Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" })
           return (settled(tab), true)
         end

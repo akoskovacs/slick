@@ -1,5 +1,6 @@
 # The `readings` table: how far each person has read in each conversation.
-# `read_at` is a message's `sent_at`, in milliseconds since 1970.
+# `read_at` is a message's `sent_at`, in milliseconds since 1970;
+# `thread_id` the message a followed thread starts with, or "".
 module DB.Schema.Readings
 
 using Harmat.Table, as: Table
@@ -10,6 +11,7 @@ let definition = Table.define :readings do |t|
   t.text(:user_id)
   t.text(:conversation_id)
   t.bigint(:read_at)
+  t.text(:thread_id, default: "")
 end
 
 let table = DB.Schema.Readings.definition.table

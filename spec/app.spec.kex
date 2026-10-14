@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_readings"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_reading_threads"))
   end
 
   it("turns shortcodes into emoji") do
@@ -566,6 +566,25 @@ describe("Slick") do
       Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
       # Replies are read in their thread, and do not count.
       stepped(statuses, bob, bobThread, [("event", "reply"), ("body", "a quiet reply")])
+      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
+      # A conversation open in a tab nobody is looking at is not read: what
+      # arrives counts, in the title, until they look again.
+      let eveAway = Tab { attentive?: false }
+      let (eveBack, _) = stepped(statuses, eve, eveAway, [("event", "attention"), ("on", "true")])
+      Assert.truthy(eveBack.attentive?)
+      stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "while eve is away")])
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1) # general"))
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1) # general"))
+      App.Live.Chat.markup(statuses, eve, eveBack)
+      Assert.falsy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1)"))
+      # Replying in a thread follows it: other people's replies there count
+      # on its channel until the thread is read.
+      stepped(statuses, eve, bobThread, [("event", "reply"), ("body", "count me in")])
+      stepped(statuses, bob, bobThread, [("event", "reply"), ("body", "eve, look")])
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\" aria-label=\"1 unread\">1</span>"))
+      # Reading the channel is not reading the thread.
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("data-live-title=\"(1) # general"))
+      App.Live.Chat.markup(statuses, eve, bobThread)
       Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
       # A private chat is counted by the person it is with.
       let (bobToEve, _) = stepped(statuses, bob, Tab {}, [("event", "direct"), ("user", eve.id)])

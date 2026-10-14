@@ -1,0 +1,11 @@
+# A reading can be of a thread: how far somebody has read the replies to a
+# message they wrote or replied to — a thread they follow. `thread_id` is
+# the message the thread starts with, and "" for the conversation itself.
+module DB.Migrate.N0016AddReadingThreads
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [addColumn]
+
+let change = Migration.define :add_reading_threads, follows: :create_readings do
+  addColumn(:readings) { |t| t.text(:thread_id, default: "") }
+end

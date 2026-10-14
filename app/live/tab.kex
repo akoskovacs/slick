@@ -26,4 +26,7 @@ record Tab do
   secret : String = ""
   secretFor : String = ""
   failure : String = ""
+  # Whether the person is looking at it: the page shown and its window in
+  # front. What arrives while they are not has not been read.
+  attentive? : Bool = true
 end

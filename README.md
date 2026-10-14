@@ -23,8 +23,10 @@ client-side application: the browser shows markup and sends events.
 - **Threads.** Any message can be replied to beside the conversation.
 - **Unread.** What came since somebody last looked is counted beside each
   channel and private chat, on other organizations in the rail, and in the
-  page title. A conversation open in a tab is read; thread replies are read
-  in their thread and do not count.
+  page title. Only what is in front of them is read: a tab in the
+  background, or a window behind another, leaves it unread. Starting or
+  replying in a thread follows it, and other people's replies there count
+  on its conversation until the thread is opened.
 - **Drafts.** What is written in a message box and not sent is saved as it
   is typed, on the server: it is there again after switching conversations,
   reloading, or on another device, and the sidebar marks where one is ✏️.
