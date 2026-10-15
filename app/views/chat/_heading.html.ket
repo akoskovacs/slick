@@ -1,8 +1,14 @@
 ---
-params: [title: String, topic: String, channel?: Bool, retitling?: Bool]
+params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String]
 ---
 <header class="heading">
-  <h1><%= title %></h1>
+  <div class="heading-row">
+    <h1><%= title %></h1>
+    <nav class="views" aria-label="Show">
+      <button type="button" class="view<% if !filing? %> current<% end %>" data-event="messages">Messages</button>
+      <button type="button" class="view<% if filing? %> current<% end %>" data-event="files">Files<% if !filed.empty? %> <span class="tally"><%= filed %></span><% end %></button>
+    </nav>
+  </div>
   <% if retitling? %>
     <form class="topic-form" data-live="topic" data-live-quiet>
       <input name="topic" value="<%= topic %>" maxlength="250" placeholder="What is this channel about?" autocomplete="off">

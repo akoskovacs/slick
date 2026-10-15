@@ -6,3 +6,4 @@ db/*.sqlite3
 db/odbc
 package.local.kex
 erl_crash.dump
+storage

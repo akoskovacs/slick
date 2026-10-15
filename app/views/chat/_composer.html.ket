@@ -1,5 +1,5 @@
 ---
-params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool, unsent: String]
+params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool, unsent: String, queued: String, attachable?: Bool]
 ---
 <form class="composer" data-live="<%= verb %>" data-live-reset data-live-change="draft" data-live-pause="1000" data-live-typing>
   <input type="hidden" name="place" value="<%= verb %>">
@@ -11,9 +11,17 @@ params: [verb: String, boxId: String, hint: String, picks: String, focused?: Boo
       <button type="button" class="quiet" data-wrap="`" data-target="#<%= boxId %>" title="Code: `text`"><code>&lt;/&gt;</code></button>
       <span class="hint">Shift+Enter for a new line · # heading · - list · &gt; quote · ``` code</span>
     </div>
+    <% if !queued.empty? %>
+      <div class="queue"><%== queued %></div>
+    <% end %>
     <textarea id="<%= boxId %>" name="body" rows="1" placeholder="<%= hint %>" maxlength="4000" autocomplete="off" data-live-enter<% if focused? %> autofocus<% end %>><%= unsent %></textarea>
     <div class="composer-row">
-      <div class="picks"><%== picks %></div>
+      <div class="picks">
+        <% if attachable? %>
+          <label class="attach" title="Attach files — or drop them here, or paste them">📎<input type="file" multiple hidden></label>
+        <% end %>
+        <%== picks %>
+      </div>
       <button type="submit" class="send" title="Send">Send</button>
     </div>
   </div>

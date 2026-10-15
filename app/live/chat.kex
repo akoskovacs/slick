@@ -17,12 +17,14 @@ using Metro.Live.Socket, only: [field]
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using App.Live.Tab, only: [Tab]
 using App.Live.Unread, only: [Unread]
+using App.Models.Attachment, only: [Attachment]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
 using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
+using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Drafts, as: Drafts
 using DB.Repositories.Memberships, as: Memberships
@@ -80,7 +82,7 @@ foul markup(statuses, user, tab) do
       match visible(user, tab) do
         None => do
           let unread = tallied(user, organization, mine, marks, "", "")
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, None, [], [], [], [], [])
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, App.Views.Chat.Cabinet {}, None, [], [], [], [], [])
         end
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
@@ -98,9 +100,10 @@ foul markup(statuses, user, tab) do
           end
           let unread = tallied(user, organization, mine, marks, reading, readingThread)
           let reactions = Reactions.throughout(conversation.id).or([])
+          let cabinet = filedIn(user, tab, conversation)
           let responses = Answers.collected(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, Just(conversation), messages, reactions, responses, thread, doing.reject { |note| note.member == user.id })
+          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, cabinet, Just(conversation), messages, reactions, responses, thread, doing.reject { |note| note.member == user.id })
         end
       end
     end
@@ -129,6 +132,11 @@ foul handled(statuses, user, tab, entries) do
     "profile" => profiled(user, tab, field(entries, "user"))
     "unprofile" => (Tab { ...settled(tab), profile: "" }, false)
     "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
+    "share" => shared(user, tab, field(entries, "file"))
+    "share-failed" => (Tab { ...tab, failure: "${field(entries, "filename")} was not uploaded: ${field(entries, "reason")}" }, false)
+    "unshare" => (Tab { ...tab, pending: tab.pending.reject { |id| id == field(entries, "file") } }, false)
+    "files" => (Tab { ...settled(tab), thread: "", view: "files" }, false)
+    "messages" => (Tab { ...settled(tab), view: "" }, false)
     "profile-edit" => (Tab { ...settled(tab), dialog: "profile" }, false)
     "profile-set" => redescribed(user, tab, entries)
     "reply" => replied(statuses, user, tab, field(entries, "body").trim)
@@ -322,6 +330,25 @@ private do
     return Messages.newer(conversation.id, mark.map { |each| each.readAt }.or(since)).or(0)
   end
 
+  # The files of a conversation: what was sent into it, what this person
+  # has waiting to send there, and — while the files view is open — the
+  # start of each small text file.
+  filedIn : User -> Tab -> Conversation -> App.Views.Chat.Cabinet
+  foul filedIn(user, tab, conversation) do
+    let stored : [Attachment] = Attachments.inside(conversation.id).or([])
+    let waiting : [Attachment] = tab.pending.empty? then [] else Attachments.among(tab.pending).or([])
+    let queued = waiting.filter { |file| file.userId == user.id && !file.sent? }
+    let glimpsed = tab.view == "files" then stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED } else []
+    let glimpses = glimpsed.reduce({}) { |found, file|
+      let content : Result<Binary, String> = Metro.Storage.Service.fetch(file.id)
+      found.put(file.id, content.map { |bytes| bytes.to(String).or("") }.or("").take(400))
+    }
+    return App.Views.Chat.Cabinet { stored: stored, queued: queued, glimpses: glimpses }
+  end
+
+  # The largest text file whose start the files view shows, in bytes.
+  let GLIMPSED = 65536
+
   # Whether this person follows the thread a message starts.
   followed : [Reading] -> String -> Bool
   let followed(marks, threadId) = !threadId.empty? && marks.any? { |mark| mark.threadId == threadId }
@@ -339,7 +366,7 @@ private do
   # A tab with nothing open over the conversation: no form, no dialog, no
   # message left from the last thing tried.
   settled : Tab -> Tab
-  let settled(tab) = Tab { organization: tab.organization, conversation: tab.conversation, thread: tab.thread, profile: tab.profile }
+  let settled(tab) = Tab { organization: tab.organization, conversation: tab.conversation, thread: tab.thread, profile: tab.profile, pending: tab.pending, view: tab.view, attentive?: tab.attentive? }
 
   switched : User -> Tab -> String -> (Tab, Bool)
   foul switched(user, tab, id) do
@@ -673,10 +700,27 @@ private do
     end
   end
 
+  # A file somebody has uploaded waits in the tab's message box, to go with
+  # the next message: only one of theirs that has not been sent.
+  shared : User -> Tab -> String -> (Tab, Bool)
+  foul shared(user, tab, id) do
+    match Attachments.single(id) do
+      Ok(Just(file)) => do
+        return (tab, false) if file.userId != user.id || file.sent? || tab.pending.contains?(id)
+        return (Tab { ...tab, pending: (tab.pending + [id]).take(PENDING) }, false)
+      end
+      _ => return (tab, false)
+    end
+  end
+
+  # How many files can go with one message.
+  let PENDING = 10
+
   sent : Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
   foul sent(statuses, user, tab, body) do
+    # A message needs words, unless files go with it.
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
-    return (tab, false) if !problems.empty?
+    return (tab, false) if !problems.empty? && (tab.pending.empty? || body.chars.count > App.Models.Message.LONGEST)
 
     match visible(user, tab) do
       None => return (tab, false)
@@ -686,8 +730,9 @@ private do
           statuses.lifted(conversation.id, user.id)
           # Who starts a thread follows it.
           Readings.reached(user.id, Reading { conversationId: conversation.id, threadId: message.id, readAt: message.sentAt })
+          Attachments.sent(user.id, tab.pending, conversation.id, message.id) if !tab.pending.empty?
           Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" })
-          return (settled(tab), true)
+          return (Tab { ...settled(tab), pending: [] }, true)
         end
         Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
       end

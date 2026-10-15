@@ -27,6 +27,12 @@ client-side application: the browser shows markup and sends events.
   background, or a window behind another, leaves it unread. Starting or
   replying in a thread follows it, and other people's replies there count
   on its conversation until the thread is opened.
+- **Files.** Drop files anywhere on a conversation, paste them, or pick them
+  with 📎: they wait in the message box and go with the next message, with
+  or without words. Pictures show in the message; everything sent into a
+  conversation is in its **Files** tab, with previews of pictures and the
+  start of text files. A file is only ever served to who may read where it
+  was sent. They are kept by `Metro.Storage`, in `storage/` unless set.
 - **Drafts.** What is written in a message box and not sent is saved as it
   is typed, on the server: it is there again after switching conversations,
   reloading, or on another device, and the sidebar marks where one is ✏️.
@@ -107,6 +113,7 @@ your own.
 | `HOST` | the address to bind; 127.0.0.1 unless set |
 | `DATABASE_DSN` | an ODBC connection string; when set, it is the database in every environment |
 | `SQLITE_DRIVER` | the SQLite ODBC driver, when it is not where Homebrew puts it |
+| `METRO_STORAGE_ROOT` | the folder uploaded files are kept in; `storage` unless set (a volume in Docker) |
 
 ## Writing a message
 

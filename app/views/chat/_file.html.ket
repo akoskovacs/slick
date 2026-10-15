@@ -1,0 +1,16 @@
+---
+params: [file: Enclosure]
+---
+<li class="file">
+  <a class="glimpse" href="<%= file.href %>" target="_blank" rel="noopener">
+  <% if file.pictured? %>
+    <img src="<%= file.href %>" alt="<%= file.caption %>" loading="lazy">
+  <% elif !file.glimpse.empty? %>
+    <pre><%= file.glimpse %></pre>
+  <% else %>
+    <span class="kind" aria-hidden="true">📄</span>
+  <% end %>
+  </a>
+  <p class="about"><a href="<%= file.href %>" target="_blank" rel="noopener"><strong><%= file.caption %></strong></a></p>
+  <p class="meta"><%= file.sender %> · <%= file.stamp %> · <%= file.weight %></p>
+</li>

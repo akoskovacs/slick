@@ -1,0 +1,50 @@
+# Files: uploaded by a person, then served to whoever may read where they
+# were sent. The bytes are `Metro.Storage`'s; what each file is and where it
+# belongs is `DB.Repositories.Attachments`'.
+module App.Controllers.Files
+
+using Metro.WebRequest, only: [WebRequest]
+using App.Controllers.Application, only: [userFor]
+using App.Models.Attachment, only: [Attachment]
+using DB.Repositories.Attachments, as: Attachments
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Memberships, as: Memberships
+
+# Keeps a file somebody drops into a conversation. It is theirs alone until
+# the message it goes with is sent: the answer is what the live script
+# hands on, as a `share` event, for the tab to hold until then.
+uploaded : WebRequest -> WebRequest
+foul uploaded(request) do
+  let user = userFor(request)
+  match Metro.Storage.received(request) do
+    Error(reason) => return request.json(422, {"error": reason})
+    Ok(blob) => match Attachments.uploaded(user.id, blob) do
+      Ok(file) => return request.json(200, {"file": file.id, "name": file.filename})
+      Error(reason) => return request.json(500, {"error": reason})
+    end
+  end
+end
+
+# A file, to somebody who may see it: its uploader before it is sent, and
+# afterwards whoever may read the conversation it was sent into. Anyone
+# else is told there is no such file.
+fetched : WebRequest -> WebRequest
+foul fetched(request) do
+  let user = userFor(request)
+  match Attachments.single(request.param("id").or("")) do
+    Ok(Just(file)) => return allowed?(user.id, file) then Metro.Storage.served(request, file.blob) else request.plain(404, "Not Found")
+    _ => return request.plain(404, "Not Found")
+  end
+end
+
+private do
+  allowed? : String -> Attachment -> Bool
+  foul allowed?(userId, file) do
+    return file.userId == userId if !file.sent?
+
+    match Conversations.lookup(file.conversationId) do
+      Ok(Just(conversation)) => return Memberships.affiliated?(conversation.organizationId, userId) && conversation.admits?(userId)
+      _ => return false
+    end
+  end
+end

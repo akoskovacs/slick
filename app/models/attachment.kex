@@ -1,0 +1,46 @@
+# A file somebody uploaded: its bytes are in `Metro.Storage` under its id.
+# It is theirs alone until it is sent with a message into a conversation.
+module App.Models.Attachment
+
+record Attachment do
+  id : String
+  userId : String
+  conversationId : String = ""
+  messageId : String = ""
+  filename : String
+  contentType : String
+  byteSize : Integer
+  checksum : String = ""
+  uploadedAt : Integer = 0
+  # When, in this server's time, as messages say it: "2026-10-15T10:11:…".
+  uploadedOn : String = ""
+end
+
+make Attachment do
+  # Whether it has been sent yet.
+  let sent? -> Bool = !@messageId.empty?
+
+  # Whether it is a picture a page can show.
+  let picture? -> Bool = Metro.Storage.picture?(@contentType)
+
+  # Whether it is text worth showing the start of.
+  let textual? -> Bool = @contentType.startsWith?("text/") || @contentType == "application/json"
+
+  # Where it is fetched from: the name at the end is for whoever saves it.
+  let address -> String = "/files/${@id}"
+
+  # Its size in words: "512 B", "1.2 KB", "3.4 MB".
+  let sized -> String = @byteSize < 1024 then "${@byteSize} B" else (@byteSize < 1048576 then "${tenths(@byteSize, 1024)} KB" else "${tenths(@byteSize, 1048576)} MB")
+
+  # The blob `Metro.Storage.served` answers with.
+  let blob -> Metro.Storage.Blob = Metro.Storage.Blob { key: @id, filename: @filename, contentType: @contentType, byteSize: @byteSize, checksum: @checksum }
+end
+
+private do
+  # A number of units to one decimal place: 1536 / 1024 is "1.5".
+  tenths : Integer -> Integer -> String
+  let tenths(count, unit) do
+    let scaled = count * 10 / unit
+    "${scaled / 10}.${scaled % 10}"
+  end
+end

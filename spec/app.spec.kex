@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_reading_threads"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_files"))
   end
 
   it("turns shortcodes into emoji") do
@@ -617,6 +617,43 @@ describe("Slick") do
       Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]), [])
       stepped(statuses, mal, malForged, [("event", "draft"), ("place", "send"), ("body", "sneaky")])
       Assert.equal(DB.Repositories.Drafts.pending(mal.id).or([]), [])
+
+      # Files: uploaded, waiting in the message box, sent with a message,
+      # then listed in the files view and served only to who may read them.
+      let files = "storage_spec_${Metro.Clock.milliseconds()}"
+      with Metro.Storage.Service = Metro.Storage.Disk { root: files } do
+        let upload = Metro.Wire.made("POST", "/uploads", [("Content-Type", "text/plain"), ("X-Filename", "notes.txt")], "first line\nsecond <line>")
+        let uploaded = App.Controllers.Files.uploaded(Metro.WebRequest.WebRequest { incoming: upload, assigns: {user: ada} })
+        Assert.equal(uploaded.code, 200)
+        let fileId = uploaded.payload.to(String).or("").split("\"file\":\"").second.or("").split("\"").first.or("")
+        Assert.truthy(fileId.startsWith?("f"))
+        # Nobody shares a file that is not theirs.
+        let (bobTakes, _) = stepped(statuses, bob, Tab {}, [("event", "share"), ("file", fileId)])
+        Assert.equal(bobTakes.pending, [])
+        let (adaShares, _) = stepped(statuses, ada, Tab {}, [("event", "share"), ("file", fileId)])
+        Assert.equal(adaShares.pending, [fileId])
+        Assert.truthy(App.Live.Chat.markup(statuses, ada, adaShares).contains?("<strong>notes.txt</strong>"))
+        # Before it is sent, only its uploader can fetch it.
+        let asking = { |who| App.Controllers.Files.fetched(Metro.WebRequest.WebRequest { incoming: Metro.Wire.made("GET", "/files/${fileId}", [], ""), captures: {"id": fileId}, assigns: {user: who} }) }
+        Assert.equal(asking(bob).code, 404)
+        Assert.equal(asking(ada).code, 200)
+        # A file goes without words.
+        let (afterFile, fileSent) = stepped(statuses, ada, adaShares, [("event", "send"), ("body", "")])
+        Assert.truthy(fileSent)
+        Assert.equal(afterFile.pending, [])
+        Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("href=\"/files/${fileId}\""))
+        Assert.equal(asking(bob).code, 200)
+        Assert.equal(asking(mal).code, 404)
+        Assert.equal(asking(bob).outgoing.get("X-Content-Type-Options"), Just("nosniff"))
+        # The files view lists it, with the start of what it says.
+        let filesView = App.Live.Chat.markup(statuses, bob, Tab { view: "files" })
+        Assert.truthy(filesView.contains?("<pre>first line\nsecond &lt;line&gt;</pre>"))
+        Assert.truthy(filesView.contains?("Files <span class=\"tally\">1</span>"))
+        # A file once sent cannot be sent again.
+        let (again, _) = stepped(statuses, ada, Tab {}, [("event", "share"), ("file", fileId)])
+        Assert.equal(again.pending, [])
+      end
+      FS.Directory.deleteAll(files)
 
       # Profiles: a name or a picture on a message opens its author's beside
       # the conversation; a bot's says whose it is.

@@ -17,6 +17,7 @@ let Memberships = DB.Schema.Memberships.definition
 let Answers = DB.Schema.Answers.definition
 let Drafts = DB.Schema.Drafts.definition
 let Readings = DB.Schema.Readings.definition
+let Files = DB.Schema.Files.definition
 
 tables : [Definition]
 let tables = [
@@ -29,5 +30,6 @@ let tables = [
   DB.Schema.Memberships,
   DB.Schema.Answers,
   DB.Schema.Drafts,
-  DB.Schema.Readings
+  DB.Schema.Readings,
+  DB.Schema.Files
 ]

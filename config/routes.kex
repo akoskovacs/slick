@@ -19,6 +19,7 @@ using Metro.Router, only: [pipeline, scope, get, post, live, static]
 using App.Controllers.Accounts, only: [signInPage, signIn, signOut, registrationPage, register]
 using App.Controllers.Api, only: [whoami, channelList, chatList, answerList, history, posted, reacting, statusSet]
 using App.Controllers.Chat, only: [show]
+using App.Controllers.Files, only: [uploaded, fetched]
 
 # Built where the database is installed (main.kex): an action reaches the
 # `Harmat.Connection` that was in force when its route was written, not the
@@ -64,6 +65,10 @@ foul routes(hub) do
       get(App.Paths.channelPath.template, ~show)
       get(App.Paths.directPath.template, ~show)
       post("/signout", ~signOut)
+      # Files: dropped into a conversation, then fetched by whoever may read
+      # it there (App.Controllers.Files).
+      post("/uploads", ~uploaded)
+      get("/files/:id", ~fetched)
       # The chat kept current: events in, markup out. Behind the same plugs
       # as the page, so a socket from another site, or from nobody, is refused.
       live "/live" do |request, socket| App.Controllers.Chat.joined(request, socket) end

@@ -1,5 +1,5 @@
 ---
-params: [bubble: Bubble, chips: String, offers: String]
+params: [bubble: Bubble, chips: String, offers: String, attached: String]
 ---
 <article class="message<% if bubble.own? %> own<% end %><% if bubble.continued? %> continued<% end %>" id="<%= bubble.anchor %>">
 <% if bubble.continued? %>
@@ -19,6 +19,9 @@ params: [bubble: Bubble, chips: String, offers: String]
     <time><%= bubble.stamp %></time></p>
   <% end %>
   <div class="body"><%== bubble.content %></div>
+  <% if !attached.empty? %>
+    <div class="attachments"><%== attached %></div>
+  <% end %>
   <div class="reactions"><%== chips %></div>
   <% if !bubble.answers.empty? %>
     <button type="button" class="answers" data-event="thread" data-message="<%= bubble.key %>"><%= bubble.answers %></button>

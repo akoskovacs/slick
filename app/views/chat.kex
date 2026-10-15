@@ -14,6 +14,7 @@ using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
 using App.Models.Answer, only: [Answer]
+using App.Models.Attachment, only: [Attachment]
 using App.Models.Draft, only: [Draft]
 using App.Helpers.RichText, only: [Given]
 using App.Models.User, only: [User]
@@ -132,6 +133,30 @@ record Detail do
   locked? : Bool = false
 end
 
+# A file, as a message, the message box or the files view shows it.
+record Enclosure do
+  key : String
+  caption : String
+  # Where it is fetched from, and how big it is in words.
+  href : String
+  weight : String
+  pictured? : Bool = false
+  # The start of a text file, for the files view; "" for anything else.
+  glimpse : String = ""
+  # Who sent it, and when.
+  sender : String = ""
+  stamp : String = ""
+end
+
+# The files of the conversation a tab shows: those sent into it, newest
+# first, and this person's waiting in the message box. `glimpses` are the
+# starts of text files, by id, read only while the files view is open.
+record Cabinet do
+  stored : [Attachment] = []
+  queued : [Attachment] = []
+  glimpses : {String: String} = {}
+end
+
 # What somebody is in the middle of, under the conversation.
 record Standing do
   who : String
@@ -167,6 +192,9 @@ let profilePartial = Template.html(Kex.embed("chat/_profile.html.ket"))
 let detailsPartial = Template.html(Kex.embed("chat/_details.html.ket"))
 let detailPartial = Template.html(Kex.embed("chat/_detail.html.ket"))
 let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
+let attachmentPartial = Template.html(Kex.embed("chat/_attachment.html.ket"))
+let queuedPartial = Template.html(Kex.embed("chat/_queued.html.ket"))
+let filePartial = Template.html(Kex.embed("chat/_file.html.ket"))
 
 # The document: head, who is signed in, the live region, and Metro's script.
 # The live region is all of it, the bar across the top included: the name
@@ -189,13 +217,13 @@ let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProble
 # and their own — and only asked for while their dialog is open.
 #
 # `drafts` are what this person has written and not sent, anywhere, and
-# `unread` how much they have not read.
+# `unread` how much they have not read; `cabinet` the conversation's files.
 #
 # `doing` is what other people there are in the middle of right now.
 #
 # `online` are the ids of the people with a tab open.
-index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> [Draft] -> Unread -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
-let index(tab, user, organizations, organization, channels, people, online, bots, drafts, unread, conversation, messages, reactions, responses, thread, doing) do
+index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> [Draft] -> Unread -> Cabinet -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
+let index(tab, user, organizations, organization, channels, people, online, bots, drafts, unread, cabinet, conversation, messages, reactions, responses, thread, doing) do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
     let waiting = unread.organizations.get(each.id).or(0)
@@ -221,13 +249,13 @@ let index(tab, user, organizations, organization, channels, people, online, bots
     entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText, drafted?: !chatting && waiting(drafts, person.id), unread: counted(unread.people.get(person.id).or(0)) })
   }
   let unsent = { |threadId| drafts.find { |draft| draft.conversationId == shown && draft.threadId == threadId }.map { |draft| draft.body }.or("") }
-  let beside = thread.empty? then profilePane(tab, user, organization, people, online) else threadPane(user, people, reactions, responses, thread, unsent(opened(thread)))
+  let beside = thread.empty? then profilePane(tab, user, organization, people, online) else threadPane(user, people, reactions, responses, cabinet.stored, thread, unsent(opened(thread)))
   let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
   let named = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
   let caption = unread.total > 0 then "(${counted(unread.total)}) ${named}" else named
   frame(
     tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), ([selfLine] + personLines).join("\n"), robotLines.join("\n"), topbar(me, true),
-    pane(tab, user, people, conversation, messages, reactions, responses, thread.empty? && tab.dialog.empty?, doing, unsent("")) + beside,
+    pane(tab, user, people, conversation, messages, reactions, responses, cabinet, thread.empty? && tab.dialog.empty?, doing, unsent("")) + beside,
     asking(tab, organization, people, bots, me), place, caption
   )
 end
@@ -371,23 +399,50 @@ private do
   waiting : [Draft] -> String -> Bool
   let waiting(drafts, personId) = drafts.any? { |draft| !draft.personId.empty? && draft.personId == personId }
 
-  threadPane : User -> [User] -> [Reaction] -> [Answer] -> [Message] -> String -> String
-  let threadPane(user, people, reactions, responses, thread, unsent) do
-    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, responses, true, false) }.join("")
-    let followups = sequence(thread.drop(1), "", 0, user, people, reactions, responses, true)
+  threadPane : User -> [User] -> [Reaction] -> [Answer] -> [Attachment] -> [Message] -> String -> String
+  let threadPane(user, people, reactions, responses, files, thread, unsent) do
+    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, responses, files, true, false) }.join("")
+    let followups = sequence(thread.drop(1), "", 0, user, people, reactions, responses, files, true)
     let summary = followups.empty? then "No replies yet" else tallied(followups.count)
-    threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true, unsent))
+    threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true, unsent, "", false))
   end
 
   # `unsent` is what is written in its message box and not sent yet.
-  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> Bool -> [Note] -> String -> String
-  let pane(tab, user, people, None, messages, reactions, responses, alone?, doing, unsent) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
-  let pane(tab, user, people, Just(conversation), messages, reactions, responses, alone?, doing, unsent) do
+  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> Cabinet -> Bool -> [Note] -> String -> String
+  let pane(tab, user, people, None, messages, reactions, responses, cabinet, alone?, doing, unsent) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
+  # The conversation, or with `tab.view` "files", what was sent into it.
+  # Either way files can be dropped anywhere on it, pasted into it or
+  # chosen with 📎, and wait in the message box to be sent.
+  let pane(tab, user, people, Just(conversation), messages, reactions, responses, cabinet, alone?, doing, unsent) do
     let title = titled(conversation, user, people)
-    let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
-    let bubbles = sequence(messages, "", 0, user, people, reactions, responses, false)
+    let filing = tab.view == "files"
+    let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?, filing, cabinet.stored.empty? then "" else "${cabinet.stored.count}")
+    let queued = cabinet.queued.map { |file| queuedPartial(enclosed(file, people, "")) }.join("")
+    let composer = composerPartial("send", "message-box", conversation.solo? then "Jot something down…" else "Message ${title}", picked("#message-box"), alone?, unsent, queued, true)
+    return "<section class=\"pane\" data-live-drop=\"share\">${heading}${filed(cabinet, people)}${composer}</section>" if filing
+
+    let bubbles = sequence(messages, "", 0, user, people, reactions, responses, cabinet.stored, false)
     let emptied = conversation.solo? then soloIntro else (messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else "")
-    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div><p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">${statuses(doing, people)}</p>${composerPartial("send", "message-box", conversation.solo? then "Jot something down…" else "Message ${title}", picked("#message-box"), alone?, unsent)}</section>"
+    "<section class=\"pane\" data-live-drop=\"share\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div><p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">${statuses(doing, people)}</p>${composer}</section>"
+  end
+
+  # Everything sent into a conversation, newest first.
+  filed : Cabinet -> [User] -> String
+  let filed(cabinet, people) do
+    return "<div class=\"files\"><p class=\"empty\">No files here yet. Drop some in, paste them, or attach them with 📎.</p></div>" if cabinet.stored.empty?
+
+    let cards = cabinet.stored.map { |file| filePartial(enclosed(file, people, cabinet.glimpses.get(file.id).or(""))) }
+    "<div class=\"files\"><ul class=\"file-grid\">${cards.join("\n")}</ul></div>"
+  end
+
+  # A file as the page shows it.
+  enclosed : Attachment -> [User] -> String -> Enclosure
+  let enclosed(file, people, glimpse) do
+    let sender = people.find { |person| person.id == file.userId }.map { |person| person.shown }.or("Someone")
+    Enclosure {
+      key: file.id, caption: file.filename, href: file.address, weight: file.sized, pictured?: file.picture?,
+      glimpse: glimpse, sender: sender, stamp: file.uploadedOn.take(16).replace("T", " ")
+    }
   end
 
   # What somebody's chat with themselves is for, at the start of it.
@@ -421,17 +476,17 @@ private do
   # Messages in order, each knowing whether it carries on from the one
   # before: consecutive messages of one person are shown as one block, under
   # one name. `lastUser` and `lastAt` are the message before.
-  sequence : [Message] -> String -> Integer -> User -> [User] -> [Reaction] -> [Answer] -> Bool -> [String]
-  let sequence([], lastUser, lastAt, user, people, reactions, responses, inThread?) = []
-  let sequence([message | rest], lastUser, lastAt, user, people, reactions, responses, inThread?) do
+  sequence : [Message] -> String -> Integer -> User -> [User] -> [Reaction] -> [Answer] -> [Attachment] -> Bool -> [String]
+  let sequence([], lastUser, lastAt, user, people, reactions, responses, files, inThread?) = []
+  let sequence([message | rest], lastUser, lastAt, user, people, reactions, responses, files, inThread?) do
     let carries = message.userId == lastUser && message.sentAt - lastAt < RUN
-    [bubble(message, user, people, reactions, responses, inThread?, carries)] + sequence(rest, message.userId, message.sentAt, user, people, reactions, responses, inThread?)
+    [bubble(message, user, people, reactions, responses, files, inThread?, carries)] + sequence(rest, message.userId, message.sentAt, user, people, reactions, responses, files, inThread?)
   end
 
   # `inThread?` is whether it is shown in the thread pane, where a message
   # has its own element id and no way to open the thread it is already in.
-  bubble : Message -> User -> [User] -> [Reaction] -> [Answer] -> Bool -> Bool -> String
-  let bubble(message, user, people, reactions, responses, inThread?, carries) do
+  bubble : Message -> User -> [User] -> [Reaction] -> [Answer] -> [Attachment] -> Bool -> Bool -> String
+  let bubble(message, user, people, reactions, responses, files, inThread?, carries) do
     let writer = people.find { |person| person.id == message.userId }
     let author = writer.map { |person| person.shown }.or("Someone")
     let badged = writer.map { |person| person.bot? }.or(false) then "BOT" else ""
@@ -445,7 +500,8 @@ private do
     let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
     bubblePartial(
       Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, continued?: carries, author: author, badged: badged, emblem: emblem, emblemNote: emblemNote, initial: author.take(1).upperCase, writer: message.userId, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.shown(message.body, message.id, answered(message, user, people, responses)), own?: message.userId == user.id },
-      chips.join(""), offers.join("")
+      chips.join(""), offers.join(""),
+      files.filter { |file| file.messageId == message.id }.reverse.map { |file| attachmentPartial(enclosed(file, people, "")) }.join("")
     )
   end
 end

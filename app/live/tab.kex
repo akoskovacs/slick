@@ -26,6 +26,12 @@ record Tab do
   secret : String = ""
   secretFor : String = ""
   failure : String = ""
+  # Files uploaded into the conversation and waiting, in the message box,
+  # to be sent with the next message: their ids.
+  pending : [String] = []
+  # What the conversation's pane shows: "" for its messages, "files" for
+  # what has been sent into it.
+  view : String = ""
   # Whether the person is looking at it: the page shown and its window in
   # front. What arrives while they are not has not been read.
   attentive? : Bool = true

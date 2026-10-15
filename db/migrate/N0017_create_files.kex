@@ -1,0 +1,26 @@
+# Files people upload into a conversation. The id is the file's key in
+# `Metro.Storage`, where its bytes are; this is what it is and where it
+# belongs. A file belongs to whoever uploaded it until it is sent, with a
+# message, into a conversation: until then `conversation_id` and
+# `message_id` are "".
+module DB.Migrate.N0017CreateFiles
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_files, follows: :add_reading_threads do
+  createTable(:files) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:user_id)
+    t.text(:conversation_id, default: "")
+    t.text(:message_id, default: "")
+    t.text(:filename)
+    t.text(:content_type)
+    t.bigint(:byte_size)
+    t.text(:checksum)
+    t.bigint(:uploaded_at)
+    t.text(:uploaded_on)
+  end
+  addIndex(:files, [:conversation_id, :uploaded_at])
+  addIndex(:files, [:message_id])
+end
