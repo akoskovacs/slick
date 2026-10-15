@@ -1,0 +1,29 @@
+# Conversations only some people may read: private channels, and group
+# chats of three people or more. Who may read one is its participants —
+# and, for a channel a team owns, that team's members. `access` is
+# "public" for a channel anyone in the organization may read, "private"
+# for the rest. A group chat can become a channel later, public or not,
+# and keeps its participants. The id of a participant is the conversation
+# and the person together.
+module DB.Migrate.N0021AddGroups
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [changeColumn, addColumn, createTable, addIndex]
+
+let change = Migration.define :add_groups, follows: :create_teams do
+  changeColumn(:conversations) do |t|
+    t.text(:kind, oneOf: ["channel", "direct"])
+    t.text(:kind, oneOf: ["channel", "direct", "group"])
+  end
+  addColumn(:conversations) { |t| t.text(:access, default: "public", oneOf: ["public", "private"]) }
+  addColumn(:conversations) { |t| t.text(:team_id, default: "") }
+  addIndex(:conversations, [:team_id])
+  createTable(:participants) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:conversation_id)
+    t.text(:user_id)
+    t.text(:joined_at)
+  end
+  addIndex(:participants, [:conversation_id])
+  addIndex(:participants, [:user_id])
+end

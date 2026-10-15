@@ -1,5 +1,5 @@
 ---
-params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String]
+params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String, note: String, admitting?: Bool, promotable?: Bool]
 ---
 <header class="heading">
   <div class="heading-row">
@@ -21,7 +21,15 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
     <p class="topic"><% if topic.empty? %>No topic yet<% else %><%= topic %><% end %>
       <button type="button" class="quiet" data-event="retitle">Edit topic</button>
     </p>
-  <% else %>
-    <p class="topic">Private: only the two of you can read this.</p>
+  <% end %>
+  <% if !note.empty? %>
+    <p class="topic"><%= note %>
+    <% if admitting? %>
+      <button type="button" class="quiet" data-event="admit">Add people</button>
+    <% end %>
+    <% if promotable? %>
+      <button type="button" class="quiet" data-event="promote">Make it a channel</button>
+    <% end %>
+    </p>
   <% end %>
 </header>

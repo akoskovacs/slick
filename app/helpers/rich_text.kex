@@ -67,11 +67,12 @@ html : String -> String
 let html(body) = shown(body, "", [])
 
 # Markup with every mention of somebody marked: `@` and one of `names`, as
-# the page shows them, not followed by a letter or digit. The longest name
-# wins, so "@Ada Lovelace" is not "@Ada" and some words. `mine` is the name
-# of whoever is looking: a mention of them is marked `you`. Only text is
-# read — not tags, and not what is inside `code` or `pre`.
-mentioned : String -> [String] -> String -> String
+# the page shows them — people's names, teams' handles — not followed by a
+# letter or digit. The longest name wins, so "@Ada Lovelace" is not "@Ada"
+# and some words. `mine` are the names that mean whoever is looking — their
+# own, and their teams' — and a mention of one is marked `you`. Only text
+# is read — not tags, and not what is inside `code` or `pre`.
+mentioned : String -> [String] -> [String] -> String
 let mentioned(markup, names, mine) do
   let longestFirst = names.reject { |name| name.empty? }.uniq.sort { |one, other| one.chars.count > other.chars.count }
   let pieces = markup.split("<")
@@ -240,7 +241,7 @@ private do
   let closesCode?(name) = name == "/code" || name == "/pre"
 
   # A run of escaped text with its mentions marked.
-  marked : String -> [String] -> String -> String
+  marked : String -> [String] -> [String] -> String
   let marked(text, names, mine) do
     return text if !text.contains?("@")
     let parts = text.split("@")
@@ -250,7 +251,7 @@ private do
 
   # What follows one `@`: the mention of the longest name it starts with,
   # then the rest; or the `@` and the text as they were.
-  mentionIn : String -> [String] -> String -> String
+  mentionIn : String -> [String] -> [String] -> String
   let mentionIn(part, names, mine) do
     let escaped = names.map { |name| Template.escapeHtml(name) }
     let found = escaped.find { |name|
@@ -259,7 +260,8 @@ private do
     match found do
       None => "@${part}"
       Just(name) => do
-        let whose = name == Template.escapeHtml(mine) then "mention you" else "mention"
+        let own = mine.any? { |each| Template.escapeHtml(each) == name }
+        let whose = own then "mention you" else "mention"
         "<span class=\"${whose}\">@${name}</span>${part.drop(name.count)}"
       end
     end

@@ -8,6 +8,8 @@ record Unread do
   channels : {String: Integer} = {}
   # Each private chat there, by the person it is with.
   people : {String: Integer} = {}
+  # Each group chat there, by id.
+  groups : {String: Integer} = {}
   # Every other organization they are in, all of it together, by id.
   organizations : {String: Integer} = {}
   # Everywhere.

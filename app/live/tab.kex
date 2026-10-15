@@ -12,12 +12,16 @@ record Tab do
   # The message whose thread is open beside it, by id; "" when none is.
   thread : String = ""
   # The person or bot whose profile is open beside it, by id; "" when none
-  # is. A profile and a thread take the same place, so one closes the other.
+  # is. A profile, a team and a thread take the same place, so each closes
+  # the others.
   profile : String = ""
+  # The team open beside it, by id; "" when none is.
+  team : String = ""
   # Whether the topic is being edited.
   retitling? : Bool = false
-  # The dialog that is open — "channel", "organization", "invite", "status"
-  # or "bots" — and what was wrong with its last try.
+  # The dialog that is open — "channel", "group", "promote", "admit",
+  # "team", "team-edit", "organization", "invite", "status", "profile" or
+  # "bots" — and what was wrong with its last try.
   dialog : String = ""
   dialogProblem : String = ""
   notice : String = ""

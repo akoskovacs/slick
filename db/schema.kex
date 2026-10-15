@@ -20,6 +20,9 @@ let Readings = DB.Schema.Readings.definition
 let Files = DB.Schema.Files.definition
 let Commands = DB.Schema.Commands.definition
 let Invocations = DB.Schema.Invocations.definition
+let Teams = DB.Schema.Teams.definition
+let TeamMembers = DB.Schema.TeamMembers.definition
+let Participants = DB.Schema.Participants.definition
 
 tables : [Definition]
 let tables = [
@@ -35,5 +38,8 @@ let tables = [
   DB.Schema.Readings,
   DB.Schema.Files,
   DB.Schema.Commands,
-  DB.Schema.Invocations
+  DB.Schema.Invocations,
+  DB.Schema.Teams,
+  DB.Schema.TeamMembers,
+  DB.Schema.Participants
 ]

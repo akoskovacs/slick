@@ -1,5 +1,5 @@
-# Where messages go: a channel everyone can read, or a private chat between
-# two people.
+# Where messages go: a channel, a private chat between two people, or a
+# group chat between three or more.
 module App.Models.Conversation
 
 using App.Models.Organization, only: [OrganizationId]
@@ -7,7 +7,7 @@ using App.Models.Organization, only: [OrganizationId]
 type ConversationId = String
 record Conversation do
   id : ConversationId
-  # "channel" or "direct".
+  # "channel", "direct" or "group".
   kind : String = "channel"
   slug : String = ""
   title : String = ""
@@ -15,6 +15,15 @@ record Conversation do
   firstUser : String = ""
   secondUser : String = ""
   organizationId : OrganizationId = ""
+  # "public" for a channel anyone in the organization may read; "private"
+  # for one only its participants may — as a group chat always is.
+  access : String = "public"
+  # The team that owns a channel; "" for none.
+  teamId : String = ""
+  # Who may read a private channel or a group chat: its participants and,
+  # for a channel a team owns, the team's members. The repository fills it
+  # in; it is empty for the rest.
+  participants : [String] = []
 end
 
 # The channel every workspace starts with.
@@ -25,13 +34,28 @@ let GENERAL = "general"
 pairing : String -> String -> String
 let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:${one}"
 
+# The slug of the group chat between some people, in whatever order they
+# are given.
+gathering : [String] -> String
+let gathering(people) = "&${people.uniq.sort.join(",")}"
+
 make Conversation do
   let channel? -> Bool = @kind == "channel"
+  let group? -> Bool = @kind == "group"
+  let direct? -> Bool = @kind == "direct"
+
+  # Whether anyone in the organization may read it: a public channel.
+  # (`open?`, not `public?`: `public` is a Kex keyword.)
+  let open? -> Bool = @kind == "channel" && @access == "public"
 
   # Whether this person may read and write here, given that they are in its
-  # organization: anyone in a channel, and only the two people of a private
-  # chat.
-  let admits?(userId: String) -> Bool = @kind == "channel" || @firstUser == userId || @secondUser == userId
+  # organization: anyone in a public channel, the two people of a private
+  # chat, and the participants of anything else.
+  let admits?(userId: String) -> Bool do
+    return true if @kind == "channel" && @access == "public"
+    return @firstUser == userId || @secondUser == userId if @kind == "direct"
+    @participants.contains?(userId)
+  end
 
   # Whether it is somebody's chat with themselves.
   let solo? -> Bool = @kind == "direct" && @firstUser == @secondUser

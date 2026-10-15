@@ -1,5 +1,5 @@
-# The `conversations` table: channels and private chats. See
-# db/migrate/N0004_create_conversations.kex.
+# The `conversations` table: channels, private chats and group chats. See
+# db/migrate/N0004_create_conversations.kex and N0021_add_groups.kex.
 module DB.Schema.Conversations
 
 using Harmat.Table, as: Table
@@ -7,7 +7,7 @@ using Harmat.Table, only: [Definition]
 
 let definition = Table.define :conversations do |t|
   t.text(:id, primaryKey: true)
-  t.text(:kind, oneOf: ["channel", "direct"])
+  t.text(:kind, oneOf: ["channel", "direct", "group"])
   t.text(:slug)
   t.text(:title, default: "")
   t.text(:topic, default: "")
@@ -16,6 +16,8 @@ let definition = Table.define :conversations do |t|
   t.text(:created_by, default: "")
   t.text(:created_at)
   t.text(:organization_id, default: "")
+  t.text(:access, default: "public", oneOf: ["public", "private"])
+  t.text(:team_id, default: "")
 end
 
 let table = DB.Schema.Conversations.definition.table
@@ -30,3 +32,5 @@ let secondUser = DB.Schema.Conversations.definition.textColumn(:second_user)
 let createdBy = DB.Schema.Conversations.definition.textColumn(:created_by)
 let createdAt = DB.Schema.Conversations.definition.textColumn(:created_at)
 let organizationId = DB.Schema.Conversations.definition.textColumn(:organization_id)
+let access = DB.Schema.Conversations.definition.textColumn(:access)
+let teamId = DB.Schema.Conversations.definition.textColumn(:team_id)

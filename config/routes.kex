@@ -17,7 +17,7 @@ using Metro.Router, only: [pipeline, scope, get, post, put, live, static]
 # Actions are named bare, and so imported by name: a reference through the
 # module (`~App.Controllers.Chat.show`) does not resolve when it is called.
 using App.Controllers.Accounts, only: [signInPage, signIn, signOut, registrationPage, register]
-using App.Controllers.Api, only: [whoami, commandsDeclared, channelList, chatList, answerList, invocationList, history, posted, reacting, statusSet]
+using App.Controllers.Api, only: [whoami, commandsDeclared, channelList, chatList, groupList, answerList, invocationList, history, posted, reacting, statusSet]
 using App.Controllers.Chat, only: [show]
 using App.Controllers.Files, only: [uploaded, fetched]
 
@@ -51,6 +51,11 @@ foul routes(hub) do
       post("/:organization/dm/:person/messages", ~posted)
       post("/:organization/dm/:person/reactions", ~reacting)
       post("/:organization/dm/:person/status", ~statusSet)
+      get("/:organization/groups", ~groupList)
+      get("/:organization/groups/:group/messages", ~history)
+      post("/:organization/groups/:group/messages", ~posted)
+      post("/:organization/groups/:group/reactions", ~reacting)
+      post("/:organization/groups/:group/status", ~statusSet)
     end
 
     scope "/", via: [:application, :browser, :guests] do
@@ -66,6 +71,7 @@ foul routes(hub) do
       # on the one it is showing, and a reload comes back here.
       get(App.Paths.channelPath.template, ~show)
       get(App.Paths.directPath.template, ~show)
+      get(App.Paths.groupPath.template, ~show)
       post("/signout", ~signOut)
       # Files: dropped into a conversation, then fetched by whoever may read
       # it there (App.Controllers.Files).

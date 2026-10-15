@@ -1,11 +1,11 @@
 # Kex findings from Slick, Metro and Harmat
 
-Bugs and limits met while building Slick on Kex 0.4.0-rc.1 (358c056), on the
-BEAM, that are not filed yet. The two at the top are reduced to the smallest
-program that shows them; the rest still need reducing. At the end: names in
-the code that were chosen only to avoid these, to rename once they are fixed.
+Bugs and limits met while building Slick on Kex 0.4.0-rc.1, on the BEAM.
+Rechecked on Kex main at 286c026 and filed on milestone 0.4.0, except where
+an entry says otherwise. At the end: names in the code that were chosen
+only to avoid these, to rename once they are fixed.
 
-## 1. A free function named like a capability method of the same module is not found
+## 1. A free function named like a capability method of the same module is not found — [#492](https://github.com/kexhq/kex/issues/492)
 
 A module that implements a capability on one of its records, and also has a
 free function of the same name, builds. The free function cannot be called
@@ -56,7 +56,7 @@ called from inside the module or out.
   `Metro.Storage.Service`. That one is not reduced separately but looks
   like the same bug.
 
-## 2. A `var` assigned inside a `with` block is unbound after it
+## 2. A `var` assigned inside a `with` block is unbound after it — [#493](https://github.com/kexhq/kex/issues/493)
 
 ```kex
 capability Probe do
@@ -99,9 +99,12 @@ work's outcome out of a `with` block. The code that needed it now does it all
 inside the block. That turned out not to be the right design for other
 reasons; see 4 below.
 
-## Not reduced yet
+## The others
 
 3. **A capability method named `get` changed what `get(...)` meant elsewhere.**
+   Filed with the cases below as
+   [#494](https://github.com/kexhq/kex/issues/494): a private function of
+   one module takes the place of a same-named function elsewhere.
    While `Metro.Storage.Service` had a method `get`, every
    `get("/path", ~action)` in Slick's `config/routes.kex` (the router's
    `get`, imported with `using Metro.Router, only: [..., get, ...]`) was
@@ -132,18 +135,22 @@ reasons; see 4 below.
    the transaction in the process instead (`Harmat.Database.ongoing`).
    Possibly not a bug, but worth a sentence in the language docs.
 
-5. **A record declared inside `private do` is a bare tuple at run time.** It
+5. **A record declared inside `private do` is a bare tuple at run time.**
+   [#495](https://github.com/kexhq/kex/issues/495). It
    type-checks, but every field access fails: `Undefined method: viewer for
    Tuple`. Hit with `Room` in Slick's `app/views/chat.kex`; moved to the
    top level.
 
-6. **A fully qualified function reference fails when called.** A route
+6. **A fully qualified function reference fails when called.** Not filed:
+   `~Actions.act` works in a small program on 286c026, so it was most likely
+   a symptom of 3. A route
    written `post("/uploads", ~App.Controllers.Files.uploaded)`
    type-checked, then failed on every request with `Undefined method:
    uploaded for Metro.WebRequest.WebRequest`. Importing the name and
    writing `~uploaded` works. This may have been a symptom of 3.
 
 7. **A name that was not imported is accepted, then is not there.**
+   [#496](https://github.com/kexhq/kex/issues/496).
    `config/routes.kex` imported `get` and `post` from `Metro.Router` but
    not `put`; `put("/commands", ~commandsDeclared)` type-checked (as some
    other `put` — a map's?) and every route failed when the router was
@@ -154,7 +161,9 @@ reasons; see 4 below.
 
 ## Layout limits
 
-Not bugs, but they keep lines long where the code style wants them short:
+Not bugs, but they keep lines long where the code style wants them short —
+[#497](https://github.com/kexhq/kex/issues/497) for the first three, and
+[#498](https://github.com/kexhq/kex/issues/498) for the escapes:
 
 - A type signature must be on one line: neither `->` at the start of a line
   nor at the end continues it. Typed parameters, one per line, work instead.
@@ -172,20 +181,24 @@ fixed, and simplifying where a workaround stayed.
 
 | Where | Now | Because | Rather |
 | --- | --- | --- | --- |
-| `Harmat.Connection` | `atomically` | 1 | `transaction` |
-| Metro | `Metro.Storage.Service` capability | 1 | `Metro.Storage` |
-| Metro | `store` / `fetch` / `discard` | 3 | `put` / `get` / `delete` |
+| `Harmat.Connection` | `atomically` | #492 | `transaction` |
+| Metro | `Metro.Storage.Service` capability | #492 | `Metro.Storage` |
+| Metro | `store` / `fetch` / `discard` | #494 | `put` / `get` / `delete` |
 | Metro | `Metro.Storage.folder()` | ENV is effectful in a constant | a `ROOT` constant, if config may be read once |
 | Harmat | `Harmat.Logger` (logger.kex) beside `Harmat.Log` (log.kex) | a capability is found by its file; and 1 | one `Harmat.Log` |
-| Harmat `log.kex` | `subjectOf`, `valuesOf` | 3 | `table`, `shown` |
-| opencode-bot `local.kex` | `failureOf` | 3 | `failed` |
+| Harmat `log.kex` | `subjectOf`, `valuesOf` | #494 | `table`, `shown` |
+| opencode-bot `local.kex` | `failureOf` | #494 | `failed` |
 | Harmat | `Database.ongoing`, `begun`, `ended` | 4 | private to Harmat, if the store's connection can be given the transaction another way |
-| Slick `app/views/chat.kex` | `Enclosure.href`, `pictured?` | 7 | `link`, `picture?` |
-| Slick `app/views/chat.kex` | `Card` fields `formal`, `alias`, `role`, `team`, `dial`, `zone`, `about`, `motto`, `keeper` | 7 | the `User` field names |
+| Slick `app/views/chat.kex` | `Enclosure.href`, `pictured?` | #448 | `link`, `picture?` |
+| Slick `app/views/chat.kex` | `Card` fields `formal`, `alias`, `role`, `team`, `dial`, `zone`, `about`, `motto`, `keeper` | #448 | the `User` field names |
 | Slick `app/views/chat.kex` | `Detail.key` | `slot` is a keyword | `slot` or `column` |
-| Slick `app/views/chat.kex` | `Room` at the top level | 5 | private |
+| Slick `app/views/chat.kex` | `Room` at the top level | #495 | private |
 | Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
 | Slick `app/live/chat.kex` | `redescribed`, `givenFor` | kexhq/kex#451; a local `chosen` | `described`, `chosen` |
-| Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 | either way, once both work |
+| Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |
 | Slick `db/repositories/messages.kex` | `newer(…, since:)` | `after` is a keyword | `after` |
 | Slick `app/models/attachment.kex` | rounding by hand | kexhq/kex#491 | `to(String, places: 1)` |
+| Harmat `changeColumn` | one block of two lines: what it was, what it becomes | kexhq/kex#499 | `from:` and `to:` blocks |
+| Harmat `migration.kex` | `prior`, `changed` | `after` is a keyword | `before`, `after` |
+| Slick `app/models/conversation.kex` | `open?` | `public` is a keyword | `public?` |
+| Slick `app/views/chat.kex` | `Crew.moniker`, `Crew.caption`, `Crew.blurb` | #448 (Harmat has a `tag`) | `handle`, `name`, `description` |

@@ -11,7 +11,8 @@
   // How many suggestions are shown at once.
   const SHOWN = 8;
 
-  // The message box: `@` suggests who to mention, a `/` at the start of a
+  // The message box: `@` suggests who to mention — a person, a bot or a
+  // team, each with a word on what it is — a `/` at the start of a
   // message suggests a slash command. What it may suggest is the form's
   // `data-mentions` and `data-commands`, JSON the server renders — read on
   // every keystroke, so it is always what the page says now.
@@ -102,7 +103,7 @@
           typed.length + 1,
           this.listed("mentions")
             .filter((each) => each.name.toLowerCase().startsWith(typed))
-            .map((each) => ({ label: "@" + each.name, detail: each.bot ? "bot" : "", insert: "@" + each.name + " " }))
+            .map((each) => ({ label: "@" + each.name, detail: each.detail, insert: "@" + each.name + " " }))
         );
       } else {
         this.close();

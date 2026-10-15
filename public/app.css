@@ -464,6 +464,23 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 .profile-body .link { border: 0; padding: 0; background: none; font: inherit; cursor: pointer; }
 .profile-body .link:hover { text-decoration: underline; }
 
+/* --- Teams, and dialogs that pick people --------------------------------- */
+
+.access { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; padding: 0; border: 0; }
+.access legend { margin-bottom: 0.25rem; padding: 0; font-size: 0.85rem; font-weight: 600; }
+.access .choice, .picks-list .choice { display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem; }
+.asking select { width: 100%; font: inherit; }
+.picks-list { list-style: none; max-height: 16rem; overflow-y: auto; margin: 0; padding: 0; }
+.picks-list li { padding: 0.3rem 0; border-top: 1px solid var(--line); }
+.asking .picks-list input, .asking .access input { width: auto; margin: 0; }
+.team h3 { margin: 1.25rem 0 0.4rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.mates { list-style: none; margin: 0; padding: 0; }
+.mates li { display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0; }
+.mates li .link { flex: 1 1 auto; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.mates li .quiet { padding: 0 0.35rem; font-size: 0.8rem; }
+.asking.add-mate { flex-direction: row; align-items: center; margin-top: 0.5rem; }
+.add-mate select { flex: 1 1 auto; min-width: 0; }
+
 /* --- Organizations ---------------------------------------------------------- */
 
 .workspace { grid-template-columns: 4rem 16.25rem minmax(0, 1fr); }

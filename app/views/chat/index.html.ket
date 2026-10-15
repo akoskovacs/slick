@@ -1,5 +1,5 @@
 ---
-params: [failure: String, notice: String, rail: String, organization: String, channels: String, people: String, robots: String, bar: String, pane: String, dialog: String, place: String, caption: String]
+params: [failure: String, notice: String, rail: String, organization: String, channels: String, people: String, robots: String, teams: String, bar: String, pane: String, dialog: String, place: String, caption: String]
 ---
 <%== bar %>
 <% if !failure.empty? %>
@@ -23,8 +23,16 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
       <button type="button" class="quiet" data-event="found" title="New channel">+</button>
     </div>
     <ul class="entries"><%== channels %></ul>
-    <div class="sidebar-head"><h2>Direct messages</h2></div>
+    <div class="sidebar-head">
+      <h2>Direct messages</h2>
+      <button type="button" class="quiet" data-event="group" title="New group chat">+</button>
+    </div>
     <ul class="entries people"><%== people %></ul>
+    <div class="sidebar-head">
+      <h2>Teams</h2>
+      <button type="button" class="quiet" data-event="team-new" title="New team">+</button>
+    </div>
+    <ul class="entries"><%== teams %></ul>
     <div class="sidebar-head">
       <h2>Bots</h2>
       <button type="button" class="quiet" data-event="bots" title="Add a bot, or give one a new API token">⚙</button>

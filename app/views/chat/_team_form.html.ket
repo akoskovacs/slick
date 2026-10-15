@@ -1,0 +1,33 @@
+---
+params: [heading: String, lead: String, verb: String, title: String, moniker: String, blurb: String, renaming?: Bool, problem: String, label: String]
+---
+<div class="backdrop">
+  <section class="editor" id="editor" role="dialog" aria-modal="true" aria-label="<%= heading %>">
+    <h2><%= heading %></h2>
+    <p class="hint"><%= lead %></p>
+    <form class="asking details-form" data-live="<%= verb %>" data-live-quiet>
+      <label class="detail">
+        <span>Name</span>
+        <input name="name" value="<%= title %>" placeholder="Design" maxlength="40" autocomplete="off">
+      </label>
+      <% if !renaming? %>
+        <label class="detail">
+          <span>Handle</span>
+          <input name="handle" value="<%= moniker %>" placeholder="design" maxlength="31" autocomplete="off">
+          <span class="hint">What people type to mention everyone in it: @design. Made from the name, if left empty.</span>
+        </label>
+      <% end %>
+      <label class="detail">
+        <span>What it is for</span>
+        <textarea name="description" rows="3" maxlength="250"><%= blurb %></textarea>
+      </label>
+      <% if !problem.empty? %>
+        <p class="problem" role="alert"><%= problem %></p>
+      <% end %>
+      <div class="actions">
+        <button type="submit" class="primary"><%= label %></button>
+        <button type="button" class="quiet" data-event="cancel">Cancel</button>
+      </div>
+    </form>
+  </section>
+</div>

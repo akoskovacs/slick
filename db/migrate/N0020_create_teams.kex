@@ -1,0 +1,33 @@
+# Teams: named sets of people in an organization, mentioned all at once by
+# their handle — @design — and able to own channels. A directory synced
+# over SCIM brings its groups in as teams: `external_id` is the group's id
+# there, and `managed` is "yes" while the sync has the team, whose name and
+# members are then not changed here. The id of a member is the team and
+# the person together.
+module DB.Migrate.N0020CreateTeams
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_teams, follows: :create_invocations do
+  createTable(:teams) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:organization_id)
+    t.text(:handle)
+    t.text(:name)
+    t.text(:description, default: "")
+    t.text(:external_id, default: "")
+    t.text(:managed, default: "")
+    t.text(:created_by, default: "")
+    t.text(:created_at)
+  end
+  addIndex(:teams, [:organization_id, :handle], unique: true)
+  createTable(:team_members) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:team_id)
+    t.text(:user_id)
+    t.text(:joined_at)
+  end
+  addIndex(:team_members, [:team_id])
+  addIndex(:team_members, [:user_id])
+end

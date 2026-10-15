@@ -1,0 +1,12 @@
+---
+params: [pick: Pick]
+---
+<li>
+  <label class="choice">
+    <input type="checkbox" name="person" value="<%= pick.key %>">
+    <%= pick.caption %>
+    <% if !pick.badged.empty? %>
+      <span class="flag"><%= pick.badged %></span>
+    <% end %>
+  </label>
+</li>

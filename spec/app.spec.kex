@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_invocations"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_groups"))
   end
 
   it("turns shortcodes into emoji") do
@@ -39,13 +39,16 @@ describe("Slick") do
     Assert.equal(App.Helpers.RichText.html("🎉!"), "<p>🎉!</p>")
   end
 
-  it("marks who a message mentions, the longest name first, never in code") do
+  it("marks who a message mentions — people and teams — the longest name first, never in code") do
     let names = ["Ada", "Ada Lovelace", "Bob"]
-    let marked = App.Helpers.RichText.mentioned("<p>@Ada Lovelace and @Bob, not @Bobby</p>", names, "Bob")
+    let marked = App.Helpers.RichText.mentioned("<p>@Ada Lovelace and @Bob, not @Bobby</p>", names, ["Bob"])
     Assert.equal(marked, "<p><span class=\"mention\">@Ada Lovelace</span> and <span class=\"mention you\">@Bob</span>, not @Bobby</p>")
     let coded = "<p><code>@Ada</code> @Ada</p>"
-    Assert.equal(App.Helpers.RichText.mentioned(coded, names, ""), "<p><code>@Ada</code> <span class=\"mention\">@Ada</span></p>")
-    Assert.equal(App.Helpers.RichText.mentioned("<p>mail me@example.com</p>", names, ""), "<p>mail me@example.com</p>")
+    Assert.equal(App.Helpers.RichText.mentioned(coded, names, []), "<p><code>@Ada</code> <span class=\"mention\">@Ada</span></p>")
+    Assert.equal(App.Helpers.RichText.mentioned("<p>mail me@example.com</p>", names, []), "<p>mail me@example.com</p>")
+    # A team is mentioned by its handle; whoever is in it is mentioned too.
+    let teamed = App.Helpers.RichText.mentioned("<p>@design and @ops</p>", names + ["design", "ops"], ["Bob", "design"])
+    Assert.equal(teamed, "<p><span class=\"mention you\">@design</span> and <span class=\"mention\">@ops</span></p>")
   end
 
   it("reads a message as blocks of rich text, and nothing typed as markup") do
@@ -189,7 +192,7 @@ describe("Slick") do
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do
       Assert.equal(DB.Seeds.planted(Test), Ok([]))
       Assert.equal(DB.Seeds.planted(Production), Ok([]))
-      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(4))
+      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(5))
       Assert.equal(DB.Seeds.planted(Development), Ok([]))
 
       let token = App.Services.Authentication.signIn("ada@example.com", DB.Seeds.PASSWORD).try
@@ -272,6 +275,179 @@ describe("Slick") do
       stepped(statuses, ada, Tab {}, [("event", "direct"), ("user", claude.id)])
       let chats = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, "")).payload.to(String).or("")
       Assert.truthy(chats.contains?("\"person\":\"${ada.id}\"") && chats.contains?("\"name\":\"Ada\""))
+
+      # A private channel is nothing to a bot that is not in it.
+      let channels = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels", asBot, "")).payload.to(String).or("")
+      Assert.truthy(channels.contains?("\"name\":\"general\"") && channels.contains?("\"private\":false"))
+      Assert.falsy(channels.contains?("studio"))
+      Assert.equal(site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/studio/messages", asBot, "")).code, 404)
+
+      # A group chat it is in: listed, read and written in, by its id; a
+      # command used there is told with the group it was used in.
+      Assert.equal(site.call(Metro.WebRequest.asked("GET", "/api/acme/groups", asBot, "")).payload.to(String).or(""), "[]")
+      let seeded = { |email|
+        let session = App.Services.Authentication.signIn(email, DB.Seeds.PASSWORD).try
+        let found : User = App.Services.Authentication.current(Just(session)).try
+        found
+      }
+      let bob = seeded("bob@example.com")
+      let eve = seeded("eve@example.com")
+      let (huddle, _) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id), ("person", claude.id)])
+      let groups = site.call(Metro.WebRequest.asked("GET", "/api/acme/groups", asBot, "")).payload.to(String).or("")
+      Assert.truthy(groups.contains?("\"id\":\"${huddle.conversation}\"") && groups.contains?("\"Ada\"") && groups.contains?("\"Bob\""))
+      let groupMessages = "/api/acme/groups/${huddle.conversation}/messages"
+      Assert.equal(site.call(Metro.WebRequest.asked("POST", groupMessages, asBotJson, "{\"body\":\"hello, both\"}")).code, 201)
+      Assert.truthy(App.Live.Chat.markup(statuses, bob, huddle).contains?("hello, both"))
+      stepped(statuses, ada, huddle, [("event", "send"), ("body", "@claude /mode quick")])
+      let huddled = site.call(Metro.WebRequest.asked("GET", "/api/acme/invocations?after=0", asBot, "")).payload.to(String).or("")
+      Assert.truthy(huddled.contains?("\"group\":\"${huddle.conversation}\""))
+      let (aside, _) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id), ("person", eve.id)])
+      Assert.equal(site.call(Metro.WebRequest.asked("GET", "/api/acme/groups/${aside.conversation}/messages", asBot, "")).code, 404)
+    end
+    FS.File.delete(file)
+  end
+
+  it("keeps private channels, group chats and teams to the people in them") do
+    let file = "db/spec_${Metro.Clock.milliseconds()}.sqlite3"
+    let store = DB.Store.started(Config.Database.sqlite(file)).try
+    DB.Store.migrate(store).try
+    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+      let statuses = Process.spawn(Metro.Live.Presence.Presence {})
+      let member = { |name, email|
+        let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
+        let user : User = App.Services.Authentication.current(Just(token)).try
+        user
+      }
+      let ada = member("Ada", "ada@example.com")
+      let bob = member("Bob", "bob@example.com")
+      let eve = member("Eve", "eve@example.com")
+      let mal = member("Mallory", "mal@example.com")
+      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "charter"), ("name", "Acme")])
+      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "bob@example.com")])
+      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
+      stepped(statuses, mal, Tab {}, [("event", "charter"), ("name", "Other")])
+
+      # A private channel: only whoever made it, until they add people.
+      let (secret, made) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "secret"), ("access", "private")])
+      Assert.truthy(made)
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("🔒 secret"))
+      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("secret"))
+      Assert.equal(App.Live.Chat.visible(bob, secret), None)
+      let (bobOpens, _) = stepped(statuses, bob, Tab {}, [("event", "open"), ("id", secret.conversation)])
+      Assert.truthy(bobOpens.conversation != secret.conversation)
+      let (_, bobSent) = stepped(statuses, bob, secret, [("event", "send"), ("body", "let me in")])
+      Assert.falsy(bobSent)
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, secret).contains?("Private: only its 1 person can read this."))
+      let admitting = App.Live.Chat.markup(statuses, ada, Tab { ...secret, dialog: "admit" })
+      Assert.truthy(admitting.contains?("value=\"${bob.id}\""))
+      Assert.falsy(admitting.contains?("value=\"${ada.id}\""))
+      let (_, bobAdded) = stepped(statuses, ada, secret, [("event", "admit-set"), ("person", bob.id), ("person", mal.id)])
+      Assert.truthy(bobAdded)
+      Assert.truthy(App.Live.Chat.visible(bob, secret).set?)
+      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("🔒 secret"))
+      Assert.equal(App.Live.Chat.visible(mal, Tab { conversation: secret.conversation }), None)
+      Assert.equal(App.Live.Chat.visible(eve, secret), None)
+      # A public channel has nobody to add: everyone is in it.
+      let (_, publicAdded) = stepped(statuses, ada, Tab {}, [("event", "admit-set"), ("person", eve.id)])
+      Assert.falsy(publicAdded)
+
+      # A group chat: the people picked and whoever picked them. The same
+      # people have one; picking one person is a private chat.
+      let (_, nobody) = stepped(statuses, ada, Tab {}, [("event", "gather")])
+      Assert.falsy(nobody)
+      let (trio, started) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id), ("person", eve.id), ("person", mal.id)])
+      Assert.truthy(started)
+      let (again, _) = stepped(statuses, bob, Tab {}, [("event", "gather"), ("person", eve.id), ("person", ada.id)])
+      Assert.equal(again.conversation, trio.conversation)
+      let (pair, _) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id)])
+      Assert.truthy(App.Live.Chat.visible(ada, pair).map { |chat| chat.direct? }.or(false))
+      stepped(statuses, bob, trio, [("event", "send"), ("body", "the three of us")])
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?(">Bob, Eve"))
+      let eveSees = App.Live.Chat.markup(statuses, eve, Tab {})
+      Assert.truthy(eveSees.contains?(">Ada, Bob"))
+      Assert.truthy(eveSees.contains?("aria-label=\"1 unread\""))
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("the three of us"))
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("Private: only the 3 of you can read this."))
+      Assert.equal(App.Live.Chat.visible(mal, Tab { conversation: trio.conversation }), None)
+      # It has an address, of its own organization, for the people in it.
+      let address = "/acme/groups/${trio.conversation}"
+      Assert.equal(App.Live.Chat.arrived(eve, address).conversation, trio.conversation)
+      Assert.equal(App.Live.Chat.arrived(mal, address).conversation, "")
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("data-live-path=\"${address}\""))
+
+      # A group chat becomes a channel, and keeps its people and what was said.
+      let (_, badName) = stepped(statuses, eve, trio, [("event", "promote-set"), ("title", "Bad Name!")])
+      Assert.falsy(badName)
+      let (_, taken) = stepped(statuses, eve, trio, [("event", "promote-set"), ("title", "secret"), ("access", "private")])
+      Assert.falsy(taken)
+      let (promoted, changed) = stepped(statuses, eve, trio, [("event", "promote-set"), ("title", "trio"), ("access", "private")])
+      Assert.truthy(changed)
+      Assert.equal(promoted.conversation, trio.conversation)
+      let channel = App.Live.Chat.markup(statuses, bob, promoted)
+      Assert.truthy(channel.contains?("🔒 trio"))
+      Assert.truthy(channel.contains?("the three of us"))
+      Assert.truthy(channel.contains?("data-live-path=\"/acme/channels/trio\""))
+      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?(">Bob, Eve"))
+      let (_, twice) = stepped(statuses, eve, promoted, [("event", "promote-set"), ("title", "trio-two")])
+      Assert.falsy(twice)
+
+      # A team: its handle is mentioned for all of it.
+      let (unnamed, _) = stepped(statuses, ada, Tab {}, [("event", "team-form"), ("name", "")])
+      Assert.truthy(!unnamed.dialogProblem.empty?)
+      let (designTab, formed) = stepped(statuses, ada, Tab {}, [("event", "team-form"), ("name", "Design Crew"), ("description", "Pixels <and> people")])
+      Assert.truthy(formed)
+      let designId = designTab.team
+      let pane = App.Live.Chat.markup(statuses, ada, designTab)
+      Assert.truthy(pane.contains?("@design-crew"))
+      Assert.truthy(pane.contains?("Pixels &lt;and&gt; people"))
+      Assert.truthy(pane.contains?("1 member"))
+      let (_, dup) = stepped(statuses, bob, Tab {}, [("event", "team-form"), ("name", "Other"), ("handle", "design-crew")])
+      Assert.falsy(dup)
+      let (_, badHandle) = stepped(statuses, bob, Tab {}, [("event", "team-form"), ("name", "Ops"), ("handle", "Ops!")])
+      Assert.falsy(badHandle)
+      let (_, bobIn) = stepped(statuses, ada, designTab, [("event", "team-add"), ("person", bob.id)])
+      Assert.truthy(bobIn)
+      stepped(statuses, eve, Tab {}, [("event", "send"), ("body", "ping @design-crew")])
+      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("<span class=\"mention you\">@design-crew</span>"))
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("<span class=\"mention\">@design-crew</span>"))
+      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("&quot;name&quot;:&quot;design-crew&quot;"))
+
+      # A team's private channel: its members read it without being added.
+      let (_, notMine) = stepped(statuses, eve, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", designId)])
+      Assert.falsy(notMine)
+      let (crewOnly, _) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", designId)])
+      Assert.truthy(App.Live.Chat.visible(bob, crewOnly).set?)
+      Assert.equal(App.Live.Chat.visible(eve, crewOnly), None)
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, crewOnly).contains?("Belongs to @design-crew."))
+      stepped(statuses, eve, Tab { team: designId }, [("event", "team-join")])
+      Assert.truthy(App.Live.Chat.visible(eve, crewOnly).set?)
+      stepped(statuses, eve, Tab { team: designId }, [("event", "team-leave")])
+      Assert.equal(App.Live.Chat.visible(eve, crewOnly), None)
+      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab { team: designId }).contains?("🔒 crew-only"))
+
+      # Renamed and explained again; its handle stays.
+      let (_, revised) = stepped(statuses, bob, Tab { team: designId }, [("event", "team-set"), ("name", "Design"), ("description", "Everything visual")])
+      Assert.truthy(revised)
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab { team: designId }).contains?("Everything visual"))
+
+      # A team a sync keeps is changed there, not here.
+      DB.Repositories.Teams.managing(designId, "scim-group-1").try
+      let (refusedAdd, synced) = stepped(statuses, ada, Tab { team: designId }, [("event", "team-add"), ("person", eve.id)])
+      Assert.falsy(synced)
+      Assert.truthy(refusedAdd.failure.contains?("kept in sync"))
+      let (_, syncedLeave) = stepped(statuses, bob, Tab { team: designId }, [("event", "team-leave")])
+      Assert.falsy(syncedLeave)
+      let (_, syncedSet) = stepped(statuses, bob, Tab { team: designId }, [("event", "team-set"), ("name", "Hijacked"), ("description", "")])
+      Assert.falsy(syncedSet)
+      let syncedPane = App.Live.Chat.markup(statuses, ada, Tab { team: designId })
+      Assert.truthy(syncedPane.contains?("Kept in sync"))
+      Assert.falsy(syncedPane.contains?("data-event=\"team-remove\""))
+
+      # Nobody outside the organization opens its teams.
+      let (malTeam, _) = stepped(statuses, mal, Tab {}, [("event", "team"), ("id", designId)])
+      Assert.equal(malTeam.team, "")
+      Assert.falsy(App.Live.Chat.markup(statuses, mal, Tab { team: designId }).contains?("design-crew"))
+      Assert.truthy(acme.organization != "")
     end
     FS.File.delete(file)
   end

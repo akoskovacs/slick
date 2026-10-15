@@ -13,7 +13,7 @@
 module App.Live.Chat
 
 using Metro.Live.Presence, only: [Presence, Note]
-using Metro.Live.Socket, only: [field]
+using Metro.Live.Socket, only: [field, repeated]
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using App.Live.Tab, only: [Tab]
 using App.Live.Unread, only: [Unread]
@@ -25,6 +25,7 @@ using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
 using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
+using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
 using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Conversations, as: Conversations
@@ -35,6 +36,7 @@ using DB.Repositories.Organizations, as: Organizations
 using DB.Repositories.Readings, as: Readings
 using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Answers, as: Answers
+using DB.Repositories.Teams, as: Teams
 using DB.Repositories.Users, as: Users
 
 # How many messages of a conversation a tab is shown.
@@ -65,6 +67,11 @@ let organizationRules = rules do
   validates("name", "A name", [present, sized(2, 40)])
 end
 
+let teamRules = rules do
+  validates("name", "A team's name", [present, sized(2, 40)])
+  validates("description", "What a team is for", [sized(0, App.Models.Team.LONGEST_DESCRIPTION)])
+end
+
 # The live region for one person's tab, as things are stored right now.
 #
 # `statuses` is the board of what people are in the middle of — typing, or
@@ -78,7 +85,9 @@ foul markup(statuses, user, tab) do
       let roster : [String] = Memberships.roster(organization.id).or([])
       let everyone : [User] = Users.everyone.or([])
       let people = everyone.filter { |person| roster.contains?(person.id) }
-      let channels : [Conversation] = Conversations.channels(organization.id).or([])
+      let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
+      let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
+      let teams : [Team] = Teams.ofOrganization(organization.id).or([])
       let now = Metro.Clock.milliseconds()
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now)
         .map { |note| note.member.split(" ").first.or("") }
@@ -94,6 +103,8 @@ foul markup(statuses, user, tab) do
             mine,
             organization,
             channels,
+            groups,
+            teams,
             people,
             online,
             bots,
@@ -142,6 +153,8 @@ foul markup(statuses, user, tab) do
             mine,
             organization,
             channels,
+            groups,
+            teams,
             people,
             online,
             bots,
@@ -171,7 +184,23 @@ foul handled(statuses, user, tab, entries) do
     "open" => opened(user, tab, field(entries, "id"))
     "direct" => whispered(user, tab, field(entries, "user"))
     "found" => (Tab { ...settled(tab), dialog: "channel" }, false)
-    "create" => established(user, tab, field(entries, "title").trim.lowerCase)
+    "create" => established(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"), field(entries, "team"))
+    "group" => (Tab { ...settled(tab), dialog: "group" }, false)
+    "gather" => gathered(user, tab, repeated(entries, "person"))
+    "promote" => (Tab { ...settled(tab), dialog: "promote" }, false)
+    "promote-set" => promotedTo(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"))
+    "admit" => (Tab { ...settled(tab), dialog: "admit" }, false)
+    "admit-set" => admittedTo(user, tab, repeated(entries, "person"))
+    "team" => teamed(user, tab, field(entries, "id"))
+    "unteam" => (Tab { ...settled(tab), team: "" }, false)
+    "team-new" => (Tab { ...settled(tab), dialog: "team" }, false)
+    "team-form" => teamFormed(user, tab, entries)
+    "team-edit" => (Tab { ...settled(tab), dialog: "team-edit" }, false)
+    "team-set" => teamRevised(user, tab, entries)
+    "team-join" => teamJoined(user, tab, [user.id])
+    "team-add" => teamJoined(user, tab, repeated(entries, "person"))
+    "team-leave" => teamLeft(user, tab, user.id)
+    "team-remove" => teamLeft(user, tab, field(entries, "user"))
     "send" => sent(statuses, user, tab, field(entries, "body").trim)
     "draft" => drafted(user, tab, field(entries, "place"), field(entries, "body"))
     "typing" => typing(statuses, user, tab)
@@ -248,10 +277,10 @@ foul noting(statuses, user, tab, text, milliseconds) do
   end
 end
 
-# The tab for an address (App.Paths): a channel or a private chat of an
-# organization, either with `?thread=<message>`. Anything else, or a place
-# this person may not be, is the tab everyone starts with. A private chat is
-# started by going to it.
+# The tab for an address (App.Paths): a channel, a private chat or a group
+# chat of an organization, any with `?thread=<message>`. Anything else, or a
+# place this person may not be, is the tab everyone starts with. A private
+# chat is started by going to it.
 arrived : User -> String -> Tab
 foul arrived(user, location) do
   let thread = Metro.Path.query(location, "thread").or("")
@@ -264,12 +293,30 @@ foul arrived(user, location) do
       end
     end
     None => match App.Paths.directPath.captured(location) do
-      None => return Tab {}
+      None => return grouped(user, location, thread)
       Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
         None => return Tab {}
         Just(organization) => do
           let (chat, _) = whispered(user, Tab { organization: organization.id }, parts.get("person").or(""))
           return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
+        end
+      end
+    end
+  end
+end
+
+# The tab for the address of a group chat: only one this person is in.
+grouped : User -> String -> String -> Tab
+foul grouped(user, location, thread) do
+  match App.Paths.groupPath.captured(location) do
+    None => return Tab {}
+    Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
+      None => return Tab {}
+      Just(organization) => do
+        let tab = Tab { organization: organization.id, conversation: parts.get("group").or(""), thread: thread }
+        match visible(user, tab) do
+          Just(conversation) => return conversation.group? then tab else Tab { organization: organization.id }
+          None => return Tab { organization: organization.id }
         end
       end
     end
@@ -337,22 +384,24 @@ private do
   # `openThread` are what the tab shows them right now, if they are looking.
   tallied : User -> Organization -> [Organization] -> [Reading] -> String -> String -> Unread
   foul tallied(user, current, mine, marks, open, openThread) do
-    let (channels, people) = unreadIn(user, current, marks, open, openThread)
+    let (channels, people, groups) = unreadIn(user, current, marks, open, openThread)
     let others = mine.reject { |each| each.id == current.id }
     let elsewhere = others.reduce({}) { |found, other|
-      let (theirChannels, theirPeople) = unreadIn(user, other, marks, "", "")
-      found.put(other.id, summed(theirChannels) + summed(theirPeople))
+      let (theirChannels, theirPeople, theirGroups) = unreadIn(user, other, marks, "", "")
+      found.put(other.id, summed(theirChannels) + summed(theirPeople) + summed(theirGroups))
     }
     return Unread {
       channels: channels,
       people: people,
+      groups: groups,
       organizations: elsewhere,
-      total: summed(channels) + summed(people) + summed(elsewhere)
+      total: summed(channels) + summed(people) + summed(groups) + summed(elsewhere)
     }
   end
 
-  # What is new in each channel of an organization, by id, and in each of
-  # this person's private chats there, by the person it is with: messages
+  # What is new in each channel of an organization this person may read, by
+  # id, in each of their private chats there, by the person it is with, and
+  # in each of their group chats, by id: messages
   # since they last read there — since they joined, where they never have —
   # and other people's replies in the threads they follow since they last
   # read those.
@@ -362,11 +411,12 @@ private do
     marks: [Reading],
     open: String,
     openThread: String
-  ) -> ({String: Integer}, {String: Integer}) do
+  ) -> ({String: Integer}, {String: Integer}, {String: Integer}) do
     let since = Memberships.joined(organization.id, user.id)
-    let channels : [Conversation] = Conversations.channels(organization.id).or([])
+    let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
     let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
-    let places = (channels + chats).map { |conversation| conversation.id }
+    let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
+    let places = (channels + chats + groups).map { |conversation| conversation.id }
     let follows = marks.filter { |mark|
       !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId)
     }
@@ -388,8 +438,15 @@ private do
     let byPerson = chats.reduce({}) { |found, chat|
       found.put(chat.counterpart(user.id), counted(chat))
     }
-    return (byChannel, byPerson)
+    let byGroup = groups.reduce({}) { |found, group|
+      found.put(group.id, counted(group))
+    }
+    return (byChannel, byPerson, byGroup)
   end
+
+  # The channels of these that this person may read.
+  readable : User -> [Conversation] -> [Conversation]
+  let readable(user, channels) = channels.filter { |channel| channel.admits?(user.id) }
 
   # The messages of a conversation newer than how far this person has read
   # there; none in the one they are reading.
@@ -427,13 +484,18 @@ private do
   let GLIMPSED = 65536
 
   # The slash commands somebody can use in a conversation: those of every bot
-  # of the organization in a channel, those of the bot in a private chat
-  # with one, and none in a chat with a person.
+  # of the organization in a public channel, those of the bots taking part
+  # in a private channel or a group chat, those of the bot in a private
+  # chat with one, and none in a chat with a person.
   offering : User -> Conversation -> [User] -> [Command]
   foul offering(user, conversation, people) do
     let bots = people.filter { |person| person.bot? }
     let other = conversation.counterpart(user.id)
-    let listening = conversation.channel? then bots else bots.filter { |bot| bot.id == other }
+    let listening = if conversation.direct?
+      bots.filter { |bot| bot.id == other }
+    else
+      bots.filter { |bot| conversation.admits?(bot.id) }
+    end
     return [] if listening.empty?
     return DB.Repositories.Commands.of(listening.map { |bot| bot.id }).or([])
   end
@@ -528,6 +590,7 @@ private do
     conversation: tab.conversation,
     thread: tab.thread,
     profile: tab.profile,
+    team: tab.team,
     pending: tab.pending,
     view: tab.view,
     attentive?: tab.attentive?
@@ -772,7 +835,7 @@ private do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => match rooted(conversation, id) do
-        Just(first) => return (Tab { ...settled(tab), thread: first.id, profile: "" }, false)
+        Just(first) => return (Tab { ...settled(tab), thread: first.id, profile: "", team: "" }, false)
         None => return (tab, false)
       end
     end
@@ -786,7 +849,7 @@ private do
       None => return (tab, false)
       Just(organization) => do
         return (tab, false) if !Memberships.affiliated?(organization.id, id)
-        return (Tab { ...settled(tab), thread: "", profile: id }, false)
+        return (Tab { ...settled(tab), thread: "", profile: id, team: "" }, false)
       end
     end
   end
@@ -807,7 +870,7 @@ private do
         let draft = Draft {
           conversationId: conversation.id,
           threadId: thread,
-          personId: conversation.channel? then "" else conversation.counterpart(user.id),
+          personId: conversation.direct? then conversation.counterpart(user.id) else "",
           body: body.take(App.Models.Message.LONGEST)
         }
         Drafts.kept(user.id, draft)
@@ -892,17 +955,209 @@ private do
   # Not called `founded`: a function here with the name and the number of
   # arguments of a repository method makes the call to that method lose an
   # argument when compiled, and fail as `undef` when run (kexhq/kex#451).
-  established : User -> Tab -> String -> (Tab, Bool)
-  foul established(user, tab, title) do
+  # A channel: public, or private — to whoever made it, and to the team
+  # that owns it, if one does. Only a team somebody is in can be given a
+  # channel by them.
+  established : User -> Tab -> String -> String -> String -> (Tab, Bool)
+  foul established(user, tab, title, access, teamId) do
     let refused = Tab { ...settled(tab), dialog: "channel" }
     let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
     match home(user, tab) do
       None => return (tab, false)
-      Just(organization) => match Conversations.founded(organization.id, title, user.id) do
-        Ok(channel) => return (Tab { organization: organization.id, conversation: channel.id }, true)
-        Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)
+      Just(organization) => do
+        let owner : Team? = match Teams.single(teamId) do
+          Ok(found) => found
+          Error(_) => None
+        end
+        let owns = owner.map { |team| team.organizationId == organization.id && team.includes?(user.id) }.or(teamId.empty?)
+        return (Tab { ...refused, dialogProblem: "A channel can only be made for a team you are in." }, false) if !owns
+
+        let kept = access == "private" then "private" else "public"
+        match Conversations.founded(organization.id, title, user.id, access: kept, teamId: teamId) do
+          Ok(channel) => return (Tab { organization: organization.id, conversation: channel.id }, true)
+          Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)
+        end
+      end
+    end
+  end
+
+  # Starts a group chat with the people picked, or opens the one they
+  # already have; with one person picked, the private chat with them.
+  gathered : User -> Tab -> [String] -> (Tab, Bool)
+  foul gathered(user, tab, picked) do
+    let refused = Tab { ...settled(tab), dialog: "group" }
+    match home(user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        let others = picked.uniq.filter { |id| id != user.id && Memberships.affiliated?(organization.id, id) }
+        return (Tab { ...refused, dialogProblem: "Pick at least one person." }, false) if others.empty?
+        return whispered(user, settled(tab), others.first.or("")) if others.count == 1
+
+        match Conversations.among(organization.id, others, user.id) do
+          Ok(chat) => return (Tab { organization: organization.id, conversation: chat.id }, true)
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        end
+      end
+    end
+  end
+
+  # Makes the group chat the tab shows a channel, public or private. Whoever
+  # was in it stays in it.
+  promotedTo : User -> Tab -> String -> String -> (Tab, Bool)
+  foul promotedTo(user, tab, title, access) do
+    let refused = Tab { ...settled(tab), dialog: "promote" }
+    let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
+    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
+
+    match visible(user, tab) do
+      None => return (tab, false)
+      Just(conversation) => do
+        return (settled(tab), false) if !conversation.group?
+
+        let kept = access == "public" then "public" else "private"
+        match Conversations.promoted(conversation.id, title, kept) do
+          Ok(channel) => return (Tab { organization: channel.organizationId, conversation: channel.id }, true)
+          Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)
+        end
+      end
+    end
+  end
+
+  # Lets people of the organization into the private channel the tab shows.
+  admittedTo : User -> Tab -> [String] -> (Tab, Bool)
+  foul admittedTo(user, tab, picked) do
+    let refused = Tab { ...settled(tab), dialog: "admit" }
+    match visible(user, tab) do
+      None => return (tab, false)
+      Just(conversation) => do
+        return (settled(tab), false) if !conversation.channel? || conversation.open?
+
+        let newcomers = picked.uniq.filter { |id|
+          !conversation.admits?(id) && Memberships.affiliated?(conversation.organizationId, id)
+        }
+        return (Tab { ...refused, dialogProblem: "Pick at least one person who is not in it yet." }, false) if newcomers.empty?
+
+        match Conversations.admitted(conversation.id, newcomers) do
+          Ok(count) => return (Tab { ...settled(tab), notice: count == 1 then "Added one person." else "Added ${count} people." }, true)
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        end
+      end
+    end
+  end
+
+  # The team the tab has open, if it is one of the tab's organization.
+  teamHere : User -> Tab -> Team?
+  foul teamHere(user, tab) do
+    return None if tab.team.empty?
+
+    match home(user, tab) do
+      None => return None
+      Just(organization) => match Teams.single(tab.team) do
+        Ok(Just(team)) => return team.organizationId == organization.id then Just(team) else None
+        _ => return None
+      end
+    end
+  end
+
+  # Opens a team beside the conversation, in place of a thread or a profile.
+  teamed : User -> Tab -> String -> (Tab, Bool)
+  foul teamed(user, tab, id) do
+    let opened = Tab { ...settled(tab), thread: "", profile: "", team: id }
+    match teamHere(user, opened) do
+      Just(_) => return (opened, false)
+      None => return (tab, false)
+    end
+  end
+
+  # A new team, with whoever made it in it. Its handle is the one given, or
+  # else what its name suggests.
+  teamFormed : User -> Tab -> [(String, String?)] -> (Tab, Bool)
+  foul teamFormed(user, tab, entries) do
+    let refused = Tab { ...settled(tab), dialog: "team" }
+    let name = field(entries, "name").trim
+    let description = field(entries, "description").trim
+    let given = field(entries, "handle").trim.lowerCase
+    let handle = given.startsWith?("@") then given.drop(1) else given
+    let chosen = handle.empty? then App.Models.Team.handled(name) else handle
+    let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
+    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
+    return (Tab { ...refused, dialogProblem: "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter." }, false) if !App.Models.Team.handle?(chosen)
+
+    match home(user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        let team = Team {
+          id: "",
+          organizationId: organization.id,
+          handle: chosen,
+          name: name,
+          description: description,
+          members: [user.id]
+        }
+        match Teams.formed(team, user.id) do
+          Ok(made) => return (Tab { ...settled(tab), thread: "", profile: "", team: made.id }, true)
+          Error(_) => return (Tab { ...refused, dialogProblem: "There is already a team called @${chosen}." }, false)
+        end
+      end
+    end
+  end
+
+  # What a team a sync keeps says when somebody tries to change it here.
+  let SYNCED = "kept in sync from your organization's directory: change it there."
+
+  # Renames the open team, and says again what it is for.
+  teamRevised : User -> Tab -> [(String, String?)] -> (Tab, Bool)
+  foul teamRevised(user, tab, entries) do
+    let refused = Tab { ...settled(tab), dialog: "team-edit" }
+    let name = field(entries, "name").trim
+    let description = field(entries, "description").trim
+    let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
+    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
+
+    match teamHere(user, tab) do
+      None => return (settled(tab), false)
+      Just(team) => do
+        return (Tab { ...refused, dialogProblem: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
+
+        match Teams.revised(team.id, name, description) do
+          Ok(_) => return (settled(tab), true)
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        end
+      end
+    end
+  end
+
+  # Puts people of the organization in the open team.
+  teamJoined : User -> Tab -> [String] -> (Tab, Bool)
+  foul teamJoined(user, tab, picked) do
+    match teamHere(user, tab) do
+      None => return (tab, false)
+      Just(team) => do
+        return (Tab { ...settled(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
+
+        let newcomers = picked.filter { |id| Memberships.affiliated?(team.organizationId, id) }
+        match Teams.joinedAll(team.id, newcomers) do
+          Ok(count) => return (settled(tab), count > 0)
+          Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
+        end
+      end
+    end
+  end
+
+  # Takes somebody out of the open team.
+  teamLeft : User -> Tab -> String -> (Tab, Bool)
+  foul teamLeft(user, tab, id) do
+    match teamHere(user, tab) do
+      None => return (tab, false)
+      Just(team) => do
+        return (Tab { ...settled(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
+
+        match Teams.left(team.id, id) do
+          Ok(count) => return (settled(tab), count > 0)
+          Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
+        end
       end
     end
   end

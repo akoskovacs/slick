@@ -12,6 +12,7 @@
 #   POST /api/:organization/channels/:name/reactions   {"message": "<id>", "emoji": "🎉"}
 #   POST /api/:organization/channels/:name/status      {"text": "Deploying", "seconds": 30}
 #   GET  /api/:organization/dm                         the private chats it has
+#   GET  /api/:organization/groups                     the group chats it is in
 #   GET  /api/:organization/answers?after=<answeredAt>
 #                                                      the answers to the forms in
 #                                                      its own messages
@@ -20,6 +21,12 @@
 #                                                      used for it
 #   GET  /api/:organization/dm/:person/messages
 #   POST /api/:organization/dm/:person/messages
+#   GET  /api/:organization/groups/:group/messages     (and reactions, status,
+#   POST /api/:organization/groups/:group/messages      as for a channel)
+#
+# A channel is public, or private to the people in it — and to the members
+# of the team that owns it. A bot is told of, and may use, the channels it
+# may read, as a person would be: a private one only once it is in it.
 #
 # A message is rich text (app/helpers/rich_text.kex). It can be sent as the
 # text a person would type — "*done* in `4s`" — or as blocks:
@@ -124,8 +131,41 @@ foul channelList(request) do
   let tab = App.Live.Chat.arrived(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
   return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
 
+  let bot = userFor(request)
   let found : [Conversation] = Conversations.channels(tab.organization).or([])
-  let listed : [Any] = found.map { |channel| {"id": channel.id, "name": channel.title, "topic": channel.topic} }
+  let listed : [Any] = found
+    .filter { |channel| channel.admits?(bot.id) }
+    .map { |channel|
+      let entry : {String: Any} = {
+        "id": channel.id,
+        "name": channel.title,
+        "topic": channel.topic,
+        "private": !channel.open?
+      }
+      entry
+    }
+  return request.json(listed)
+end
+
+# The group chats the bot is in, in an organization: who each is with.
+groupList : WebRequest -> WebRequest
+foul groupList(request) do
+  let bot = userFor(request)
+  let slug = request.param("organization").or("")
+  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
+
+  let people : [User] = Users.everyone.or([])
+  let found : [Conversation] = Conversations.groupsOf(tab.organization, bot.id).or([])
+  let listed : [Any] = found.map { |chat|
+    let others = chat.participants.reject { |id| id == bot.id }
+    let names : [Any] = others.map { |id|
+      people.find { |each| each.id == id }.map { |each| each.shown }.or("Someone")
+    }
+    let ids : [Any] = others
+    let entry : {String: Any} = {"id": chat.id, "people": ids, "names": names}
+    entry
+  }
   return request.json(listed)
 end
 
@@ -290,13 +330,12 @@ private do
   toldAnswer : User -> [User] -> App.Models.Answer.Answer -> Message -> Conversation -> {String: Any}
   let toldAnswer(bot, people, given, message, conversation) do
     let author = people.find { |person| person.id == given.userId }.map { |person| person.shown }.or("Someone")
-    let channel = conversation.channel? then conversation.title else ""
-    let person = conversation.channel? then "" else conversation.counterpart(bot.id)
     {
       "message": message.id,
       "thread": message.parentId,
-      "channel": channel,
-      "person": person,
+      "channel": conversation.channel? then conversation.title else "",
+      "person": conversation.direct? then conversation.counterpart(bot.id) else "",
+      "group": conversation.group? then conversation.id else "",
       "user": given.userId,
       "author": author,
       "form": given.form,
@@ -311,7 +350,8 @@ private do
     "command": used.command,
     "arguments": used.arguments,
     "channel": conversation.channel? then conversation.title else "",
-    "person": conversation.channel? then "" else conversation.counterpart(bot.id),
+    "person": conversation.direct? then conversation.counterpart(bot.id) else "",
+    "group": conversation.group? then conversation.id else "",
     "thread": used.threadId,
     "user": used.userId,
     "author": people.find { |person| person.id == used.userId }.map { |person| person.shown }.or("Someone"),
@@ -341,14 +381,22 @@ private do
 
   # The conversation the address names, and a tab showing it — if the bot
   # may read it. A route with `:person` is the private chat with them; one
-  # with `:name` is a channel.
+  # with `:group` a group chat; one with `:name` a channel.
   placed : WebRequest -> String -> Result<(Tab, Conversation), WebRequest>
   foul placed(request, thread) do
     let bot = userFor(request)
     let slug = request.param("organization").or("")
     let channel = App.Paths.channelPath.filled({"organization": slug, "name": request.param("name").or("")})
     let direct = App.Paths.directPath.filled({"organization": slug, "person": request.param("person").or("")})
-    let tab = App.Live.Chat.arrived(bot, App.Paths.threaded(request.param("person").set? then direct else channel, thread))
+    let group = App.Paths.groupPath.filled({"organization": slug, "group": request.param("group").or("")})
+    let address = if request.param("person").set?
+      direct
+    elif request.param("group").set?
+      group
+    else
+      channel
+    end
+    let tab = App.Live.Chat.arrived(bot, App.Paths.threaded(address, thread))
     return Error(failed(request, 404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
 
     match App.Live.Chat.visible(bot, tab) do
