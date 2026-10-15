@@ -16,13 +16,10 @@ end
 
 # Keeps what a person has written in one message box, in place of what was
 # kept before; nothing written takes it away.
+# The old one and the new one are swapped in one transaction, so a draft is
+# never lost between them.
 foul kept(userId: String, draft: Draft) -> Result<Integer, String> do
   let id = "${userId}:${draft.conversationId}:${draft.threadId}"
-  let cleared = Database.delete(DB.Schema.Drafts)
-    .where(DB.Schema.Drafts.id.eq(id))
-    .run
-  return cleared if draft.body.trim.empty? || cleared.error?
-
   let row = {
     id: id,
     user_id: userId,
@@ -32,9 +29,20 @@ foul kept(userId: String, draft: Draft) -> Result<Integer, String> do
     body: draft.body,
     saved_at: Metro.Clock.milliseconds()
   }
-  return Database.insert(DB.Schema.Drafts)
-    .values(row)
-    .run
+  let swapped : Result<Integer, String> = Database.transaction do
+    let cleared = Database.delete(DB.Schema.Drafts)
+      .where(DB.Schema.Drafts.id.eq(id))
+      .run
+      .try
+    if draft.body.trim.empty?
+      Ok(cleared)
+    else
+      Database.insert(DB.Schema.Drafts)
+        .values(row)
+        .run
+    end
+  end
+  return swapped
 end
 
 private do

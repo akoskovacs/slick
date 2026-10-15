@@ -1,6 +1,7 @@
 # What somebody says about who they are, beyond a name: the details a
-# profile shows, and a nickname they may go by instead of their name. `managed` lists those a sync — SCIM, say — has taken over,
-# by column, separated by commas; they are not the person's to change.
+# profile shows, and a nickname they may go by instead of their name.
+# `managed` lists those a sync — SCIM, say — has taken over, by column,
+# separated by commas; they are not the person's to change.
 module DB.Migrate.N0013AddUserDetails
 
 using Harmat.Migration, as: Migration

@@ -13,11 +13,11 @@ module Config.Routes
 
 using Metro.Live.Hub, only: [Hub]
 using Metro.Plugs, only: [providing]
-using Metro.Router, only: [pipeline, scope, get, post, live, static]
+using Metro.Router, only: [pipeline, scope, get, post, put, live, static]
 # Actions are named bare, and so imported by name: a reference through the
 # module (`~App.Controllers.Chat.show`) does not resolve when it is called.
 using App.Controllers.Accounts, only: [signInPage, signIn, signOut, registrationPage, register]
-using App.Controllers.Api, only: [whoami, channelList, chatList, answerList, history, posted, reacting, statusSet]
+using App.Controllers.Api, only: [whoami, commandsDeclared, channelList, chatList, answerList, invocationList, history, posted, reacting, statusSet]
 using App.Controllers.Chat, only: [show]
 using App.Controllers.Files, only: [uploaded, fetched]
 
@@ -38,6 +38,7 @@ foul routes(hub) do
 
     scope "/api", via: [:application, :bots] do
       get("/me", ~whoami)
+      put("/commands", ~commandsDeclared)
       get("/:organization/channels", ~channelList)
       get("/:organization/channels/:name/messages", ~history)
       post("/:organization/channels/:name/messages", ~posted)
@@ -45,6 +46,7 @@ foul routes(hub) do
       post("/:organization/channels/:name/status", ~statusSet)
       get("/:organization/dm", ~chatList)
       get("/:organization/answers", ~answerList)
+      get("/:organization/invocations", ~invocationList)
       get("/:organization/dm/:person/messages", ~history)
       post("/:organization/dm/:person/messages", ~posted)
       post("/:organization/dm/:person/reactions", ~reacting)

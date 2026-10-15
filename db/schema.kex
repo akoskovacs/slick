@@ -18,6 +18,8 @@ let Answers = DB.Schema.Answers.definition
 let Drafts = DB.Schema.Drafts.definition
 let Readings = DB.Schema.Readings.definition
 let Files = DB.Schema.Files.definition
+let Commands = DB.Schema.Commands.definition
+let Invocations = DB.Schema.Invocations.definition
 
 tables : [Definition]
 let tables = [
@@ -31,5 +33,7 @@ let tables = [
   DB.Schema.Answers,
   DB.Schema.Drafts,
   DB.Schema.Readings,
-  DB.Schema.Files
+  DB.Schema.Files,
+  DB.Schema.Commands,
+  DB.Schema.Invocations
 ]

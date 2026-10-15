@@ -103,6 +103,14 @@ your own.
 | `tey seed` | migrate, then plant what the environment's database starts with |
 | `tey test` | the specs |
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
+| `tey dev` | the server, then the bots beside it — [muse](../muse-bot) and [opencode](../opencode-bot) — once it answers; Ctrl-C stops all of them |
+
+`tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and
+`BOT_OPERATORS`, the Slick ids of the people who may allow a bot's tools
+and choose opencode's model. Each bot uses its development token — `tey
+seed` plants muse and opencode with theirs, as it does claude — unless
+`MUSE_TOKEN` or `OPENCODE_TOKEN` says otherwise, and is skipped when its
+folder (`MUSE_BOT_DIR`, `OPENCODE_BOT_DIR`) is not there.
 
 ## Settings
 
@@ -113,6 +121,8 @@ your own.
 | `HOST` | the address to bind; 127.0.0.1 unless set |
 | `DATABASE_DSN` | an ODBC connection string; when set, it is the database in every environment |
 | `SQLITE_DRIVER` | the SQLite ODBC driver, when it is not where Homebrew puts it |
+| `LOG_SQL` | `on` or `off`: whether each query is printed, highlighted and timed, as Rails does; on in development unless set |
+| `NO_COLOR` | `1` prints queries without colors (Kex's own); they are plain anyway when the output is not a terminal |
 | `METRO_STORAGE_ROOT` | the folder uploaded files are kept in; `storage` unless set (a volume in Docker) |
 
 ## Writing a message

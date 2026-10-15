@@ -18,6 +18,8 @@ using Metro.Validation, only: [rules, validates, present, sized, passing]
 using App.Live.Tab, only: [Tab]
 using App.Live.Unread, only: [Unread]
 using App.Models.Attachment, only: [Attachment]
+using App.Models.Command, only: [Command]
+using App.Models.Invocation, only: [Invocation]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
@@ -43,8 +45,11 @@ let GENERAL_TOPIC = "Company-wide announcements and chatter"
 
 let channelRules = rules do
   validates("title", "A channel name", [
-    present, sized(2, 30),
-    passing("may only have lower-case letters, digits and dashes.") { |text| text.chars.all? { |char| char.lower? || char.digit? || "${char}" == "-" } }
+    present,
+    sized(2, 30),
+    passing("may only have lower-case letters, digits and dashes.") { |text|
+      text.chars.all? { |char| char.lower? || char.digit? || "${char}" == "-" }
+    }
   ])
 end
 
@@ -75,14 +80,35 @@ foul markup(statuses, user, tab) do
       let people = everyone.filter { |person| roster.contains?(person.id) }
       let channels : [Conversation] = Conversations.channels(organization.id).or([])
       let now = Metro.Clock.milliseconds()
-      let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now).map { |note| note.member.split(" ").first.or("") }
+      let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now)
+        .map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
       let drafts : [Draft] = Drafts.pending(user.id).or([])
       let marks : [Reading] = Readings.marks(user.id).or([])
       match visible(user, tab) do
         None => do
           let unread = tallied(user, organization, mine, marks, "", "")
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, App.Views.Chat.Cabinet {}, None, [], [], [], [], [])
+          return App.Views.Chat.index(
+            tab,
+            user,
+            mine,
+            organization,
+            channels,
+            people,
+            online,
+            bots,
+            drafts,
+            unread,
+            App.Views.Chat.Cabinet {},
+            [],
+            [],
+            None,
+            [],
+            [],
+            [],
+            [],
+            []
+          )
         end
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
@@ -91,11 +117,18 @@ foul markup(statuses, user, tab) do
           # message, and the thread open beside it, if they follow it, as
           # far as its newest reply.
           let reading = tab.attentive? then conversation.id else ""
-          let readingThread = tab.attentive? then thread.first.map { |first| first.id }.or("") else ""
+          let readingThread = tab.attentive? then opening(thread) else ""
           if tab.attentive?
-            noted(user, marks, Reading { conversationId: conversation.id, readAt: messages.last.map { |message| message.sentAt }.or(0) })
+            noted(user, marks, Reading {
+              conversationId: conversation.id,
+              readAt: newest(messages)
+            })
             if followed(marks, readingThread)
-              noted(user, marks, Reading { conversationId: conversation.id, threadId: readingThread, readAt: thread.last.map { |message| message.sentAt }.or(0) })
+              noted(user, marks, Reading {
+                conversationId: conversation.id,
+                threadId: readingThread,
+                readAt: newest(thread)
+              })
             end
           end
           let unread = tallied(user, organization, mine, marks, reading, readingThread)
@@ -103,7 +136,27 @@ foul markup(statuses, user, tab) do
           let cabinet = filedIn(user, tab, conversation)
           let responses = Answers.collected(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(tab, user, mine, organization, channels, people, online, bots, drafts, unread, cabinet, Just(conversation), messages, reactions, responses, thread, doing.reject { |note| note.member == user.id })
+          return App.Views.Chat.index(
+            tab,
+            user,
+            mine,
+            organization,
+            channels,
+            people,
+            online,
+            bots,
+            drafts,
+            unread,
+            cabinet,
+            offering(user, conversation, people),
+            DB.Repositories.Invocations.inside(conversation.id).or([]),
+            Just(conversation),
+            messages,
+            reactions,
+            responses,
+            thread,
+            doing.reject { |note| note.member == user.id }
+          )
         end
       end
     end
@@ -133,7 +186,7 @@ foul handled(statuses, user, tab, entries) do
     "unprofile" => (Tab { ...settled(tab), profile: "" }, false)
     "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
     "share" => shared(user, tab, field(entries, "file"))
-    "share-failed" => (Tab { ...tab, failure: "${field(entries, "filename")} was not uploaded: ${field(entries, "reason")}" }, false)
+    "share-failed" => (refusedUpload(tab, field(entries, "filename"), field(entries, "reason")), false)
     "unshare" => (Tab { ...tab, pending: tab.pending.reject { |id| id == field(entries, "file") } }, false)
     "files" => (Tab { ...settled(tab), thread: "", view: "files" }, false)
     "messages" => (Tab { ...settled(tab), view: "" }, false)
@@ -303,21 +356,38 @@ private do
   # since they last read there — since they joined, where they never have —
   # and other people's replies in the threads they follow since they last
   # read those.
-  unreadIn : User -> Organization -> [Reading] -> String -> String -> ({String: Integer}, {String: Integer})
-  foul unreadIn(user, organization, marks, open, openThread) do
+  foul unreadIn(
+    user: User,
+    organization: Organization,
+    marks: [Reading],
+    open: String,
+    openThread: String
+  ) -> ({String: Integer}, {String: Integer}) do
     let since = Memberships.joined(organization.id, user.id)
     let channels : [Conversation] = Conversations.channels(organization.id).or([])
     let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
     let places = (channels + chats).map { |conversation| conversation.id }
-    let follows = marks.filter { |mark| !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId) }
-    let oldest = follows.map { |mark| mark.readAt }.min.or(0)
-    let replies : [Message] = follows.empty? then [] else Messages.replyingTo(follows.map { |mark| mark.threadId }, oldest).or([])
-    let answered = replies.filter { |reply|
-      reply.userId != user.id && follows.any? { |mark| mark.threadId == reply.parentId && reply.sentAt > mark.readAt }
+    let follows = marks.filter { |mark|
+      !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId)
     }
-    let counted = { |conversation| unseen(conversation, marks, since, open) + answered.count { |reply| reply.conversationId == conversation.id } }
-    let byChannel = channels.reduce({}) { |found, channel| found.put(channel.id, counted(channel)) }
-    let byPerson = chats.reduce({}) { |found, chat| found.put(chat.counterpart(user.id), counted(chat)) }
+    let roots = follows.map { |mark| mark.threadId }
+    let oldest = follows.map { |mark| mark.readAt }.min.or(0)
+    let replies : [Message] = follows.empty? then [] else Messages.replyingTo(roots, oldest).or([])
+    let answered = replies.filter { |reply|
+      reply.userId != user.id && follows.any? { |mark|
+        mark.threadId == reply.parentId && reply.sentAt > mark.readAt
+      }
+    }
+    let counted = { |conversation|
+      let replied = answered.count { |reply| reply.conversationId == conversation.id }
+      unseen(conversation, marks, since, open) + replied
+    }
+    let byChannel = channels.reduce({}) { |found, channel|
+      found.put(channel.id, counted(channel))
+    }
+    let byPerson = chats.reduce({}) { |found, chat|
+      found.put(chat.counterpart(user.id), counted(chat))
+    }
     return (byChannel, byPerson)
   end
 
@@ -327,7 +397,8 @@ private do
   foul unseen(conversation, marks, since, open) do
     return 0 if conversation.id == open
     let mark = marks.find { |each| each.conversationId == conversation.id && each.threadId.empty? }
-    return Messages.newer(conversation.id, mark.map { |each| each.readAt }.or(since)).or(0)
+    let read = mark.map { |each| each.readAt }.or(since)
+    return Messages.newer(conversation.id, read).or(0)
   end
 
   # The files of a conversation: what was sent into it, what this person
@@ -338,35 +409,129 @@ private do
     let stored : [Attachment] = Attachments.inside(conversation.id).or([])
     let waiting : [Attachment] = tab.pending.empty? then [] else Attachments.among(tab.pending).or([])
     let queued = waiting.filter { |file| file.userId == user.id && !file.sent? }
-    let glimpsed = tab.view == "files" then stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED } else []
+    let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
+    let glimpsed = tab.view == "files" then small else []
     let glimpses = glimpsed.reduce({}) { |found, file|
       let content : Result<Binary, String> = Metro.Storage.Service.fetch(file.id)
-      found.put(file.id, content.map { |bytes| bytes.to(String).or("") }.or("").take(400))
+      let text = content.map { |bytes| bytes.to(String).or("") }.or("")
+      found.put(file.id, text.take(400))
     }
-    return App.Views.Chat.Cabinet { stored: stored, queued: queued, glimpses: glimpses }
+    return App.Views.Chat.Cabinet {
+      stored: stored,
+      queued: queued,
+      glimpses: glimpses
+    }
   end
 
   # The largest text file whose start the files view shows, in bytes.
   let GLIMPSED = 65536
 
+  # The slash commands somebody can use in a conversation: those of every bot
+  # of the organization in a channel, those of the bot in a private chat
+  # with one, and none in a chat with a person.
+  offering : User -> Conversation -> [User] -> [Command]
+  foul offering(user, conversation, people) do
+    let bots = people.filter { |person| person.bot? }
+    let other = conversation.counterpart(user.id)
+    let listening = conversation.channel? then bots else bots.filter { |bot| bot.id == other }
+    return [] if listening.empty?
+    return DB.Repositories.Commands.of(listening.map { |bot| bot.id }).or([])
+  end
+
+  # Whether what was sent is a slash command for a bot in reach — and if so,
+  # notes it as used, and clears the box it was written in. It is one when
+  # it starts with a command a bot here has declared: `/mode` in a bot's
+  # private chat; `@opencode /mode auto` in a channel, or `/mode` alone
+  # when only one bot here answers to it. Anything else is a message.
+  invoked : User -> Conversation -> String -> String -> Bool
+  foul invoked(user, conversation, threadId, body) do
+    let people : [User] = Users.everyone.or([])
+    let commands = offering(user, conversation, people)
+    return false if commands.empty?
+
+    let text = body.trim
+    let bots = people.filter { |person| commands.any? { |command| command.botId == person.id } }
+    let addressed = bots.find { |bot| text.startsWith?("@${bot.shown} ") }
+    let rest = addressed.map { |bot| text.drop(bot.shown.count + 1).trim }.or(text)
+    return false if !rest.startsWith?("/")
+
+    let name = rest.drop(1).split(" ").first.or("").lowerCase
+    let candidates = commands.filter { |command|
+      command.name == name && addressed.map { |bot| command.botId == bot.id }.or(true)
+    }
+    return false if candidates.count != 1
+
+    let command = candidates.first.or(Command { botId: "", name: "" })
+    let moment = Metro.Clock.milliseconds()
+    let used = Invocation {
+      id: Metro.Id.generate(prefix: "i"),
+      organizationId: conversation.organizationId,
+      conversationId: conversation.id,
+      threadId: threadId,
+      botId: command.botId,
+      userId: user.id,
+      command: command.name,
+      arguments: rest.drop(1 + name.count).trim,
+      invokedAt: moment,
+      invokedOn: "${DateTime.now()}"
+    }
+    let kept : Result<Integer, String> = Harmat.Database.transaction do
+      DB.Repositories.Invocations.recorded(used).try
+      Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
+    end
+    return kept.ok?
+  end
+
+  # The id of the message a thread starts with; "" for no thread.
+  opening : [Message] -> String
+  let opening(thread) = thread.first.map { |first| first.id }.or("")
+
+  # When the newest of some messages was sent; 0 for none.
+  newest : [Message] -> Integer
+  let newest(messages) = messages.last.map { |message| message.sentAt }.or(0)
+
+  # A tab told that a file did not upload, and why.
+  refusedUpload : Tab -> String -> String -> Tab
+  let refusedUpload(tab, filename, reason) = Tab {
+    ...tab,
+    failure: "${filename} was not uploaded: ${reason}"
+  }
+
   # Whether this person follows the thread a message starts.
   followed : [Reading] -> String -> Bool
-  let followed(marks, threadId) = !threadId.empty? && marks.any? { |mark| mark.threadId == threadId }
+  let followed(marks, threadId) = !threadId.empty? && marks.any? { |mark|
+    mark.threadId == threadId
+  }
 
   # Notes how far somebody has read, if it is further than before.
   noted : User -> [Reading] -> Reading -> Void
   foul noted(user, marks, reading) do
-    let before = marks.find { |mark| mark.conversationId == reading.conversationId && mark.threadId == reading.threadId }.map { |mark| mark.readAt }.or(0)
+    let before = marks
+      .find { |mark| mark.conversationId == reading.conversationId && mark.threadId == reading.threadId }
+      .map { |mark| mark.readAt }
+      .or(0)
     Readings.reached(user.id, reading) if reading.readAt > before
   end
 
   summed : {String: Integer} -> Integer
-  let summed(counts) = counts.entries.reduce(0) { |sum, entry| match entry do (_, count) => sum + count end }
+  let summed(counts) = counts.entries.reduce(0) { |sum, entry|
+    match entry do
+      (_, count) => sum + count
+    end
+  }
 
   # A tab with nothing open over the conversation: no form, no dialog, no
   # message left from the last thing tried.
   settled : Tab -> Tab
-  let settled(tab) = Tab { organization: tab.organization, conversation: tab.conversation, thread: tab.thread, profile: tab.profile, pending: tab.pending, view: tab.view, attentive?: tab.attentive? }
+  let settled(tab) = Tab {
+    organization: tab.organization,
+    conversation: tab.conversation,
+    thread: tab.thread,
+    profile: tab.profile,
+    pending: tab.pending,
+    view: tab.view,
+    attentive?: tab.attentive?
+  }
 
   switched : User -> Tab -> String -> (Tab, Bool)
   foul switched(user, tab, id) do
@@ -385,18 +550,25 @@ private do
     return (Tab { ...refused, dialogProblem: "A name needs at least two letters or digits." }, false) if slug.chars.count < 2
     return (Tab { ...refused, dialogProblem: "${name} cannot be used as a name. Try another." }, false) if App.Models.Organization.RESERVED.contains?(slug)
 
-    match Organizations.chartered(name, slug, user.id) do
+    match chartering(user, name, slug) do
       Error(_) => return (Tab { ...refused, dialogProblem: "There is already an organization called ${name}." }, false)
-      Ok(organization) => do
-        Memberships.enlisted(organization.id, user.id)
-        let general : Result<Conversation, String> = Conversations.founded(organization.id, App.Models.Conversation.GENERAL, user.id)
-        if general.ok?
-          let channel : Conversation = general.try
-          Conversations.retitled(channel.id, GENERAL_TOPIC)
-        end
-        return (Tab { organization: organization.id }, true)
-      end
+      Ok(organization) => return (Tab { organization: organization.id }, true)
     end
+  end
+
+  # An organization, its first member and its #general, all or nothing.
+  chartering : User -> String -> String -> Result<Organization, String>
+  foul chartering(user, name, slug) do
+    let made : Result<Organization, String> = Harmat.Database.transaction do
+      let organization : Organization = Organizations.chartered(name, slug, user.id).try
+      Memberships.enlisted(organization.id, user.id).try
+      let general : Conversation = Conversations
+        .founded(organization.id, App.Models.Conversation.GENERAL, user.id)
+        .try
+      Conversations.retitled(general.id, GENERAL_TOPIC).try
+      Ok(organization)
+    end
+    return made
   end
 
   # Puts somebody who has registered into the tab's organization.
@@ -509,7 +681,10 @@ private do
       Ok(Just(stored)) => do
         let given = App.Models.User.DETAILS.map { |entry|
           match entry do
-            (column, _, _) => (column, stored.locked?(column) then stored.detail(column) else field(entries, column).trim)
+            (column, _, _) => do
+              let kept = stored.locked?(column)
+              (column, kept then stored.detail(column) else field(entries, column).trim)
+            end
           end
         }
         let problems = App.Models.User.DETAILS.flatMap { |entry|
@@ -541,13 +716,23 @@ private do
 
   # What was given for one detail.
   givenFor : [(String, String)] -> String -> String
-  let givenFor(pairs, column) = pairs.flatMap { |pair| match pair do (key, value) => key == column then [value] else [] end }.first.or("")
+  let givenFor(pairs, column) = pairs
+    .flatMap { |pair|
+      match pair do
+        (key, value) => key == column then [value] else []
+      end
+    }
+    .first
+    .or("")
 
   # What is wrong with what was given for one detail: a display name is
   # needed, and none may be longer than it may.
   faults : String -> String -> Integer -> String -> [String]
   let faults("name", label, longest, "") = ["${label} cannot be empty."]
-  let faults(column, label, longest, text) = text.chars.count > longest then ["${label} cannot be longer than ${longest} characters."] else []
+  let faults(column, label, longest, text) do
+    return [] if text.chars.count <= longest
+    ["${label} cannot be longer than ${longest} characters."]
+  end
 
   # Somebody is typing: said for a few seconds, to everyone else there.
   typing : Server<Presence> -> User -> Tab -> (Tab, Bool)
@@ -615,7 +800,8 @@ private do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => do
-        let thread = place == "reply" then rooted(conversation, tab.thread).map { |first| first.id }.or("") else ""
+        let root = rooted(conversation, tab.thread).map { |first| first.id }.or("")
+        let thread = place == "reply" then root else ""
         return (tab, false) if place == "reply" && thread.empty?
 
         let draft = Draft {
@@ -640,17 +826,38 @@ private do
       None => return (tab, false)
       Just(conversation) => match rooted(conversation, tab.thread) do
         None => return (tab, false)
-        Just(first) => match Messages.said(conversation.id, user.id, body, first.id) do
-          Ok(reply) => do
+        Just(first) => do
+          # A command for a bot is used, not said.
+          if invoked(user, conversation, first.id, body)
             statuses.lifted(conversation.id, user.id)
-            # Who replies in a thread follows it, and has read it so far.
-            Readings.reached(user.id, Reading { conversationId: conversation.id, threadId: first.id, readAt: reply.sentAt })
-            Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: first.id, body: "" })
             return (Tab { ...settled(tab), thread: first.id }, true)
           end
-          Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
+          return repliedTo(statuses, user, tab, conversation, first, body)
         end
       end
+    end
+  end
+
+  # A reply said in the thread `first` starts.
+  repliedTo : Server<Presence> -> User -> Tab -> Conversation -> Message -> String -> (Tab, Bool)
+  foul repliedTo(statuses, user, tab, conversation, first, body) do
+    match Messages.said(conversation.id, user.id, body, first.id) do
+      Ok(reply) => do
+        statuses.lifted(conversation.id, user.id)
+        # Who replies in a thread follows it, and has read it so far.
+        Readings.reached(user.id, Reading {
+          conversationId: conversation.id,
+          threadId: first.id,
+          readAt: reply.sentAt
+        })
+        Drafts.kept(user.id, Draft {
+          conversationId: conversation.id,
+          threadId: first.id,
+          body: ""
+        })
+        return (Tab { ...settled(tab), thread: first.id }, true)
+      end
+      Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
     end
   end
 
@@ -720,23 +927,52 @@ private do
   foul sent(statuses, user, tab, body) do
     # A message needs words, unless files go with it.
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
-    return (tab, false) if !problems.empty? && (tab.pending.empty? || body.chars.count > App.Models.Message.LONGEST)
+    let unfit = tab.pending.empty? || body.chars.count > App.Models.Message.LONGEST
+    return (tab, false) if !problems.empty? && unfit
 
     match visible(user, tab) do
       None => return (tab, false)
-      Just(conversation) => match Messages.said(conversation.id, user.id, body, "") do
-        Ok(message) => do
-          # Whatever they were said to be doing, they have done.
+      Just(conversation) => do
+        # A command for a bot is used, not said; the files waiting stay.
+        if invoked(user, conversation, "", body)
           statuses.lifted(conversation.id, user.id)
-          # Who starts a thread follows it.
-          Readings.reached(user.id, Reading { conversationId: conversation.id, threadId: message.id, readAt: message.sentAt })
-          Attachments.sent(user.id, tab.pending, conversation.id, message.id) if !tab.pending.empty?
-          Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" })
-          return (Tab { ...settled(tab), pending: [] }, true)
+          return (settled(tab), true)
         end
-        Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
+        return postedTo(statuses, user, tab, conversation, body)
       end
     end
+  end
+
+  # A message said in the conversation, with the files waiting in its box.
+  postedTo : Server<Presence> -> User -> Tab -> Conversation -> String -> (Tab, Bool)
+  foul postedTo(statuses, user, tab, conversation, body) do
+    match posting(user, conversation, body, tab.pending) do
+      Ok(_) => do
+        # Whatever they were said to be doing, they have done.
+        statuses.lifted(conversation.id, user.id)
+        return (Tab { ...settled(tab), pending: [] }, true)
+      end
+      Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
+    end
+  end
+
+  # A message, with what goes with it, all or nothing: whoever starts a
+  # thread follows it, the files waiting in the box go with it, and the
+  # draft it was is gone.
+  posting : User -> Conversation -> String -> [String] -> Result<Message, String>
+  foul posting(user, conversation, body, pending) do
+    let posted : Result<Message, String> = Harmat.Database.transaction do
+      let message : Message = Messages.said(conversation.id, user.id, body, "").try
+      Readings.reached(user.id, Reading {
+        conversationId: conversation.id,
+        threadId: message.id,
+        readAt: message.sentAt
+      }).try
+      Attachments.sent(user.id, pending, conversation.id, message.id).try
+      Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" }).try
+      Ok(message)
+    end
+    return posted
   end
 
   # Answers a form a message asks. The answer is kept with that message —

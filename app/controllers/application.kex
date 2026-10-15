@@ -34,10 +34,11 @@ foul userFor(request) do
   return found
 end
 
-# A page of the application: its stylesheet and script addressed by what is
-# in them, so a changed file is always fetched again.
+# A page of the application: its stylesheet and scripts — its own and
+# Metro's — addressed by what is in them, so a changed file is always
+# fetched again.
 page : WebRequest -> Integer -> String -> WebRequest
-foul page(request, status, markup) = request.html(status, Metro.Assets.marked(markup, "public", ["/app.css"]))
+foul page(request, status, markup) = request.html(status, Metro.Assets.marked(markup, "public", ["/app.css", "/app.js"]))
 
 # Who a request's session cookie says is asking.
 visitor : WebRequest -> User?

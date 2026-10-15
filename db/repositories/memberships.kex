@@ -37,7 +37,9 @@ foul joined(organizationId: String, userId: String) -> Integer do
     .where(DB.Schema.Memberships.id.eq("${organizationId}:${userId}"))
     .first
   match found do
-    Ok(Just(row)) => return DateTime.parse(row.get("joined_at").or("")).map { |moment| moment.epochSeconds * 1000 }.or(0)
+    Ok(Just(row)) => return DateTime.parse(row.get("joined_at").or(""))
+      .map { |moment| moment.epochSeconds * 1000 }
+      .or(0)
     _ => return 0
   end
 end

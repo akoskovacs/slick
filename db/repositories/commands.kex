@@ -1,0 +1,53 @@
+# The slash commands bots answer to.
+#
+#   DB.Repositories.Commands.declared(bot.id, commands)
+module DB.Repositories.Commands
+
+using Harmat.Database, as: Database
+using App.Models.Command, only: [Command]
+
+# Replaces a bot's commands with these, all at once.
+foul declared(botId: String, commands: [Command]) -> Result<Integer, String> do
+  let replaced : Result<Integer, String> = Database.transaction do
+    Database.delete(DB.Schema.Commands)
+      .where(DB.Schema.Commands.botId.eq(botId))
+      .run
+      .try
+    # A `.try` inside a block given to `map` would leave only that block:
+    # what failed is collected, so the transaction is undone by it.
+    let failures = commands.flatMap { |command|
+      let stored = Database.insert(DB.Schema.Commands)
+        .values({
+          id: "${botId}:${command.name}",
+          bot_id: botId,
+          name: command.name,
+          description: command.description
+        })
+        .run
+      match stored do
+        Ok(_) => []
+        Error(reason) => [reason]
+      end
+    }
+    failures.empty? then Ok(commands.count) else Error(failures.first.or(""))
+  end
+  return replaced
+end
+
+# The commands of some bots, by name.
+foul of(botIds: [String]) -> Result<[Command], String> do
+  return Database.select().from(DB.Schema.Commands)
+    .where(DB.Schema.Commands.botId.in(botIds))
+    .orderBy([:name, :bot_id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
+private do
+  decoded : {String: String} -> Command
+  let decoded(row) = Command {
+    botId: row.get("bot_id").or(""),
+    name: row.get("name").or(""),
+    description: row.get("description").or("")
+  }
+end

@@ -2,7 +2,12 @@
 params: [file: Enclosure]
 ---
 <span class="queued">
-  <% if file.pictured? %><img src="<%= file.href %>" alt=""><% else %><span aria-hidden="true">📄</span><% end %>
+  <% if file.pictured? %>
+    <img src="<%= file.href %>" alt="">
+  <% else %>
+    <span aria-hidden="true">📄</span>
+  <% end %>
   <span class="about"><strong><%= file.caption %></strong><span><%= file.weight %></span></span>
-  <button type="button" class="quiet" data-event="unshare" data-file="<%= file.key %>" title="Remove <%= file.caption %>">✕</button>
+  <button type="button" class="quiet" title="Remove <%= file.caption %>"
+    data-event="unshare" data-file="<%= file.key %>">✕</button>
 </span>

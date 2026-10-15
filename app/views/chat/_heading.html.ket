@@ -5,8 +5,10 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
   <div class="heading-row">
     <h1><%= title %></h1>
     <nav class="views" aria-label="Show">
-      <button type="button" class="view<% if !filing? %> current<% end %>" data-event="messages">Messages</button>
-      <button type="button" class="view<% if filing? %> current<% end %>" data-event="files">Files<% if !filed.empty? %> <span class="tally"><%= filed %></span><% end %></button>
+      <button type="button" class="view<% if !filing? %> current<% end %>"
+        data-event="messages">Messages</button>
+      <button type="button" class="view<% if filing? %> current<% end %>"
+        data-event="files">Files<% if !filed.empty? %> <span class="tally"><%= filed %></span><% end %></button>
     </nav>
   </div>
   <% if retitling? %>

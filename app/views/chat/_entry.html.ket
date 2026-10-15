@@ -2,7 +2,9 @@
 params: [entry: Entry]
 ---
 <li>
-  <button type="button" class="entry<% if entry.current? %> current<% end %><% if entry.online? %> online<% end %><% if !entry.unread.empty? %> unread<% end %>" data-event="<%= entry.action %>" data-<%= entry.subject %>="<%= entry.key %>"><%= entry.caption %>
+  <button type="button"
+    class="entry<% if entry.current? %> current<% end %><% if entry.online? %> online<% end %><% if !entry.unread.empty? %> unread<% end %>"
+    data-event="<%= entry.action %>" data-<%= entry.subject %>="<%= entry.key %>"><%= entry.caption %>
     <% if !entry.emblem.empty? %>
       <span class="emblem" title="<%= entry.emblemNote %>"><%= entry.emblem %></span>
     <% end %>

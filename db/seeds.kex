@@ -25,9 +25,12 @@ using DB.Repositories.Users, as: Users
 # The password of every seeded person.
 let PASSWORD = "correct horse"
 
-# The API token of the seeded bot. Known to everyone who can read this file,
-# which is why it is only ever planted in development.
+# The API token of each seeded bot: `slick_bot_development_<its name>`.
+# Known to everyone who can read this file, which is why they are only ever
+# planted in development. muse and opencode are the bots script/dev.sh runs
+# beside the server (../muse-bot, ../opencode-bot).
 let BOT_TOKEN = "slick_bot_development_claude"
+let BOTS = ["claude", "muse", "opencode"]
 
 # Plants an environment's seeds. What was planted, in words: nothing when it
 # was all there already.
@@ -68,17 +71,21 @@ private do
     Messages.said(chat.id, ada.id, "Can you look at my pull request today?", "").try
     Messages.said(chat.id, bob.id, "After lunch.", "").try
 
-    let claude = bot("claude", acme.id).try
-    Memberships.enlisted(acme.id, claude.id).try
+    let bots = BOTS.map { |name| bot(name, acme.id).try }
+    bots.each { |made| Memberships.enlisted(acme.id, made.id).try }
     return Ok([
       "the organization Acme, at /acme",
       "${ada.email}, ${bob.email} and ${eve.email}, password \"${PASSWORD}\"",
       "#general and #random, a thread, reactions and a private chat",
-      "the bot claude, token ${BOT_TOKEN}"
+      "the bots ${BOTS.join(", ")}, tokens ${BOTS.map { |name| token(name) }.join(", ")}"
     ])
   end
 
-  # An organization's bot, known by `BOT_TOKEN`.
+  # A seeded bot's token.
+  token : String -> String
+  let token(name) = "slick_bot_development_${name}"
+
+  # An organization's bot, known by its development token.
   foul bot(name: String, organizationId: String) -> Result<User, String> do
     let id = Metro.Id.generate(prefix: "b")
     let made = User {
@@ -88,7 +95,7 @@ private do
       kind: "bot",
       ownerOrganizationId: organizationId
     }
-    return Users.automated(made, Metro.Auth.Token.digest(BOT_TOKEN))
+    return Users.automated(made, Metro.Auth.Token.digest(token(name)))
   end
 
   # The person registered under an email, made if there is none.

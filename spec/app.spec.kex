@@ -17,7 +17,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_files"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("create_invocations"))
   end
 
   it("turns shortcodes into emoji") do
@@ -37,6 +37,15 @@ describe("Slick") do
     Assert.falsy(App.Models.Emoji.emojiOnly?("ship it :rocket:"))
     Assert.equal(App.Helpers.RichText.html("🎉 🚀"), "<div class=\"big-emoji\"><p>🎉 🚀</p></div>")
     Assert.equal(App.Helpers.RichText.html("🎉!"), "<p>🎉!</p>")
+  end
+
+  it("marks who a message mentions, the longest name first, never in code") do
+    let names = ["Ada", "Ada Lovelace", "Bob"]
+    let marked = App.Helpers.RichText.mentioned("<p>@Ada Lovelace and @Bob, not @Bobby</p>", names, "Bob")
+    Assert.equal(marked, "<p><span class=\"mention\">@Ada Lovelace</span> and <span class=\"mention you\">@Bob</span>, not @Bobby</p>")
+    let coded = "<p><code>@Ada</code> @Ada</p>"
+    Assert.equal(App.Helpers.RichText.mentioned(coded, names, ""), "<p><code>@Ada</code> <span class=\"mention\">@Ada</span></p>")
+    Assert.equal(App.Helpers.RichText.mentioned("<p>mail me@example.com</p>", names, ""), "<p>mail me@example.com</p>")
   end
 
   it("reads a message as blocks of rich text, and nothing typed as markup") do
@@ -74,6 +83,12 @@ describe("Slick") do
     Assert.falsy(asked.contains?("class=\"responses\""))
     # Where there is no message to answer in, a form cannot be used.
     Assert.truthy(App.Helpers.RichText.html("[?] Deploy to: staging | production").contains?(" disabled>"))
+    # A choice of many options is a select and Send, not a row of buttons.
+    let many = "[?] Model: a/1 | a/2 | a/3 | b/1 | b/2 | b/3 | c/1"
+    let picker = App.Helpers.RichText.shown(many, "m3", [])
+    Assert.truthy(picker.contains?("<select name=\"f0\"><option>a/1</option>"))
+    Assert.falsy(picker.contains?("class=\"option\""))
+    Assert.equal(App.Helpers.RichText.answer(many, [("form", Just("0")), ("f0", Just("b/2"))]), Just((0, "Model: b/2")))
     # A label and an option are text like any other.
     Assert.truthy(App.Helpers.RichText.shown("[?] <b>: \"x\" | <i>", "m", []).contains?("data-value=\"&quot;x&quot;\""))
 
@@ -124,10 +139,19 @@ describe("Slick") do
       Assert.equal(signin.outgoing.get("Cache-Control"), Just("no-store"))
       Assert.truthy(signin.payload.to(String).or("").contains?("/app.css?v="))
 
-      # Registering: not from another site, not with a short password.
-      let form = "name=Ada&email=ada%40example.com&password=correct+horse"
+      # Registering: not from another site, not with a short password, not
+      # with the password typed differently the second time.
+      let form = "name=Ada&email=ada%40example.com&password=correct+horse&password_confirmation=correct+horse"
       Assert.equal(site.call(Metro.WebRequest.asked("POST", "/register", [("Host", "slick.test"), ("Origin", "http://evil.example")], form)).code, 403)
       Assert.equal(site.call(Metro.WebRequest.asked("POST", "/register", here, "name=Ada&email=ada%40example.com&password=short")).code, 422)
+      let mistyped = site.call(Metro.WebRequest.asked(
+        "POST",
+        "/register",
+        here,
+        "name=Ada&email=ada%40example.com&password=correct+horse&password_confirmation=correct+house"
+      ))
+      Assert.equal(mistyped.code, 422)
+      Assert.truthy(mistyped.payload.to(String).or("").contains?("The two passwords do not match."))
       let registered = site.call(Metro.WebRequest.asked("POST", "/register", here, form))
       Assert.equal(registered.code, 303)
       let cookie = registered.outgoing.get("Set-Cookie").or("").split(";").first.or("")
@@ -174,6 +198,9 @@ describe("Slick") do
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("Welcome to Acme 👋"))
       let claude : User = App.Services.Bots.bearer(Just("Bearer ${DB.Seeds.BOT_TOKEN}")).try
       Assert.equal(claude.name, "claude")
+      # The bots script/dev.sh runs beside the server, each by its own token.
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_development_muse")).map { |bot| bot.name }, Just("muse"))
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_development_opencode")).map { |bot| bot.name }, Just("opencode"))
 
       # The bot reads a channel through the API, and a thread when it asks
       # for one — but only a thread of the conversation it names.
@@ -195,6 +222,37 @@ describe("Slick") do
       let asBotJson = asBot + [("Content-Type", "application/json")]
       let none = site.call(Metro.WebRequest.asked("GET", "/api/acme/answers", asBot, ""))
       Assert.equal(none.payload.to(String).or(""), "[]")
+      # A bot declares the slash commands it answers to; the composer
+      # offers them, in a channel with the bot's name first.
+      let declaring = site.call(Metro.WebRequest.asked(
+        "PUT",
+        "/api/commands",
+        asBotJson,
+        "{\"commands\":[{\"name\":\"/model\",\"description\":\"Pick a model\"},{\"name\":\"mode\"}]}"
+      ))
+      Assert.equal(declaring.code, 200)
+      Assert.equal(DB.Repositories.Commands.of([claude.id]).map { |found| found.map { |command| command.name } }, Ok(["mode", "model"]))
+      let offeredHere = App.Live.Chat.markup(statuses, ada, Tab {})
+      Assert.truthy(offeredHere.contains?("data-live-hook=\"Composer\""))
+      Assert.truthy(offeredHere.contains?("&quot;insert&quot;:&quot;@claude /model &quot;"))
+      let refusedCommands = site.call(Metro.WebRequest.asked("PUT", "/api/commands", asBotJson, "{\"commands\":[{\"name\":\"Bad Name\"}]}"))
+      Assert.equal(refusedCommands.code, 422)
+
+      # Using one is not a message: it is a line in the conversation, and
+      # what the bot is told. A command nobody declared is a message.
+      let (_, used) = stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "@claude /model fast")])
+      Assert.truthy(used)
+      let withUse = App.Live.Chat.markup(statuses, ada, Tab {})
+      Assert.truthy(withUse.contains?("class=\"used\""))
+      Assert.truthy(withUse.contains?("<code>/model fast</code>"))
+      Assert.falsy(withUse.contains?("<p>@claude /model fast</p>"))
+      let told = site.call(Metro.WebRequest.asked("GET", "/api/acme/invocations?after=0", asBot, "")).payload.to(String).or("")
+      Assert.truthy(told.contains?("\"command\":\"model\""))
+      Assert.truthy(told.contains?("\"arguments\":\"fast\""))
+      Assert.truthy(told.contains?("\"channel\":\"general\""))
+      stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "/unknown thing")])
+      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("/unknown thing"))
+
       let question = site.call(Metro.WebRequest.asked("POST", "/api/acme/channels/general/messages", asBotJson, "{\"body\":\"[?] Ship it: yes | no\"}"))
       Assert.equal(question.code, 201)
       let questionId = question.payload.to(String).or("").split("\"id\":\"").second.or("").split("\"").first.or("")
@@ -312,14 +370,24 @@ describe("Slick") do
 
       # Being here: somebody with a tab open is shown as online, until the
       # last of their tabs closes.
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("entry online\" data-event=\"direct\""))
+      # The sidebar line for somebody: its <button> tag, up to their id.
+      let lineFor = { |markup, id|
+        markup
+          .split("data-user=\"${id}\"")
+          .first
+          .or("")
+          .split("<button")
+          .last
+          .or("")
+      }
+      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("entry online"))
       App.Live.Chat.arriving(statuses, ada, "one")
       App.Live.Chat.arriving(statuses, ada, "two")
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("entry online\" data-event=\"direct\" data-user=\"${ada.id}\""))
+      Assert.truthy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
       App.Live.Chat.leaving(statuses, ada, "one")
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("entry online\" data-event=\"direct\" data-user=\"${ada.id}\""))
+      Assert.truthy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
       App.Live.Chat.leaving(statuses, ada, "two")
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("entry online\" data-event=\"direct\" data-user=\"${ada.id}\""))
+      Assert.falsy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
 
       # A status: an emoji Slick offers and a few words, beside the name.
       let (_, statusSet) = stepped(statuses, ada, Tab {}, [("event", "status-set"), ("emoji", "🌴"), ("text", "On vacation <till Monday>")])
@@ -574,7 +642,6 @@ describe("Slick") do
       Assert.truthy(eveBack.attentive?)
       stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "while eve is away")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1) # general"))
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1) # general"))
       App.Live.Chat.markup(statuses, eve, eveBack)
       Assert.falsy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1)"))
       # Replying in a thread follows it: other people's replies there count
@@ -590,6 +657,21 @@ describe("Slick") do
       let (bobToEve, _) = stepped(statuses, bob, Tab {}, [("event", "direct"), ("user", eve.id)])
       stepped(statuses, bob, bobToEve, [("event", "send"), ("body", "psst, eve")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"count\""))
+
+      # Transactions go through the store as one: an Error answered from
+      # one undoes what it did; Ok keeps it.
+      let undone = Harmat.Database.transaction do
+        DB.Repositories.Drafts.kept(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "undone" }).try
+        Error("changed my mind")
+      end
+      Assert.equal(undone, Error("changed my mind"))
+      Assert.falsy(DB.Repositories.Drafts.pending(ada.id).or([]).any? { |draft| draft.body == "undone" })
+      let done = Harmat.Database.transaction do
+        DB.Repositories.Drafts.kept(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "done" }).try
+        DB.Repositories.Drafts.kept(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "" })
+      end
+      Assert.truthy(done.ok?)
+      Assert.falsy(DB.Repositories.Drafts.pending(ada.id).or([]).any? { |draft| draft.conversationId == "c-nowhere" })
 
       # Drafts: what is written and not sent is kept, for its writer alone,
       # until it is sent; a conversation with one is marked in the sidebar.
@@ -622,10 +704,26 @@ describe("Slick") do
       # then listed in the files view and served only to who may read them.
       let files = "storage_spec_${Metro.Clock.milliseconds()}"
       with Metro.Storage.Service = Metro.Storage.Disk { root: files } do
-        let upload = Metro.Wire.made("POST", "/uploads", [("Content-Type", "text/plain"), ("X-Filename", "notes.txt")], "first line\nsecond <line>")
-        let uploaded = App.Controllers.Files.uploaded(Metro.WebRequest.WebRequest { incoming: upload, assigns: {user: ada} })
+        let upload = Metro.Wire.made(
+          "POST",
+          "/uploads",
+          [("Content-Type", "text/plain"), ("X-Filename", "notes.txt")],
+          "first line\nsecond <line>"
+        )
+        let uploaded = App.Controllers.Files.uploaded(Metro.WebRequest.WebRequest {
+          incoming: upload,
+          assigns: {user: ada}
+        })
         Assert.equal(uploaded.code, 200)
-        let fileId = uploaded.payload.to(String).or("").split("\"file\":\"").second.or("").split("\"").first.or("")
+        let fileId = uploaded.payload
+          .to(String)
+          .or("")
+          .split("\"file\":\"")
+          .second
+          .or("")
+          .split("\"")
+          .first
+          .or("")
         Assert.truthy(fileId.startsWith?("f"))
         # Nobody shares a file that is not theirs.
         let (bobTakes, _) = stepped(statuses, bob, Tab {}, [("event", "share"), ("file", fileId)])
@@ -634,7 +732,13 @@ describe("Slick") do
         Assert.equal(adaShares.pending, [fileId])
         Assert.truthy(App.Live.Chat.markup(statuses, ada, adaShares).contains?("<strong>notes.txt</strong>"))
         # Before it is sent, only its uploader can fetch it.
-        let asking = { |who| App.Controllers.Files.fetched(Metro.WebRequest.WebRequest { incoming: Metro.Wire.made("GET", "/files/${fileId}", [], ""), captures: {"id": fileId}, assigns: {user: who} }) }
+        let asking = { |who|
+          App.Controllers.Files.fetched(Metro.WebRequest.WebRequest {
+            incoming: Metro.Wire.made("GET", "/files/${fileId}", [], ""),
+            captures: {"id": fileId},
+            assigns: {user: who}
+          })
+        }
         Assert.equal(asking(bob).code, 404)
         Assert.equal(asking(ada).code, 200)
         # A file goes without words.
@@ -649,6 +753,11 @@ describe("Slick") do
         let filesView = App.Live.Chat.markup(statuses, bob, Tab { view: "files" })
         Assert.truthy(filesView.contains?("<pre>first line\nsecond &lt;line&gt;</pre>"))
         Assert.truthy(filesView.contains?("Files <span class=\"tally\">1</span>"))
+        # Sizes are said to a tenth, in decimal units.
+        let sizedAs = { |count|
+          App.Models.Attachment.Attachment { id: "f", userId: "u", filename: "x", contentType: "", byteSize: count }.sized
+        }
+        Assert.equal([28, 4312, 1536000, 2500000000].map { |count| sizedAs(count) }, ["28 B", "4.3 KB", "1.5 MB", "2.5 GB"])
         # A file once sent cannot be sent again.
         let (again, _) = stepped(statuses, ada, Tab {}, [("event", "share"), ("file", fileId)])
         Assert.equal(again.pending, [])
@@ -678,7 +787,16 @@ describe("Slick") do
       let (closed, _) = stepped(statuses, ada, bobProfile, [("event", "unprofile")])
       Assert.equal(closed.profile, "")
       # Somebody fills in their own profile; a name cannot be emptied.
-      let profileForm = [("event", "profile-set"), ("name", "Bob"), ("title", "Engineer"), ("department", "Platform"), ("phone", "+36 1 234"), ("time_zone", "Europe/Budapest"), ("bio", "Builds <things>"), ("nickname", "Bobby")]
+      let profileForm = [
+        ("event", "profile-set"),
+        ("name", "Bob"),
+        ("title", "Engineer"),
+        ("department", "Platform"),
+        ("phone", "+36 1 234"),
+        ("time_zone", "Europe/Budapest"),
+        ("bio", "Builds <things>"),
+        ("nickname", "Bobby")
+      ]
       let (_, bobDescribed) = stepped(statuses, bob, Tab {}, profileForm)
       Assert.truthy(bobDescribed)
       let bobFilled = App.Live.Chat.markup(statuses, ada, bobProfile)
@@ -696,15 +814,31 @@ describe("Slick") do
       Assert.truthy(byNickname.contains?("<p class=\"formal\">Bob</p>"))
       # What a sync has taken over stays as it is, and the form shows it locked.
       DB.Repositories.Users.managing(bob.id, ["name", "title"])
-      stepped(statuses, bob, Tab {}, [("event", "profile-set"), ("name", "Hacked"), ("title", "CEO"), ("department", "Sales")])
+      stepped(statuses, bob, Tab {}, [
+        ("event", "profile-set"),
+        ("name", "Hacked"),
+        ("title", "CEO"),
+        ("department", "Sales")
+      ])
       let synced = App.Live.Chat.markup(statuses, ada, bobProfile)
       Assert.truthy(synced.contains?("Engineer"))
       Assert.truthy(synced.contains?("Sales"))
       Assert.falsy(synced.contains?("Hacked"))
       Assert.falsy(synced.contains?("CEO"))
       let lockedForm = App.Live.Chat.markup(statuses, bob, Tab { dialog: "profile" })
-      Assert.truthy(lockedForm.contains?("name=\"title\" value=\"Engineer\" maxlength=\"80\" placeholder=\"\" autocomplete=\"off\" readonly"))
-      Assert.falsy(lockedForm.contains?("name=\"department\" value=\"Sales\" maxlength=\"80\" placeholder=\"\" autocomplete=\"off\" readonly"))
+      let inputOf = { |column|
+        lockedForm
+          .split("name=\"${column}\"")
+          .second
+          .or("")
+          .split(">")
+          .first
+          .or("")
+      }
+      Assert.truthy(inputOf("title").contains?("value=\"Engineer\""))
+      Assert.truthy(inputOf("title").contains?("readonly"))
+      Assert.truthy(inputOf("department").contains?("value=\"Sales\""))
+      Assert.falsy(inputOf("department").contains?("readonly"))
       DB.Repositories.Users.managing(bob.id, [])
       stepped(statuses, bob, Tab {}, [("event", "profile-set"), ("name", "Bob")])
       # Nobody outside the organization is shown, whatever the tab names.

@@ -62,7 +62,12 @@ end
 
 # Sends a person's files with a message: only theirs, and only those not
 # sent before. How many went.
-foul sent(userId: String, ids: [String], conversationId: String, messageId: String) -> Result<Integer, String> do
+foul sent(
+  userId: String,
+  ids: [String],
+  conversationId: String,
+  messageId: String
+) -> Result<Integer, String> do
   return Database.within(DB.Schema.Files.userId.eq(userId))
     .update(DB.Schema.Files)
     .set({conversation_id: conversationId, message_id: messageId})

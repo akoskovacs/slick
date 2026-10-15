@@ -32,7 +32,10 @@ fetched : WebRequest -> WebRequest
 foul fetched(request) do
   let user = userFor(request)
   match Attachments.single(request.param("id").or("")) do
-    Ok(Just(file)) => return allowed?(user.id, file) then Metro.Storage.served(request, file.blob) else request.plain(404, "Not Found")
+    Ok(Just(file)) => do
+      return request.plain(404, "Not Found") if !allowed?(user.id, file)
+      return Metro.Storage.served(request, file.blob)
+    end
     _ => return request.plain(404, "Not Found")
   end
 end
@@ -43,7 +46,10 @@ private do
     return file.userId == userId if !file.sent?
 
     match Conversations.lookup(file.conversationId) do
-      Ok(Just(conversation)) => return Memberships.affiliated?(conversation.organizationId, userId) && conversation.admits?(userId)
+      Ok(Just(conversation)) => do
+        let member = Memberships.affiliated?(conversation.organizationId, userId)
+        return member && conversation.admits?(userId)
+      end
       _ => return false
     end
   end

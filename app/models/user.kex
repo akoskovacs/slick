@@ -58,7 +58,11 @@ make User do
 
   # What to call them: their nickname, if they go by it; else their name,
   # or the front of their email until they have one.
-  let shown -> String = @nicknameShown? && !@nickname.empty? then @nickname else (@name.empty? then @email.split("@").first.or(@email) else @name)
+  let shown -> String do
+    return @nickname if @nicknameShown? && !@nickname.empty?
+    return @email.split("@").first.or(@email) if @name.empty?
+    @name
+  end
 
   # One of their details, by its column; "" for no such column.
   let detail(column: String) -> String = match column do

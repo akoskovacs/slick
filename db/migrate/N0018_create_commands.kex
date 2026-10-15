@@ -1,0 +1,17 @@
+# The slash commands each bot answers to, as it declares them through the
+# API: `/model`, with what it does. The composer offers them as somebody
+# types `/`. The id is the bot and the name together.
+module DB.Migrate.N0018CreateCommands
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_commands, follows: :create_files do
+  createTable(:commands) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:bot_id)
+    t.text(:name)
+    t.text(:description, default: "")
+  end
+  addIndex(:commands, [:bot_id])
+end

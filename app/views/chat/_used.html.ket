@@ -1,0 +1,10 @@
+---
+params: [use: Usage]
+---
+<p class="used" id="used-<%= use.key %>">
+  <span class="used-mark" aria-hidden="true">/</span>
+  <strong><%= use.who %></strong> used
+  <code>/<%= use.verb %><% if !use.extra.empty? %> <%= use.extra %><% end %></code>
+  with <span class="mention"><%= use.addressee %></span>
+  <time><%= use.stamp %></time>
+</p>

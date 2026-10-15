@@ -1,7 +1,9 @@
 ---
-params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool, unsent: String, queued: String, attachable?: Bool]
+params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool, unsent: String, queued: String, attachable?: Bool, mentionable: String, commands: String]
 ---
-<form class="composer" data-live="<%= verb %>" data-live-reset data-live-change="draft" data-live-pause="1000" data-live-typing>
+<form class="composer" data-live="<%= verb %>" data-live-reset data-live-typing
+  data-live-change="draft" data-live-pause="1000"
+  data-live-hook="Composer" data-mentions="<%= mentionable %>" data-commands="<%= commands %>">
   <input type="hidden" name="place" value="<%= verb %>">
   <div class="composer-box">
     <div class="formats">
@@ -14,11 +16,15 @@ params: [verb: String, boxId: String, hint: String, picks: String, focused?: Boo
     <% if !queued.empty? %>
       <div class="queue"><%== queued %></div>
     <% end %>
-    <textarea id="<%= boxId %>" name="body" rows="1" placeholder="<%= hint %>" maxlength="4000" autocomplete="off" data-live-enter<% if focused? %> autofocus<% end %>><%= unsent %></textarea>
+    <textarea id="<%= boxId %>" name="body" rows="1" maxlength="4000"
+      placeholder="<%= hint %>" autocomplete="off"
+      data-live-enter<% if focused? %> autofocus<% end %>><%= unsent %></textarea>
     <div class="composer-row">
       <div class="picks">
         <% if attachable? %>
-          <label class="attach" title="Attach files — or drop them here, or paste them">📎<input type="file" multiple hidden></label>
+          <label class="attach" title="Attach files — or drop them here, or paste them">
+            📎<input type="file" multiple hidden>
+          </label>
         <% end %>
         <%== picks %>
       </div>

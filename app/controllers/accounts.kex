@@ -28,7 +28,9 @@ register : WebRequest -> WebRequest
 foul register(request) do
   let name = request.param("name").or("")
   let email = request.param("email").or("")
-  match App.Services.Authentication.register(name, email, request.param("password").or("")) do
+  let password = request.param("password").or("")
+  let confirmation = request.param("password_confirmation")
+  match App.Services.Authentication.signedUp(name, email, password, confirmation) do
     Ok(token) => return entered(request, token)
     Error(problems) => return page(request, 422, App.Views.Auth.register(name, email, problems))
   end

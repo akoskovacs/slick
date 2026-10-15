@@ -2,7 +2,9 @@
 params: [file: Enclosure]
 ---
 <% if file.pictured? %>
-  <a class="attachment picture" href="<%= file.href %>" target="_blank" rel="noopener"><img src="<%= file.href %>" alt="<%= file.caption %>" loading="lazy"></a>
+  <a class="attachment picture" href="<%= file.href %>" target="_blank" rel="noopener">
+    <img src="<%= file.href %>" alt="<%= file.caption %>" loading="lazy">
+  </a>
 <% else %>
   <a class="attachment" href="<%= file.href %>" target="_blank" rel="noopener">
     <span class="kind" aria-hidden="true">📄</span>

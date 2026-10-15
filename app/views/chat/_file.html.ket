@@ -11,6 +11,8 @@ params: [file: Enclosure]
     <span class="kind" aria-hidden="true">📄</span>
   <% end %>
   </a>
-  <p class="about"><a href="<%= file.href %>" target="_blank" rel="noopener"><strong><%= file.caption %></strong></a></p>
+  <p class="about">
+    <a href="<%= file.href %>" target="_blank" rel="noopener"><strong><%= file.caption %></strong></a>
+  </p>
   <p class="meta"><%= file.sender %> · <%= file.stamp %> · <%= file.weight %></p>
 </li>

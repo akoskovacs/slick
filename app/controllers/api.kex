@@ -3,6 +3,7 @@
 # any of these run.
 #
 #   GET  /api/me
+#   PUT  /api/commands                                 {"commands": [{"name": "model", "description": "…"}]}
 #   GET  /api/:organization/channels
 #   GET  /api/:organization/channels/:name/messages?limit=50&after=<sentAt>
 #   GET  /api/:organization/channels/:name/messages?thread=<message id>
@@ -14,6 +15,9 @@
 #   GET  /api/:organization/answers?after=<answeredAt>
 #                                                      the answers to the forms in
 #                                                      its own messages
+#   GET  /api/:organization/invocations?after=<invokedAt>
+#                                                      the slash commands people
+#                                                      used for it
 #   GET  /api/:organization/dm/:person/messages
 #   POST /api/:organization/dm/:person/messages
 #
@@ -49,6 +53,7 @@ module App.Controllers.Api
 using Metro.WebRequest, only: [WebRequest]
 using App.Controllers.Application, only: [hubFor, statusesFor, userFor]
 using App.Live.Tab, only: [Tab]
+using App.Models.Command, only: [Command]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
@@ -74,6 +79,43 @@ foul whoami(request) do
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
   let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed}
   return request.json(answer)
+end
+
+# The slash commands the bot answers to, all of them, replacing those it
+# declared before: the composer offers them as somebody types `/`. A name
+# is lower-case letters, digits and dashes (`model`, not `/model`).
+commandsDeclared : WebRequest -> WebRequest
+foul commandsDeclared(request) do
+  let bot = userFor(request)
+  let listed : [Any] = request.list("commands")
+  let commands = listed.flatMap { |each|
+    let fields : {String: Any} = each
+    let name = "${fields.get("name").or("")}".trim.lowerCase
+    let named = name.startsWith?("/") then name.drop(1) else name
+    let description = "${fields.get("description").or("")}".trim.replace("\n", " ")
+    if App.Models.Command.named?(named)
+      [Command { botId: bot.id, name: named, description: description.take(App.Models.Command.LONGEST_DESCRIPTION) }]
+    else
+      []
+    end
+  }
+  if commands.count != listed.count || commands.count > App.Models.Command.MOST
+    return failed(
+      request,
+      422,
+      "Commands are at most ${App.Models.Command.MOST}, each a name of lower-case letters, digits and dashes."
+    )
+  end
+
+  match DB.Repositories.Commands.declared(bot.id, commands) do
+    Error(reason) => return failed(request, 500, reason)
+    Ok(_) => do
+      hubFor(request).changed("api", "everyone")
+      let names : [Any] = commands.map { |command| command.name }
+      let answer : {String: Any} = {"ok": true, "commands": names}
+      return request.json(answer)
+    end
+  end
 end
 
 channelList : WebRequest -> WebRequest
@@ -127,6 +169,29 @@ foul answerList(request) do
   let people : [User] = Users.everyone.or([])
   let found = Answers.addressedTo(tab.organization, bot.id).or([]).filter { |each| each.answeredAt > since }
   let listed : [Any] = found.flatMap { |each| placedAnswer(bot, people, each) }
+  return request.json(listed)
+end
+
+# The slash commands people used for this bot since `after`, oldest first:
+# which, with what after it, by whom, and where — the channel or the
+# person of a private chat, and the thread, "" for none. Not messages: the
+# bot answers as it likes, where it was used.
+invocationList : WebRequest -> WebRequest
+foul invocationList(request) do
+  let bot = userFor(request)
+  let slug = request.param("organization").or("")
+  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
+
+  let since = request.query("after").or("0").to(Integer).or(0)
+  let people : [User] = Users.everyone.or([])
+  let found = DB.Repositories.Invocations.meantFor(tab.organization, bot.id, since).or([])
+  let listed : [Any] = found.flatMap { |each|
+    match Conversations.lookup(each.conversationId) do
+      Ok(Just(conversation)) => [toldInvocation(bot, people, each, conversation)]
+      _ => []
+    end
+  }
   return request.json(listed)
 end
 
@@ -239,6 +304,19 @@ private do
       "answeredAt": given.answeredAt
     }
   end
+
+  toldInvocation : User -> [User] -> App.Models.Invocation.Invocation -> Conversation -> {String: Any}
+  let toldInvocation(bot, people, used, conversation) = {
+    "id": used.id,
+    "command": used.command,
+    "arguments": used.arguments,
+    "channel": conversation.channel? then conversation.title else "",
+    "person": conversation.channel? then "" else conversation.counterpart(bot.id),
+    "thread": used.threadId,
+    "user": used.userId,
+    "author": people.find { |person| person.id == used.userId }.map { |person| person.shown }.or("Someone"),
+    "invokedAt": used.invokedAt
+  }
 
   # A thread as the API tells it: the message it hangs from, then the
   # replies, oldest first. Nothing, when the message is not one of this

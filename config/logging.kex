@@ -1,0 +1,24 @@
+# What this process prints of its queries: each, as Rails shows them in
+# development, with how long it took (`Harmat.Log.Console`).
+#
+#   LOG_SQL unset           printed in development, not elsewhere
+#   LOG_SQL=on              printed in every environment
+#   LOG_SQL=off             never printed
+#
+# Colors are Kex's: off by themselves when the output is not a terminal,
+# with NO_COLOR=1, or with --no-colors.
+module Config.Logging
+
+using Metro.Environment, only: [Development]
+
+# The logger `main.kex` installs as `Harmat.Logger` where it serves.
+queries : Harmat.Log.Console
+foul queries do
+  let developing = Metro.Environment.current().map { |running| running == Development }.or(false)
+  let shown = match ENV.get("LOG_SQL").or("") do
+    "on" => true
+    "off" => false
+    _ => developing
+  end
+  return Harmat.Log.Console { shown?: shown }
+end

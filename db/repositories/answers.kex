@@ -55,14 +55,17 @@ foul recorded(organizationId: String, message: Message, form: Integer, userId: S
     answer: answer,
     answered_at: answered.answeredAt
   }
-  Database.delete(DB.Schema.Answers)
-    .where(DB.Schema.Answers.id.eq(id))
-    .run
-    .try
-  return Database.insert(DB.Schema.Answers)
-    .values(row)
-    .run
-    .map { |_| answered }
+  # The earlier answer and this one are swapped in one transaction.
+  let swapped : Result<Integer, String> = Database.transaction do
+    Database.delete(DB.Schema.Answers)
+      .where(DB.Schema.Answers.id.eq(id))
+      .run
+      .try
+    Database.insert(DB.Schema.Answers)
+      .values(row)
+      .run
+  end
+  return swapped.map { |_| answered }
 end
 
 private do

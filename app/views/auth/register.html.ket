@@ -16,6 +16,10 @@ params: [who: String, email: String, problems: [String], shortest: String]
     <input type="password" name="password" autocomplete="new-password" minlength="<%= shortest %>" required>
     <span class="hint">At least <%= shortest %> characters. A long phrase is fine.</span>
   </label>
+  <label class="field"><span class="label">Confirm password</span>
+    <input type="password" name="password_confirmation" autocomplete="new-password"
+      minlength="<%= shortest %>" required>
+  </label>
   <button type="submit" class="primary">Create account</button>
 </form>
 <p class="switch">Already registered? <a href="/signin">Sign in</a></p>

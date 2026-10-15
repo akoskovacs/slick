@@ -1,0 +1,18 @@
+# The `commands` table: each bot's slash commands, by name. See
+# db/migrate/N0018_create_commands.kex.
+module DB.Schema.Commands
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :commands do |t|
+  t.text(:id, primaryKey: true)
+  t.text(:bot_id)
+  t.text(:name)
+  t.text(:description, default: "")
+end
+
+let table = DB.Schema.Commands.definition.table
+
+let id = DB.Schema.Commands.definition.textColumn(:id)
+let botId = DB.Schema.Commands.definition.textColumn(:bot_id)

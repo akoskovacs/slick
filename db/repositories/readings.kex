@@ -1,7 +1,10 @@
 # How far people have read, in conversations and in the threads they
 # follow.
 #
-#   DB.Repositories.Readings.reached(user.id, Reading { conversationId: chat.id, readAt: message.sentAt })
+#   DB.Repositories.Readings.reached(user.id, Reading {
+#     conversationId: chat.id,
+#     readAt: message.sentAt
+#   })
 module DB.Repositories.Readings
 
 using Harmat.Database, as: Database
@@ -16,13 +19,11 @@ foul marks(userId: String) -> Result<[Reading], String> do
     .map { |rows| rows.map { |row| decoded(row) } }
 end
 
-# Notes how far a person has read a conversation, or a thread of it.
+# Notes how far a person has read a conversation, or a thread of it: the
+# old mark and the new one swapped in one transaction.
 foul reached(userId: String, reading: Reading) -> Result<Integer, String> do
-  let id = reading.threadId.empty? then "${userId}:${reading.conversationId}" else "${userId}:${reading.conversationId}:${reading.threadId}"
-  Database.delete(DB.Schema.Readings)
-    .where(DB.Schema.Readings.id.eq(id))
-    .run
-    .try
+  let place = "${userId}:${reading.conversationId}"
+  let id = reading.threadId.empty? then place else "${place}:${reading.threadId}"
   let row = {
     id: id,
     user_id: userId,
@@ -30,9 +31,16 @@ foul reached(userId: String, reading: Reading) -> Result<Integer, String> do
     thread_id: reading.threadId,
     read_at: reading.readAt
   }
-  return Database.insert(DB.Schema.Readings)
-    .values(row)
-    .run
+  let swapped : Result<Integer, String> = Database.transaction do
+    Database.delete(DB.Schema.Readings)
+      .where(DB.Schema.Readings.id.eq(id))
+      .run
+      .try
+    Database.insert(DB.Schema.Readings)
+      .values(row)
+      .run
+  end
+  return swapped
 end
 
 private do

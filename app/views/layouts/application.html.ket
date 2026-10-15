@@ -11,6 +11,7 @@ params: [live: String]
   </head>
   <body class="chat">
     <main id="app"><%== live %></main>
+    <script src="/app.js"></script>
     <script src="/metro/live.js"></script>
   </body>
 </html>

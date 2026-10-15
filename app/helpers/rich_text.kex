@@ -66,6 +66,35 @@ let blocks(body) = gathered(body.replace("\r", "").split("\n"))
 html : String -> String
 let html(body) = shown(body, "", [])
 
+# Markup with every mention of somebody marked: `@` and one of `names`, as
+# the page shows them, not followed by a letter or digit. The longest name
+# wins, so "@Ada Lovelace" is not "@Ada" and some words. `mine` is the name
+# of whoever is looking: a mention of them is marked `you`. Only text is
+# read — not tags, and not what is inside `code` or `pre`.
+mentioned : String -> [String] -> String -> String
+let mentioned(markup, names, mine) do
+  let longestFirst = names.reject { |name| name.empty? }.uniq.sort { |one, other| one.chars.count > other.chars.count }
+  let pieces = markup.split("<")
+  let first = marked(pieces.first.or(""), longestFirst, mine)
+  # Each piece is a tag and the text after it; `depth` is how many `code`
+  # and `pre` elements that text is inside.
+  let walked = pieces.drop(1).reduce((first, 0)) { |sofar, piece|
+    match sofar do
+      (done, depth) => do
+        let tag = piece.split(">").first.or("")
+        let name = tag.split(" ").first.or("").lowerCase
+        let inside = coded?(name) then depth + 1 else (closesCode?(name) then depth - 1 else depth)
+        let text = piece.drop(tag.count + 1)
+        let shown = inside > 0 then text else marked(text, longestFirst, mine)
+        ("${done}<${tag}>${shown}", inside)
+      end
+    end
+  }
+  match walked do
+    (done, _) => done
+  end
+end
+
 # A stored message as markup for the page: `key` is its id, which its forms
 # send back with an answer, and `given` the answers its forms have had. A
 # message of nothing but emoji is wrapped for big rendering.
@@ -181,15 +210,59 @@ private do
   let rendered(Quote(lines), key, index) = tagged("blockquote", broken(lines))
   let rendered(Listing(text), key, index) = tagged("pre", tagged("code", Template.escapeHtml(text)))
   let rendered(Divider, key, index) = "<hr>"
+  # One choice of a few options is a button for each; of more, a select
+  # and Send, like a form that asks several things.
   let rendered(Form([Choice(label, options)]), key, index) do
+    return fieldsOf([Choice(label, options)], key, index) if options.count > BUTTONS
+
     let buttons = options.map { |option| offered(key, index, label, option) }.join("")
     "<div class=\"asking-form choices\"><p class=\"asked\">${inline(label)}</p><div class=\"options\">${buttons}</div></div>"
   end
-  let rendered(Form(fields), key, index) do
+  let rendered(Form(fields), key, index) = fieldsOf(fields, key, index)
+
+  # The most options a choice is shown as buttons for.
+  let BUTTONS = 6
+
+  # A form as fields to fill in, and Send.
+  fieldsOf : [Field] -> String -> Integer -> String
+  let fieldsOf(fields, key, index) do
     let inputs = fields.mapIndexed { |each, position| input(each, position) }.join("")
     let hidden = "<input type=\"hidden\" name=\"message\" value=\"${Template.escapeHtml(key)}\"><input type=\"hidden\" name=\"form\" value=\"${index}\">"
     let send = "<button type=\"submit\" class=\"primary\"${disabled(key)}>Send</button>"
     "<form class=\"asking-form\" data-live=\"answer\" data-live-quiet data-live-reset data-live-keep>${hidden}${inputs}${send}</form>"
+  end
+
+  # Whether a tag opens or closes code, where nothing is a mention.
+  coded? : String -> Bool
+  let coded?(name) = name == "code" || name == "pre"
+
+  closesCode? : String -> Bool
+  let closesCode?(name) = name == "/code" || name == "/pre"
+
+  # A run of escaped text with its mentions marked.
+  marked : String -> [String] -> String -> String
+  let marked(text, names, mine) do
+    return text if !text.contains?("@")
+    let parts = text.split("@")
+    let rest = parts.drop(1).map { |part| mentionIn(part, names, mine) }
+    parts.first.or("") + rest.join("")
+  end
+
+  # What follows one `@`: the mention of the longest name it starts with,
+  # then the rest; or the `@` and the text as they were.
+  mentionIn : String -> [String] -> String -> String
+  let mentionIn(part, names, mine) do
+    let escaped = names.map { |name| Template.escapeHtml(name) }
+    let found = escaped.find { |name|
+      part.startsWith?(name) && part.drop(name.count).chars.first.map { |char| !char.letter? && !char.digit? }.or(true)
+    }
+    match found do
+      None => "@${part}"
+      Just(name) => do
+        let whose = name == Template.escapeHtml(mine) then "mention you" else "mention"
+        "<span class=\"${whose}\">@${name}</span>${part.drop(name.count)}"
+      end
+    end
   end
 
   # One option of a choice, as the button that answers with it.

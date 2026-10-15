@@ -31,7 +31,8 @@ params: [card: Card]
       <button type="button" data-event="profile-edit">Edit profile</button>
       <button type="button" data-event="status">Set a status…</button>
     <% else %>
-      <button type="button" class="primary" data-event="direct" data-user="<%= card.key %>">Message</button>
+      <button type="button" class="primary"
+        data-event="direct" data-user="<%= card.key %>">Message</button>
     <% end %>
     </div>
     <dl class="details">
@@ -56,7 +57,10 @@ params: [card: Card]
       <% if card.keeperKey.empty? %>
         <dd><%= card.keeper %></dd>
       <% else %>
-        <dd><button type="button" class="link" data-event="profile" data-user="<%= card.keeperKey %>"><%= card.keeper %></button></dd>
+        <dd>
+          <button type="button" class="link"
+            data-event="profile" data-user="<%= card.keeperKey %>"><%= card.keeper %></button>
+        </dd>
       <% end %>
     <% end %>
     </dl>

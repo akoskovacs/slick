@@ -71,17 +71,23 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     sent_on: message.sentOn,
     parent_id: parent
   }
-  let stored = Database.insert(DB.Schema.Messages)
-    .values(row)
-    .run
-  return stored.map { |_| message } if stored.error? || parent.empty?
-
-  let replies = answering(parent).try
-  return Database.update(DB.Schema.Messages)
-    .set({reply_count: replies.count})
-    .where(DB.Schema.Messages.id.eq(parent))
-    .run
-    .map { |_| message }
+  # A reply and its thread's count change together, or not at all.
+  let stored : Result<Integer, String> = Database.transaction do
+    let inserted = Database.insert(DB.Schema.Messages)
+      .values(row)
+      .run
+      .try
+    if parent.empty?
+      Ok(inserted)
+    else
+      let replies = answering(parent).try
+      Database.update(DB.Schema.Messages)
+        .set({reply_count: replies.count})
+        .where(DB.Schema.Messages.id.eq(parent))
+        .run
+    end
+  end
+  return stored.map { |_| message }
 end
 
 # One message, or `None`.

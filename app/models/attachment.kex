@@ -2,6 +2,8 @@
 # It is theirs alone until it is sent with a message into a conversation.
 module App.Models.Attachment
 
+using Units.Data
+
 record Attachment do
   id : String
   userId : String
@@ -29,18 +31,23 @@ make Attachment do
   # Where it is fetched from: the name at the end is for whoever saves it.
   let address -> String = "/files/${@id}"
 
-  # Its size in words: "512 B", "1.2 KB", "3.4 MB".
-  let sized -> String = @byteSize < 1024 then "${@byteSize} B" else (@byteSize < 1048576 then "${tenths(@byteSize, 1024)} KB" else "${tenths(@byteSize, 1048576)} MB")
+  # Its size in words, to a tenth: "512 B", "4.3 KB", "1.5 MB" — decimal
+  # units, as a file manager shows them.
+  let sized -> String do
+    return "${@byteSize} B" if @byteSize < 1.kilobyte
+    let unit = @byteSize < 1.megabyte then KB else (@byteSize < 1.gigabyte then MB else GB)
+    @byteSize.byte
+      .convertTo(unit)
+      .map { |size| "${(size.value * 10.0).round / 10.0} ${size.unit.symbol}" }
+      .or("${@byteSize} B")
+  end
 
   # The blob `Metro.Storage.served` answers with.
-  let blob -> Metro.Storage.Blob = Metro.Storage.Blob { key: @id, filename: @filename, contentType: @contentType, byteSize: @byteSize, checksum: @checksum }
-end
-
-private do
-  # A number of units to one decimal place: 1536 / 1024 is "1.5".
-  tenths : Integer -> Integer -> String
-  let tenths(count, unit) do
-    let scaled = count * 10 / unit
-    "${scaled / 10}.${scaled % 10}"
-  end
+  let blob -> Metro.Storage.Blob = Metro.Storage.Blob {
+    key: @id,
+    filename: @filename,
+    contentType: @contentType,
+    byteSize: @byteSize,
+    checksum: @checksum
+  }
 end
