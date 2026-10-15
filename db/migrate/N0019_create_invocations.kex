@@ -1,0 +1,25 @@
+# Slash commands somebody used: `/mode` to opencode, in a conversation or
+# one of its threads. Not messages — nobody's words to read back, and not
+# unread — but what happened, in its place in the conversation, and what
+# the bot it was meant for is told.
+module DB.Migrate.N0019CreateInvocations
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_invocations, follows: :create_commands do
+  createTable(:invocations) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:organization_id)
+    t.text(:conversation_id)
+    t.text(:thread_id, default: "")
+    t.text(:bot_id)
+    t.text(:user_id)
+    t.text(:command)
+    t.text(:arguments, default: "")
+    t.bigint(:invoked_at)
+    t.text(:invoked_on)
+  end
+  addIndex(:invocations, [:conversation_id, :invoked_at])
+  addIndex(:invocations, [:bot_id, :invoked_at])
+end

@@ -11,10 +11,17 @@ record Tab do
   conversation : String = ""
   # The message whose thread is open beside it, by id; "" when none is.
   thread : String = ""
+  # The person or bot whose profile is open beside it, by id; "" when none
+  # is. A profile, a team and a thread take the same place, so each closes
+  # the others.
+  profile : String = ""
+  # The team open beside it, by id; "" when none is.
+  team : String = ""
   # Whether the topic is being edited.
   retitling? : Bool = false
-  # The dialog that is open — "channel", "organization", "invite", "status"
-  # or "bots" — and what was wrong with its last try.
+  # The dialog that is open — "channel", "group", "promote", "admit",
+  # "team", "team-edit", "organization", "invite", "status", "profile" or
+  # "bots" — and what was wrong with its last try.
   dialog : String = ""
   dialogProblem : String = ""
   notice : String = ""
@@ -23,4 +30,13 @@ record Tab do
   secret : String = ""
   secretFor : String = ""
   failure : String = ""
+  # Files uploaded into the conversation and waiting, in the message box,
+  # to be sent with the next message: their ids.
+  pending : [String] = []
+  # What the conversation's pane shows: "" for its messages, "files" for
+  # what has been sent into it.
+  view : String = ""
+  # Whether the person is looking at it: the page shown and its window in
+  # front. What arrives while they are not has not been read.
+  attentive? : Bool = true
 end

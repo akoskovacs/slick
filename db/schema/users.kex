@@ -17,6 +17,14 @@ let definition = Table.define :users do |t|
   t.text(:owner_organization_id, default: "")
   t.text(:status_emoji, default: "")
   t.text(:status_text, default: "")
+  t.text(:title, default: "")
+  t.text(:department, default: "")
+  t.text(:bio, default: "")
+  t.text(:nickname, default: "")
+  t.text(:show_nickname, default: "")
+  t.text(:phone, default: "")
+  t.text(:time_zone, default: "")
+  t.text(:managed, default: "")
 end
 
 let table = DB.Schema.Users.definition.table

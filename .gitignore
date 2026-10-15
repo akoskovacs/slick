@@ -4,3 +4,6 @@ package.local.kex
 **/package.local.kex
 /db/odbc/
 /db/*.sqlite3
+
+# Files people upload, in development (Metro.Storage).
+storage/

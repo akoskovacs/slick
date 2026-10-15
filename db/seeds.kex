@@ -8,26 +8,32 @@
 #
 # Only development has seeds — data to try things on: the organization Acme
 # with three people (the password is below), two channels with messages, a
-# thread and a reaction in them, a private chat, and a bot called claude
-# whose token is the one below. Test starts empty, so a spec says what it
+# thread and a reaction in them, a private chat, a group chat, the team
+# @design with the private channel it owns, and bots whose tokens are the
+# ones below. Test starts empty, so a spec says what it
 # relies on; production starts with whoever registers.
 module DB.Seeds
 
 using Metro.Environment, only: [Environment, Development]
+using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Organizations, as: Organizations
 using DB.Repositories.Reactions, as: Reactions
+using DB.Repositories.Teams, as: Teams
 using DB.Repositories.Users, as: Users
 
 # The password of every seeded person.
 let PASSWORD = "correct horse"
 
-# The API token of the seeded bot. Known to everyone who can read this file,
-# which is why it is only ever planted in development.
+# The API token of each seeded bot: `slick_bot_development_<its name>`.
+# Known to everyone who can read this file, which is why they are only ever
+# planted in development. muse and opencode are the bots script/dev.sh runs
+# beside the server (../muse-bot, ../opencode-bot).
 let BOT_TOKEN = "slick_bot_development_claude"
+let BOTS = ["claude", "muse", "opencode"]
 
 # Plants an environment's seeds. What was planted, in words: nothing when it
 # was all there already.
@@ -68,17 +74,37 @@ private do
     Messages.said(chat.id, ada.id, "Can you look at my pull request today?", "").try
     Messages.said(chat.id, bob.id, "After lunch.", "").try
 
-    let claude = bot("claude", acme.id).try
-    Memberships.enlisted(acme.id, claude.id).try
+    let trio = Conversations.among(acme.id, [bob.id, eve.id], ada.id).try
+    Messages.said(trio.id, eve.id, "Shall we plan the offsite here?", "").try
+
+    let design = Team {
+      id: "",
+      organizationId: acme.id,
+      handle: "design",
+      name: "Design",
+      description: "Everything people see",
+      members: [ada.id, eve.id]
+    }
+    let team = Teams.formed(design, ada.id).try
+    let studio = Conversations.founded(acme.id, "studio", eve.id, access: "private", teamId: team.id).try
+    Messages.said(studio.id, eve.id, "New mockups are up, @design", "").try
+
+    let bots = BOTS.map { |name| bot(name, acme.id).try }
+    bots.each { |made| Memberships.enlisted(acme.id, made.id).try }
     return Ok([
       "the organization Acme, at /acme",
       "${ada.email}, ${bob.email} and ${eve.email}, password \"${PASSWORD}\"",
-      "#general and #random, a thread, reactions and a private chat",
-      "the bot claude, token ${BOT_TOKEN}"
+      "#general and #random, a thread, reactions, a private chat and a group chat",
+      "the team @design, with Ada and Eve, and its private channel #studio",
+      "the bots ${BOTS.join(", ")}, tokens ${BOTS.map { |name| token(name) }.join(", ")}"
     ])
   end
 
-  # An organization's bot, known by `BOT_TOKEN`.
+  # A seeded bot's token.
+  token : String -> String
+  let token(name) = "slick_bot_development_${name}"
+
+  # An organization's bot, known by its development token.
   foul bot(name: String, organizationId: String) -> Result<User, String> do
     let id = Metro.Id.generate(prefix: "b")
     let made = User {
@@ -88,7 +114,7 @@ private do
       kind: "bot",
       ownerOrganizationId: organizationId
     }
-    return Users.automated(made, Metro.Auth.Token.digest(BOT_TOKEN))
+    return Users.automated(made, Metro.Auth.Token.digest(token(name)))
   end
 
   # The person registered under an email, made if there is none.

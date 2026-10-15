@@ -1,0 +1,159 @@
+# Teams, and who is in them.
+#
+#   DB.Repositories.Teams.ofOrganization(organization.id)
+#
+# A team a sync has (`managed?`) keeps its name and members as the sync
+# says: the conditions here leave it alone, whoever asks.
+module DB.Repositories.Teams
+
+using Harmat.Database, as: Database
+using App.Models.Team, only: [Team]
+
+# Creates a team, with its first members. Fails when the organization has a
+# team of that handle: the unique index decides.
+foul formed(team: Team, by: String) -> Result<Team, String> do
+  let made = Team { ...team, id: Metro.Id.generate(prefix: "t") }
+  let row = {
+    id: made.id,
+    organization_id: made.organizationId,
+    handle: made.handle,
+    name: made.name,
+    description: made.description,
+    created_by: by,
+    created_at: "${DateTime.utcNow()}"
+  }
+  let stored : Result<Team, String> = Database.transaction do
+    Database.insert(DB.Schema.Teams)
+      .values(row)
+      .run
+      .try
+    joinedAll(made.id, made.members).try
+    Ok(made)
+  end
+  return stored
+end
+
+# Every team of an organization, by handle, each with its members.
+foul ofOrganization(organizationId: String) -> Result<[Team], String> do
+  let rows = Database.select().from(DB.Schema.Teams)
+    .where(DB.Schema.Teams.organizationId.eq(organizationId))
+    .orderBy([:handle])
+    .all
+    .try
+  return membered(rows.map { |row| decoded(row) })
+end
+
+# One team, with its members, or `None`.
+foul single(id: String) -> Result<Team?, String> do
+  let row = Database.select().from(DB.Schema.Teams)
+    .where(DB.Schema.Teams.id.eq(id))
+    .first
+    .try
+  match row do
+    None => return Ok(None)
+    Just(found) => do
+      let teams : [Team] = membered([decoded(found)]).try
+      return Ok(teams.first)
+    end
+  end
+end
+
+# The teams a person is in, by id.
+foul joinedBy(userId: String) -> Result<[String], String> do
+  return Database.select([:team_id]).from(DB.Schema.TeamMembers)
+    .where(DB.Schema.TeamMembers.userId.eq(userId))
+    .all
+    .map { |rows| rows.map { |row| row.get("team_id").or("") } }
+end
+
+# Renames a team and says again what it is for; whether there was such a
+# team that is not a sync's.
+foul revised(id: String, name: String, description: String) -> Result<Bool, String> do
+  return Database.within(DB.Schema.Teams.managed.eq(""))
+    .update(DB.Schema.Teams)
+    .set({name: name, description: description})
+    .where(DB.Schema.Teams.id.eq(id))
+    .run
+    .map { |changed| changed > 0 }
+end
+
+# Puts people in a team, leaving out whoever is in it already.
+foul joinedAll(teamId: String, userIds: [String]) -> Result<Integer, String> do
+  let present : [String] = members(teamId).try
+  let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
+  # A `.try` inside a block given to `map` would leave only that block:
+  # what failed is collected instead.
+  let failures = newcomers.flatMap { |userId|
+    let stored = Database.insert(DB.Schema.TeamMembers)
+      .values({
+        id: "${teamId}:${userId}",
+        team_id: teamId,
+        user_id: userId,
+        joined_at: "${DateTime.utcNow()}"
+      })
+      .run
+    match stored do
+      Ok(_) => []
+      Error(reason) => [reason]
+    end
+  }
+  return failures.empty? then Ok(newcomers.count) else Error(failures.first.or(""))
+end
+
+# Takes a person out of a team.
+foul left(teamId: String, userId: String) -> Result<Integer, String> do
+  return Database.delete(DB.Schema.TeamMembers)
+    .where(DB.Schema.TeamMembers.id.eq("${teamId}:${userId}"))
+    .run
+end
+
+# Hands a team to a sync, as the group of this id — or, with "", takes it
+# back: from then on it is changed here again.
+foul managing(id: String, externalId: String) -> Result<Integer, String> do
+  return Database.update(DB.Schema.Teams)
+    .set({external_id: externalId, managed: externalId.empty? then "" else "yes"})
+    .where(DB.Schema.Teams.id.eq(id))
+    .run
+end
+
+# The ids of the people in a team.
+foul members(teamId: String) -> Result<[String], String> do
+  return Database.select([:user_id]).from(DB.Schema.TeamMembers)
+    .where(DB.Schema.TeamMembers.teamId.eq(teamId))
+    .orderBy([:joined_at, :id])
+    .all
+    .map { |rows| rows.map { |row| row.get("user_id").or("") } }
+end
+
+# The ids of the people in any of some teams, by team.
+foul rosters(teamIds: [String]) -> Result<{String: [String]}, String> do
+  return Ok({}) if teamIds.empty?
+  let rows = Database.select([:team_id, :user_id]).from(DB.Schema.TeamMembers)
+    .where(DB.Schema.TeamMembers.teamId.in(teamIds))
+    .orderBy([:joined_at, :id])
+    .all
+    .try
+  return Ok(rows.reduce({}) { |found, row|
+    let team = row.get("team_id").or("")
+    found.put(team, found.get(team).or([]) + [row.get("user_id").or("")])
+  })
+end
+
+private do
+  # Teams with their members filled in.
+  foul membered(teams: [Team]) -> Result<[Team], String> do
+    let byTeam : {String: [String]} = rosters(teams.map { |team| team.id }).try
+    return Ok(teams.map { |team| Team { ...team, members: byTeam.get(team.id).or([]) } })
+  end
+
+  decoded : {String: String} -> Team
+  let decoded(row) = Team {
+    id: row.get("id").or(""),
+    organizationId: row.get("organization_id").or(""),
+    handle: row.get("handle").or(""),
+    name: row.get("name").or(""),
+    description: row.get("description").or(""),
+    externalId: row.get("external_id").or(""),
+    managed?: row.get("managed").or("") == "yes"
+  }
+end

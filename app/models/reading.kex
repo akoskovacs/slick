@@ -1,0 +1,11 @@
+# How far somebody has read: in a conversation, or in a thread of it they
+# follow — one they started or replied in.
+module App.Models.Reading
+
+record Reading do
+  conversationId : String
+  # The message the thread starts with; "" for the conversation itself.
+  threadId : String = ""
+  # The `sentAt` of the newest message they have been shown there.
+  readAt : Integer
+end

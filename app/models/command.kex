@@ -1,0 +1,25 @@
+# A slash command a bot answers to: `/model`, and what it does in a few
+# words. The bot declares them; Slick only offers them in the composer.
+module App.Models.Command
+
+record Command do
+  botId : String
+  # Without the slash: "model".
+  name : String
+  description : String = ""
+end
+
+# How long a name and a description may be, and how many one bot may have.
+let LONGEST_NAME = 32
+let LONGEST_DESCRIPTION = 120
+let MOST = 25
+
+# Whether a name can be a command: lower-case letters, digits and dashes,
+# starting with a letter.
+named? : String -> Bool
+let named?(name) do
+  let first = name.chars.first.map { |char| char.letter? && char.lower? }.or(false)
+  first && name.chars.count <= LONGEST_NAME && name.chars.all? { |char|
+    (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
+  }
+end

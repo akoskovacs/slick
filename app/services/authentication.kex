@@ -19,8 +19,13 @@ let REFUSED = "That email and password do not match an account."
 
 # Creates an account and signs it in. The session token, or what was wrong.
 register : String -> String -> String -> Result<String, [String]>
-foul register(name, email, password) do
-  let problems = App.Forms.Credentials.problems(name, email, password)
+foul register(name, email, password) = signedUp(name, email, password, None)
+
+# The same, from the registration form: the password has to have been typed
+# the same twice.
+signedUp : String -> String -> String -> String? -> Result<String, [String]>
+foul signedUp(name, email, password, confirmation) do
+  let problems = App.Forms.Credentials.problems(name, email, password, confirmation)
   return Error(problems) if !problems.empty?
 
   let address = App.Forms.Credentials.normalized(email)

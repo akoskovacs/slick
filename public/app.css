@@ -334,7 +334,8 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 .byline time { margin-left: 0.35rem; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .body { margin: 0; overflow-wrap: anywhere; }
 /* A message of nothing but emoji, shown big. */
-.big-emoji { font-size: 2rem; line-height: 1.1; }
+.big-emoji { font-size: 2rem; line-height: 1.15; }
+.big-emoji p { margin: 0; }
 
 .reactions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .reactions:not(:empty) { margin-top: 0.25rem; }
@@ -384,8 +385,8 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 
 /* --- Threads ---------------------------------------------------------------- */
 
-.workspace:has(.thread) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr) minmax(18rem, 26rem); }
-.thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); border-left: 1px solid var(--line); }
+.workspace:has(.thread, .profile) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr) minmax(18rem, 26rem); }
+.thread, .profile { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); border-left: 1px solid var(--line); }
 .thread-head { display: flex; align-items: center; justify-content: space-between; }
 .thread-head button { font-size: 1rem; padding: 0.1rem 0.5rem; }
 .thread .messages > :first-child { margin-top: 0; }
@@ -398,12 +399,87 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 .answers:hover { background: var(--pane); border-color: var(--line); }
 
 @media (max-width: 60rem) {
-  .workspace:has(.thread) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr); }
-  .workspace:has(.thread) > .pane { display: none; }
+  .workspace:has(.thread, .profile) { grid-template-columns: 4rem 16.25rem minmax(0, 1fr); }
+  .workspace:has(.thread, .profile) > .pane { display: none; }
 }
 @media (max-width: 44rem) {
-  .workspace:has(.thread) { grid-template-columns: 3.25rem minmax(0, 1fr); }
+  .workspace:has(.thread, .profile) { grid-template-columns: 3.25rem minmax(0, 1fr); }
 }
+
+/* Unread: the place in bold, and how many messages beside it. */
+.entry.unread { color: var(--rail-strong); font-weight: 700; }
+.entry .count { float: right; margin: 0.1rem 0 0 0.4rem; }
+.count {
+  min-width: 1.15rem; padding: 0 0.35rem; border-radius: 999px;
+  background: #cd2553; color: #fff; font-size: 0.72rem; font-weight: 700; line-height: 1.15rem; text-align: center;
+}
+.badge { position: relative; }
+.badge .count { position: absolute; top: -0.4rem; right: -0.45rem; margin: 0; box-shadow: 0 0 0 2px var(--rail-top); }
+
+/* A conversation with something written in it and not sent. */
+.entry .drafted { margin-left: 0.25rem; font-size: 0.8em; opacity: 0.85; }
+
+/* --- Your own space ------------------------------------------------------- */
+
+.intro { margin: 0 1.25rem 0.75rem; padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 8px; font-size: 0.92rem; }
+.intro h2 { margin: 0 0 0.3rem; font-size: 1.05rem; font-weight: 900; }
+.intro p { margin: 0 0 0.4rem; color: var(--muted); }
+.intro ul { margin: 0; padding-left: 1.2rem; }
+.intro li + li { margin-top: 0.2rem; }
+.intro code { padding: 0.05rem 0.3rem; border: 1px solid var(--line); border-radius: 4px; background: var(--hover); font-size: 0.85em; }
+
+/* --- Profiles --------------------------------------------------------------- */
+
+/* A name or a picture on a message opens its author's profile. */
+.message button.avatar { border: 0; padding: 0; cursor: pointer; }
+.byline .author { border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.byline .author:hover strong { text-decoration: underline; }
+.profile-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 1.25rem; }
+.portrait {
+  display: grid; place-items: center; width: 100%; max-width: 15rem; aspect-ratio: 1; border-radius: 12px;
+  color: #fff; font-weight: 900; font-size: 5rem;
+}
+.profile-body h2 { margin: 1rem 0 0.15rem; font-size: 1.35rem; font-weight: 900; overflow-wrap: anywhere; }
+.presence { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.presence::before {
+  content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.4rem;
+  border: 1.5px solid currentColor; border-radius: 50%;
+}
+.presence.active::before { background: #2bac76; border-color: #2bac76; }
+.motto { margin: 0.5rem 0 0; overflow-wrap: anywhere; }
+.bio { margin: 0.75rem 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+.formal, .role { margin: 0 0 0.2rem; overflow-wrap: anywhere; }
+.formal { color: var(--muted); }
+.details-form { display: flex; flex-direction: column; gap: 0.6rem; }
+.detail { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.85rem; font-weight: 600; }
+.detail input, .detail textarea { font: inherit; font-weight: 400; }
+.detail textarea { resize: vertical; }
+.details-form .choice { display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; }
+.detail.locked input, .detail.locked textarea { background: var(--hover); color: var(--muted); cursor: not-allowed; }
+.profile-body .actions { margin: 1rem 0; }
+.profile-body .details { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; margin: 0; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.9rem; }
+.profile-body .details dt { color: var(--muted); font-weight: 700; }
+.profile-body .details dd { margin: 0; overflow-wrap: anywhere; }
+.profile-body .details a, .profile-body .link { color: var(--link); }
+.profile-body .link { border: 0; padding: 0; background: none; font: inherit; cursor: pointer; }
+.profile-body .link:hover { text-decoration: underline; }
+
+/* --- Teams, and dialogs that pick people --------------------------------- */
+
+.access { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; padding: 0; border: 0; }
+.access legend { margin-bottom: 0.25rem; padding: 0; font-size: 0.85rem; font-weight: 600; }
+.access .choice, .picks-list .choice { display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem; }
+.asking select { width: 100%; font: inherit; }
+.picks-list { list-style: none; max-height: 16rem; overflow-y: auto; margin: 0; padding: 0; }
+.picks-list li { padding: 0.3rem 0; border-top: 1px solid var(--line); }
+.asking .picks-list input, .asking .access input { width: auto; margin: 0; }
+.team h3 { margin: 1.25rem 0 0.4rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.mates { list-style: none; margin: 0; padding: 0; }
+.mates li { display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0; }
+.mates li .link { flex: 1 1 auto; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.mates li .quiet { padding: 0 0.35rem; font-size: 0.8rem; }
+.asking.add-mate { flex-direction: row; align-items: center; margin-top: 0.5rem; }
+.add-mate select { flex: 1 1 auto; min-width: 0; }
 
 /* --- Organizations ---------------------------------------------------------- */
 
@@ -548,3 +624,78 @@ body.chat .menu-items button {
   padding: 0.35rem 0.6rem; font-size: 0.9rem; color: var(--ink);
 }
 body.chat .menu-items button:hover { background: var(--link); color: #fff; }
+
+/* --- Files ------------------------------------------------------------------ */
+
+/* A conversation takes files dropped anywhere on it. */
+.pane { position: relative; }
+.pane[data-live-dragging]::after {
+  content: "Drop to attach"; position: absolute; inset: 0.5rem; display: grid; place-items: center; z-index: 5;
+  border: 2px dashed var(--link); border-radius: 12px; background: color-mix(in srgb, var(--pane) 85%, transparent);
+  color: var(--link); font-size: 1.2rem; font-weight: 800; pointer-events: none;
+}
+.pane[data-live-uploading] .composer-box { border-color: var(--link); }
+.pane[data-live-uploading] .composer-row::after { content: "Uploading…"; font-size: 0.8rem; color: var(--muted); }
+
+/* What a message carries. */
+.attachments { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.4rem; margin-top: 0.3rem; }
+.attachment {
+  display: inline-flex; align-items: center; gap: 0.55rem; max-width: 22rem; padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--pane); color: inherit; text-decoration: none;
+}
+.attachment:hover { border-color: var(--muted); }
+.attachment .kind { font-size: 1.5rem; }
+.attachment .about, .queued .about { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.attachment .about strong, .queued .about strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment .about span, .queued .about span { font-size: 0.75rem; color: var(--muted); }
+.attachment.picture { padding: 0; overflow: hidden; }
+.attachment.picture img { display: block; max-width: 22rem; max-height: 16rem; object-fit: cover; }
+
+/* What waits in the message box. */
+.queue { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem 0.6rem 0; }
+.queued {
+  display: inline-flex; align-items: center; gap: 0.45rem; max-width: 16rem; padding: 0.3rem 0.3rem 0.3rem 0.45rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--hover); font-size: 0.85rem;
+}
+.queued img { width: 2rem; height: 2rem; object-fit: cover; border-radius: 4px; }
+.queued button { padding: 0 0.35rem; }
+.attach { display: inline-grid; place-items: center; padding: 0.05rem 0.3rem; font-size: 1rem; border-radius: 6px; cursor: pointer; }
+.attach:hover { background: var(--hover); }
+
+/* Messages, or the files view. */
+.heading-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.views { display: flex; gap: 0.15rem; }
+.view { border: 0; border-radius: 6px; padding: 0.15rem 0.6rem; background: transparent; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.view:hover { background: var(--hover); }
+.view.current { background: var(--hover); color: var(--ink); }
+.view .tally { margin-left: 0.15rem; font-size: 0.75rem; color: var(--muted); }
+.files { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 1rem 1.25rem; }
+.file-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.9rem; }
+.file { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--pane); }
+.file .glimpse { display: grid; place-items: center; height: 9rem; background: var(--hover); color: inherit; text-decoration: none; overflow: hidden; }
+.file .glimpse img { width: 100%; height: 100%; object-fit: cover; }
+.file .glimpse pre { align-self: stretch; justify-self: stretch; margin: 0; padding: 0.6rem; font-size: 0.7rem; line-height: 1.35; white-space: pre-wrap; overflow: hidden; color: var(--muted); }
+.file .glimpse .kind { font-size: 2.5rem; }
+.file .about { margin: 0.5rem 0.65rem 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
+.file .about a { color: inherit; text-decoration: none; }
+.file .meta { margin: 0.1rem 0.65rem 0.55rem; font-size: 0.75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- Mentions and completions ------------------------------------------------ */
+
+.mention { padding: 0 0.15rem; border-radius: 4px; background: var(--link-soft); color: var(--link); font-weight: 600; }
+.mention.you { background: #fbe8a6; color: #6b4e00; }
+.completions {
+  position: fixed; z-index: 50; margin: 0; padding: 0.3rem; list-style: none; max-width: 30rem;
+  background: var(--pane); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
+}
+.completions li { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.3rem 0.55rem; border-radius: 5px; cursor: pointer; }
+.completions li span { color: var(--muted); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.completions li.chosen { background: var(--link); color: #fff; }
+.completions li.chosen span { color: rgba(255, 255, 255, 0.85); }
+
+/* A slash command somebody used: a line, not a message. */
+.used { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.3rem; margin: 0.15rem 0; padding: 0.15rem 1.25rem 0.15rem 1.6rem; font-size: 0.85rem; color: var(--muted); }
+.used-mark { display: inline-grid; place-items: center; width: 1.1rem; height: 1.1rem; border-radius: 4px; background: var(--hover); color: var(--muted); font-weight: 800; font-size: 0.75rem; }
+.used strong { color: var(--ink); }
+.used code { padding: 0.05rem 0.35rem; border: 1px solid var(--line); border-radius: 4px; background: var(--hover); color: var(--ink); }
+.used time { margin-left: 0.25rem; font-size: 0.72rem; }

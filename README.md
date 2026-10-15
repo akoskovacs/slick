@@ -16,15 +16,37 @@ client-side application: the browser shows markup and sends events.
 - **Organizations.** Each has its own channels and people. Whoever creates
   one is its first member, and adds others by the email they registered with.
 - **Channels and private chats.** A channel has a name and a topic and is
-  open to everyone in its organization; a private chat is between two people.
+  open to everyone in its organization; a private chat is between two people,
+  or one person and themselves: a space of their own for notes, which
+  explains how to try Slick out.
   Every conversation has an address, which the address bar follows.
 - **Threads.** Any message can be replied to beside the conversation.
+- **Unread.** What came since somebody last looked is counted beside each
+  channel and private chat, on other organizations in the rail, and in the
+  page title. Only what is in front of them is read: a tab in the
+  background, or a window behind another, leaves it unread. Starting or
+  replying in a thread follows it, and other people's replies there count
+  on its conversation until the thread is opened.
+- **Files.** Drop files anywhere on a conversation, paste them, or pick them
+  with 📎: they wait in the message box and go with the next message, with
+  or without words. Pictures show in the message; everything sent into a
+  conversation is in its **Files** tab, with previews of pictures and the
+  start of text files. A file is only ever served to who may read where it
+  was sent. They are kept by `Metro.Storage`, in `storage/` unless set.
+- **Drafts.** What is written in a message box and not sent is saved as it
+  is typed, on the server: it is there again after switching conversations,
+  reloading, or on another device, and the sidebar marks where one is ✏️.
 - **Reactions.** 👍 ❤️ 😂 🎉 👀 🙏 on a message; a second click takes yours off.
 - **Rich text.** A light markup, read a line at a time (see below), and
   `:tada:`-style names for emoji; a message of nothing but emoji is shown
   big. Nothing typed is ever treated as HTML.
 - **Presence.** Who has a tab open, who is typing, and a status of your own:
   an emoji and a few words.
+- **Profiles.** A name or picture on a message opens that person's profile
+  beside the conversation: their status, whether they are around, title,
+  department, phone, time zone, a bio, and a way to write to them. A bot's
+  says whose it is. Anyone can go by a nickname instead of their name.
+  Details a directory sync takes over are locked: shown, not changed.
 - **Live.** What one person does shows in everyone's open tabs at once.
 - **Bots.** A bot is a member like any other, and uses Slick through a JSON
   API with a token.
@@ -81,6 +103,14 @@ your own.
 | `tey seed` | migrate, then plant what the environment's database starts with |
 | `tey test` | the specs |
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
+| `tey dev` | the server, then the bots beside it — [muse](../muse-bot) and [opencode](../opencode-bot) — once it answers; Ctrl-C stops all of them |
+
+`tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and
+`BOT_OPERATORS`, the Slick ids of the people who may allow a bot's tools
+and choose opencode's model. Each bot uses its development token — `tey
+seed` plants muse and opencode with theirs, as it does claude — unless
+`MUSE_TOKEN` or `OPENCODE_TOKEN` says otherwise, and is skipped when its
+folder (`MUSE_BOT_DIR`, `OPENCODE_BOT_DIR`) is not there.
 
 ## Settings
 
@@ -91,6 +121,9 @@ your own.
 | `HOST` | the address to bind; 127.0.0.1 unless set |
 | `DATABASE_DSN` | an ODBC connection string; when set, it is the database in every environment |
 | `SQLITE_DRIVER` | the SQLite ODBC driver, when it is not where Homebrew puts it |
+| `LOG_SQL` | `on` or `off`: whether each query is printed, highlighted and timed, as Rails does; on in development unless set |
+| `NO_COLOR` | `1` prints queries without colors (Kex's own); they are plain anyway when the output is not a terminal |
+| `METRO_STORAGE_ROOT` | the folder uploaded files are kept in; `storage` unless set (a volume in Docker) |
 
 ## Writing a message
 

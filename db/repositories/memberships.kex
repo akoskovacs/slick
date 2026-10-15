@@ -30,6 +30,20 @@ foul affiliated?(organizationId: String, userId: String) -> Bool do
   end
 end
 
+# When a person joined an organization, in milliseconds since 1970; 0 if
+# they are not in it.
+foul joined(organizationId: String, userId: String) -> Integer do
+  let found = Database.select([:joined_at]).from(DB.Schema.Memberships)
+    .where(DB.Schema.Memberships.id.eq("${organizationId}:${userId}"))
+    .first
+  match found do
+    Ok(Just(row)) => return DateTime.parse(row.get("joined_at").or(""))
+      .map { |moment| moment.epochSeconds * 1000 }
+      .or(0)
+    _ => return 0
+  end
+end
+
 # The ids of the organizations a person is in, oldest membership first.
 foul affiliations(userId: String) -> Result<[String], String> do
   return Database.select([:organization_id]).from(DB.Schema.Memberships)

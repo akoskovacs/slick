@@ -1,0 +1,52 @@
+# A named set of people in an organization. Mentioning its handle —
+# @design — mentions every one of them, and a team can own channels, which
+# a private one only its members may read. Teams are made and changed in
+# Slick, or brought in by a sync: a SCIM group is a team, and while the
+# sync has it, its name and members are the sync's to change, not anyone's
+# here.
+module App.Models.Team
+
+using App.Models.Organization, only: [OrganizationId]
+
+type TeamId = String
+record Team do
+  id : TeamId
+  organizationId : OrganizationId = ""
+  # What it is mentioned by, without the `@`: "design".
+  handle : String = ""
+  name : String = ""
+  description : String = ""
+  # The id of the group a sync brought it in from; "" for a team made here.
+  externalId : String = ""
+  managed? : Bool = false
+  # The ids of the people in it.
+  members : [String] = []
+end
+
+# How long a handle and a description may be.
+let LONGEST_HANDLE = 30
+let LONGEST_DESCRIPTION = 250
+
+# Whether a handle can be one: lower-case letters, digits and dashes,
+# starting with a letter.
+handle? : String -> Bool
+let handle?(text) do
+  let first = text.chars.first.map { |char| char.letter? && char.lower? }.or(false)
+  let count = text.chars.count
+  first && count >= 2 && count <= LONGEST_HANDLE && text.chars.all? { |char|
+    (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
+  }
+end
+
+# The handle a name suggests: lower case, with dashes between its words.
+handled : String -> String
+let handled(name) do
+  let words = name.trim.lowerCase.split(" ").map { |word|
+    word.chars.filter { |char| char.lower? || char.digit? || "${char}" == "-" }.map { |char| "${char}" }.join("")
+  }
+  words.reject { |word| word.empty? }.join("-").take(LONGEST_HANDLE)
+end
+
+make Team do
+  let includes?(userId: String) -> Bool = @members.contains?(userId)
+end

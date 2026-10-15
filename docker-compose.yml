@@ -37,6 +37,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Files people upload: Metro.Storage's folder, kept across rebuilds.
+    volumes:
+      - files:/app/storage
     environment:
       METRO_ENV: ${METRO_ENV:-production}
       HOST: 0.0.0.0
@@ -47,6 +50,7 @@ services:
 
 volumes:
   data:
+  files:
 
 secrets:
   github_token:

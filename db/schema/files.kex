@@ -1,0 +1,27 @@
+# The `files` table: what each uploaded file is and where it belongs. Its
+# bytes are in `Metro.Storage`, under its id. See
+# db/migrate/N0017_create_files.kex.
+module DB.Schema.Files
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :files do |t|
+  t.text(:id, primaryKey: true)
+  t.text(:user_id)
+  t.text(:conversation_id, default: "")
+  t.text(:message_id, default: "")
+  t.text(:filename)
+  t.text(:content_type)
+  t.bigint(:byte_size)
+  t.text(:checksum)
+  t.bigint(:uploaded_at)
+  t.text(:uploaded_on)
+end
+
+let table = DB.Schema.Files.definition.table
+
+let id = DB.Schema.Files.definition.textColumn(:id)
+let userId = DB.Schema.Files.definition.textColumn(:user_id)
+let conversationId = DB.Schema.Files.definition.textColumn(:conversation_id)
+let messageId = DB.Schema.Files.definition.textColumn(:message_id)

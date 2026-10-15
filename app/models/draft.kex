@@ -1,0 +1,12 @@
+# What somebody has written in a message box and not sent yet: in a
+# conversation, or in one of its threads.
+module App.Models.Draft
+
+record Draft do
+  conversationId : String
+  # The message the thread starts with; "" for the conversation's own box.
+  threadId : String = ""
+  # Who a private chat is with; "" in a channel.
+  personId : String = ""
+  body : String
+end

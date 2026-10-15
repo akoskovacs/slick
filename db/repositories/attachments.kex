@@ -1,0 +1,93 @@
+# Uploaded files: what they are and where they belong.
+#
+#   DB.Repositories.Attachments.inside(conversation.id)
+module DB.Repositories.Attachments
+
+using Harmat.Database, as: Database
+using App.Models.Attachment, only: [Attachment]
+
+# Notes a file somebody has just uploaded: theirs alone, until it is sent.
+foul uploaded(userId: String, blob: Metro.Storage.Blob) -> Result<Attachment, String> do
+  let file = Attachment {
+    id: blob.key,
+    userId: userId,
+    filename: blob.filename,
+    contentType: blob.contentType,
+    byteSize: blob.byteSize,
+    checksum: blob.checksum,
+    uploadedAt: Metro.Clock.milliseconds(),
+    uploadedOn: "${DateTime.now()}"
+  }
+  let row = {
+    id: file.id,
+    user_id: userId,
+    filename: file.filename,
+    content_type: file.contentType,
+    byte_size: file.byteSize,
+    checksum: file.checksum,
+    uploaded_at: file.uploadedAt,
+    uploaded_on: file.uploadedOn
+  }
+  return Database.insert(DB.Schema.Files)
+    .values(row)
+    .run
+    .map { |_| file }
+end
+
+# One file, or `None`.
+foul single(id: String) -> Result<Attachment?, String> do
+  return Database.select().from(DB.Schema.Files)
+    .where(DB.Schema.Files.id.eq(id))
+    .first
+    .map { |row| row.map { |found| decoded(found) } }
+end
+
+# Several files, by id, as many of them as there are.
+foul among(ids: [String]) -> Result<[Attachment], String> do
+  return Database.select().from(DB.Schema.Files)
+    .where(DB.Schema.Files.id.in(ids))
+    .orderBy([:uploaded_at, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
+# Every file sent into a conversation, newest first.
+foul inside(conversationId: String) -> Result<[Attachment], String> do
+  return Database.select().from(DB.Schema.Files)
+    .where(DB.Schema.Files.conversationId.eq(conversationId))
+    .orderBy(descending: [:uploaded_at, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
+# Sends a person's files with a message: only theirs, and only those not
+# sent before. How many went.
+foul sent(
+  userId: String,
+  ids: [String],
+  conversationId: String,
+  messageId: String
+) -> Result<Integer, String> do
+  return Database.within(DB.Schema.Files.userId.eq(userId))
+    .update(DB.Schema.Files)
+    .set({conversation_id: conversationId, message_id: messageId})
+    .where(DB.Schema.Files.id.in(ids))
+    .where(DB.Schema.Files.messageId.eq(""))
+    .run
+end
+
+private do
+  decoded : {String: String} -> Attachment
+  let decoded(row) = Attachment {
+    id: row.get("id").or(""),
+    userId: row.get("user_id").or(""),
+    conversationId: row.get("conversation_id").or(""),
+    messageId: row.get("message_id").or(""),
+    filename: row.get("filename").or(""),
+    contentType: row.get("content_type").or(""),
+    byteSize: row.get("byte_size").or("0").to(Integer).or(0),
+    checksum: row.get("checksum").or(""),
+    uploadedAt: row.get("uploaded_at").or("0").to(Integer).or(0),
+    uploadedOn: row.get("uploaded_on").or("")
+  }
+end

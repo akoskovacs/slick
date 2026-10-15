@@ -79,13 +79,17 @@ foul commanded(store: Server<DB.Store.Store>, args: [String]) -> Void do
   end
 end
 
+# Queries are logged as configured (config/logging.kex) everywhere: the
+# store is started inside, so what it runs in a transaction is logged too.
 main(args) do
-  match (Metro.Environment.current(), Config.Database.dsn) do
-    (Error(reason), _) => failed(reason)
-    (_, Error(reason)) => failed(reason)
-    (_, Ok(dsn)) => match DB.Store.started(dsn) do
-      Error(reason) => failed(reason)
-      Ok(store) => commanded(store, args)
+  with Harmat.Logger = Config.Logging.queries() do
+    match (Metro.Environment.current(), Config.Database.dsn) do
+      (Error(reason), _) => failed(reason)
+      (_, Error(reason)) => failed(reason)
+      (_, Ok(dsn)) => match DB.Store.started(dsn) do
+        Error(reason) => failed(reason)
+        Ok(store) => commanded(store, args)
+      end
     end
   end
 end

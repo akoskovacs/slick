@@ -1,4 +1,8 @@
 ---
 params: [badge: Badge]
 ---
-<button type="button" class="badge<% if badge.current? %> current<% end %>" data-event="organization" data-id="<%= badge.key %>" title="<%= badge.caption %>"><%= badge.glyph %></button>
+<button type="button"
+  class="badge<% if badge.current? %> current<% end %>"
+  data-event="organization" data-id="<%= badge.key %>"
+  title="<%= badge.caption %>"><%= badge.glyph %><% if !badge.unread.empty? %><span class="count"
+    aria-label="<%= badge.unread %> unread"><%= badge.unread %></span><% end %></button>

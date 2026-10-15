@@ -1,0 +1,42 @@
+---
+params: [crew: Crew, mates: String, rooms: String, candidates: String]
+---
+<aside class="profile team" aria-label="Team @<%= crew.moniker %>">
+  <header class="heading thread-head">
+    <h1>Team</h1>
+    <button type="button" class="quiet" data-event="unteam" title="Close team">✕</button>
+  </header>
+  <div class="profile-body">
+    <h2>@<%= crew.moniker %></h2>
+    <p class="formal"><%= crew.caption %> · <%= crew.tally %></p>
+    <% if !crew.blurb.empty? %>
+      <p class="bio"><%= crew.blurb %></p>
+    <% end %>
+    <% if crew.synced? %>
+      <p class="hint">🔒 Kept in sync from your organization's directory: its name and members are changed there.</p>
+    <% else %>
+      <div class="actions">
+        <% if crew.mine? %>
+          <button type="button" data-event="team-leave">Leave</button>
+        <% else %>
+          <button type="button" class="primary" data-event="team-join">Join</button>
+        <% end %>
+        <button type="button" data-event="team-edit">Edit team</button>
+      </div>
+    <% end %>
+    <h3>Members</h3>
+    <ul class="mates"><%== mates %></ul>
+    <% if !crew.synced? && !candidates.empty? %>
+      <form class="asking add-mate" data-live="team-add" data-live-quiet>
+        <select name="person" aria-label="Somebody to add">
+          <%== candidates %>
+        </select>
+        <button type="submit">Add</button>
+      </form>
+    <% end %>
+    <% if !rooms.empty? %>
+      <h3>Channels</h3>
+      <ul class="mates"><%== rooms %></ul>
+    <% end %>
+  </div>
+</aside>

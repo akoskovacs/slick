@@ -1,0 +1,27 @@
+---
+params: [rows: String, nicknamed?: Bool, problem: String, synced?: Bool]
+---
+<div class="backdrop">
+  <section class="editor" id="editor" role="dialog"
+    aria-modal="true" aria-label="Edit your profile">
+    <h2>Edit your profile</h2>
+    <p class="hint">What people see when they open your profile.</p>
+    <form class="asking details-form" data-live="profile-set" data-live-quiet>
+      <%== rows %>
+      <label class="choice">
+        <input type="checkbox" name="show_nickname" value="yes"<% if nicknamed? %> checked<% end %>>
+        Go by my nickname: show it instead of my name
+      </label>
+      <% if synced? %>
+        <p class="hint">🔒 Kept in sync from your organization's directory: change it there.</p>
+      <% end %>
+      <% if !problem.empty? %>
+        <p class="problem" role="alert"><%= problem %></p>
+      <% end %>
+      <div class="actions">
+        <button type="submit" class="primary">Save</button>
+        <button type="button" class="quiet" data-event="cancel">Cancel</button>
+      </div>
+    </form>
+  </section>
+</div>

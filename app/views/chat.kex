@@ -8,11 +8,17 @@
 module App.Views.Chat
 
 using App.Live.Tab, only: [Tab]
+using App.Live.Unread, only: [Unread]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
 using App.Models.Answer, only: [Answer]
+using App.Models.Attachment, only: [Attachment]
+using App.Models.Command, only: [Command]
+using App.Models.Invocation, only: [Invocation]
+using App.Models.Draft, only: [Draft]
+using App.Models.Team, only: [Team]
 using App.Helpers.RichText, only: [Given]
 using App.Models.User, only: [User]
 using Metro.Live.Presence, only: [Note]
@@ -32,6 +38,10 @@ record Entry do
   # The emoji of their status, and its words for whoever points at it.
   emblem : String = ""
   emblemNote : String = ""
+  # Whether something is written there and not sent, and so marked ✏️.
+  drafted? : Bool = false
+  # How many messages there are not read yet: "3", "99+", or "".
+  unread : String = ""
 end
 
 # One of my bots, in the bots dialog.
@@ -51,6 +61,8 @@ record Badge do
   glyph : String
   caption : String
   current? : Bool
+  # How many messages there are not read yet, all of it together.
+  unread : String = ""
 end
 
 # One message.
@@ -66,6 +78,8 @@ record Bubble do
   # The author's first letter and one of eight colours, for the avatar.
   initial : String
   tint : String
+  # The author's id, to open their profile with.
+  writer : String = ""
   stamp : String
   # The message as markup, already escaped: `App.Helpers.RichText.html`.
   content : String
@@ -79,12 +93,140 @@ record Bubble do
   continued? : Bool = false
 end
 
+# Somebody's profile, beside the conversation.
+record Card do
+  key : String
+  caption : String
+  initial : String
+  tint : String
+  badged : String = ""
+  emblem : String = ""
+  motto : String = ""
+  # "Active" or "Away".
+  presence : String
+  active? : Bool
+  # Their email; "" for a bot, whose address is nobody's to write to.
+  mail : String = ""
+  # Who a bot belongs to, and the id of that person to open their profile
+  # with; "" for a person, and a key of "" for an organization's bot.
+  keeper : String = ""
+  keeperKey : String = ""
+  # What else their profile says, as they gave it; "" for what it does not.
+  # `alias` is their name when they go by their nickname.
+  alias : String = ""
+  role : String = ""
+  team : String = ""
+  about : String = ""
+  dial : String = ""
+  zone : String = ""
+  # Whether it is whoever is looking.
+  own? : Bool
+end
+
+# One detail in the form that changes a profile.
+record Detail do
+  key : String
+  caption : String
+  worth : String
+  longest : String
+  hint : String = ""
+  # Whether it is a few lines rather than one.
+  long? : Bool = false
+  # Whether a sync has taken it over: shown, and not to be changed here.
+  locked? : Bool = false
+end
+
+# A file, as a message, the message box or the files view shows it.
+record Enclosure do
+  key : String
+  caption : String
+  # Where it is fetched from, and how big it is in words.
+  href : String
+  weight : String
+  pictured? : Bool = false
+  # The start of a text file, for the files view; "" for anything else.
+  glimpse : String = ""
+  # Who sent it, and when.
+  sender : String = ""
+  stamp : String = ""
+end
+
+# The files of the conversation a tab shows: those sent into it, newest
+# first, and this person's waiting in the message box. `glimpses` are the
+# starts of text files, by id, read only while the files view is open.
+record Cabinet do
+  stored : [Attachment] = []
+  queued : [Attachment] = []
+  glimpses : {String: String} = {}
+end
+
+# What every message of a conversation is shown with: who is looking, who
+# is there, and the reactions, answers and files of its messages.
+record Room do
+  viewer : User
+  people : [User]
+  # The organization's teams: mentioned, and offered to mention.
+  teams : [Team] = []
+  reactions : [Reaction]
+  responses : [Answer]
+  files : [Attachment]
+  # The slash commands the bots here answer to, and whether here is more
+  # than a private chat — a channel or a group chat, where a bot is only
+  # listening when it is mentioned.
+  commands : [Command] = []
+  channel? : Bool = false
+  # The slash commands used here, oldest first: shown where they happened.
+  invocations : [Invocation] = []
+end
+
+# A slash command somebody used, as the conversation shows it. The fields
+# are not named like functions: a template would call those (kexhq/kex#448).
+record Usage do
+  key : String
+  who : String
+  verb : String
+  extra : String = ""
+  addressee : String
+  stamp : String
+end
+
 # What somebody is in the middle of, under the conversation.
 record Standing do
   who : String
   doing : String
   # When it stops being true, in milliseconds since 1970.
   lapses : String
+end
+
+# Somebody who can be picked, in a dialog that picks people.
+record Pick do
+  key : String
+  caption : String
+  badged : String = ""
+end
+
+# A team, as the pane beside the conversation shows it.
+record Crew do
+  # Its handle, and its name.
+  moniker : String
+  caption : String
+  blurb : String = ""
+  # "3 members".
+  tally : String
+  synced? : Bool = false
+  # Whether whoever is looking is in it.
+  mine? : Bool = false
+end
+
+# One line of a list in the team pane: a member, or a channel. `action` and
+# `subject` are the event it sends and the field it sends it with.
+record Mate do
+  key : String
+  caption : String
+  action : String
+  subject : String
+  badged : String = ""
+  removable? : Bool = false
 end
 
 # One emoji under a message: how many put it there, and whether I did.
@@ -103,6 +245,12 @@ let badgePartial = Template.html(Kex.embed("chat/_badge.html.ket"))
 let botPartial = Template.html(Kex.embed("chat/_bot.html.ket"))
 let botsPartial = Template.html(Kex.embed("chat/_bots.html.ket"))
 let dialogPartial = Template.html(Kex.embed("chat/_dialog.html.ket"))
+let channelPartial = Template.html(Kex.embed("chat/_channel.html.ket"))
+let peoplePartial = Template.html(Kex.embed("chat/_people.html.ket"))
+let pickPartial = Template.html(Kex.embed("chat/_pick.html.ket"))
+let teamFormPartial = Template.html(Kex.embed("chat/_team_form.html.ket"))
+let teamPartial = Template.html(Kex.embed("chat/_team.html.ket"))
+let matePartial = Template.html(Kex.embed("chat/_mate.html.ket"))
 let welcomePartial = Template.html(Kex.embed("chat/_welcome.html.ket"))
 let bubblePartial = Template.html(Kex.embed("chat/_bubble.html.ket"))
 let chipPartial = Template.html(Kex.embed("chat/_chip.html.ket"))
@@ -110,7 +258,14 @@ let topbarPartial = Template.html(Kex.embed("chat/_topbar.html.ket"))
 let moodPartial = Template.html(Kex.embed("chat/_mood.html.ket"))
 let statusPartial = Template.html(Kex.embed("chat/_status.html.ket"))
 let threadPartial = Template.html(Kex.embed("chat/_thread.html.ket"))
+let usedPartial = Template.html(Kex.embed("chat/_used.html.ket"))
+let profilePartial = Template.html(Kex.embed("chat/_profile.html.ket"))
+let detailsPartial = Template.html(Kex.embed("chat/_details.html.ket"))
+let detailPartial = Template.html(Kex.embed("chat/_detail.html.ket"))
 let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
+let attachmentPartial = Template.html(Kex.embed("chat/_attachment.html.ket"))
+let queuedPartial = Template.html(Kex.embed("chat/_queued.html.ket"))
+let filePartial = Template.html(Kex.embed("chat/_file.html.ket"))
 
 # The document: head, who is signed in, the live region, and Metro's script.
 # The live region is all of it, the bar across the top included: the name
@@ -120,70 +275,312 @@ let page(live) = layout(live)
 
 # The live region for somebody who is in no organization yet.
 welcome : Tab -> User -> String
-let welcome(tab, user) = welcomePartial(user.shown, user.email, tab.dialogProblem, topbar(user))
+let welcome(tab, user) = welcomePartial(
+  user.shown,
+  user.email,
+  tab.dialogProblem,
+  topbar(user, false)
+)
 
 # The live region.
 #
 # `organizations` are the ones this person is in; `organization` is the one
-# the tab is in, and the channels and people are its.
+# the tab is in, and the channels, group chats, teams and people are its —
+# the channels and group chats this person may read.
 # `thread` is the open thread — the message that started it, then the
 # replies — or empty.
 #
 # `bots` are the ones this person may look after here — the organization's
 # and their own — and only asked for while their dialog is open.
 #
+# `drafts` are what this person has written and not sent, anywhere, and
+# `unread` how much they have not read; `cabinet` the conversation's files.
+#
 # `doing` is what other people there are in the middle of right now.
 #
 # `online` are the ids of the people with a tab open.
-index : Tab -> User -> [Organization] -> Organization -> [Conversation] -> [User] -> [String] -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> [Message] -> [Note] -> String
-let index(tab, user, organizations, organization, channels, people, online, bots, conversation, messages, reactions, responses, thread, doing) do
+let index(
+  tab: Tab,
+  user: User,
+  organizations: [Organization],
+  organization: Organization,
+  channels: [Conversation],
+  groups: [Conversation],
+  teams: [Team],
+  people: [User],
+  online: [String],
+  bots: [User],
+  drafts: [Draft],
+  unread: Unread,
+  cabinet: Cabinet,
+  commands: [Command],
+  invocations: [Invocation],
+  conversation: Conversation?,
+  messages: [Message],
+  reactions: [Reaction],
+  responses: [Answer],
+  thread: [Message],
+  doing: [Note]
+) -> String do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
-    badgePartial(Badge { key: each.id, glyph: each.name.take(1).upperCase, caption: each.name, current?: each.id == organization.id })
+    badgePartial(Badge {
+      key: each.id,
+      glyph: each.name.take(1).upperCase,
+      caption: each.name,
+      current?: each.id == organization.id,
+      unread: counted(unread.organizations.get(each.id).or(0))
+    })
   }
   let channelLines = channels.map { |channel|
-    entryPartial(Entry { action: "open", subject: "id", key: channel.id, caption: "# ${channel.title}", current?: channel.id == shown })
+    let here = channel.id == shown
+    entryPartial(Entry {
+      action: "open",
+      subject: "id",
+      key: channel.id,
+      caption: channelName(channel),
+      current?: here,
+      drafted?: !here && drafts.any? { |draft| draft.conversationId == channel.id },
+      unread: counted(unread.channels.get(channel.id).or(0))
+    })
   }
-  # A person's own bots have a list of their own; everybody else's, and the
-  # organization's, are among the people, marked as bots.
-  let personLines = people.reject { |person| person.id == user.id || person.ownerId == user.id }.map { |person|
-    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
-  }
-  let robotLines = people.filter { |person| person.ownerId == user.id }.map { |person|
-    let chatting = conversation.map { |open| !open.channel? && open.counterpart(user.id) == person.id }.or(false)
-    entryPartial(Entry { action: "direct", subject: "user", key: person.id, caption: person.shown, current?: chatting, badged: person.bot? then "BOT" else "", online?: person.bot? || online.contains?(person.id), emblem: person.statusEmoji, emblemNote: person.statusText })
-  }
-  let beside = thread.empty? then "" else threadPane(user, people, reactions, responses, thread)
-  let place = conversation.map { |open| located(organization, open, user, thread) }.or("")
-  let caption = conversation.map { |open| "${titled(open, user, people)} · ${organization.name}" }.or(organization.name)
   # This person as stored now: the `user` a tab was opened with does not
   # know of a status set since.
   let me = people.find { |person| person.id == user.id }.or(user)
+  let alone = conversation
+    .map { |open| open.solo? && open.admits?(user.id) }
+    .or(false)
+  let selfLine = entryPartial(Entry {
+    ...personEntry(me, conversation, user, online, drafts, unread),
+    caption: "${me.shown} (you)",
+    current?: alone,
+    drafted?: !alone && waiting(drafts, user.id)
+  })
+  # A person's own bots have a list of their own; everybody else's, and the
+  # organization's, are among the people, marked as bots.
+  let personLines = people
+    .reject { |person| person.id == user.id || person.ownerId == user.id }
+    .map { |person| entryPartial(personEntry(person, conversation, user, online, drafts, unread)) }
+  let robotLines = people
+    .filter { |person| person.ownerId == user.id }
+    .map { |person| entryPartial(personEntry(person, conversation, user, online, drafts, unread)) }
+  let groupLines = groups.map { |group|
+    let here = group.id == shown
+    entryPartial(Entry {
+      action: "open",
+      subject: "id",
+      key: group.id,
+      caption: gathered(group, user, people),
+      current?: here,
+      drafted?: !here && drafts.any? { |draft| draft.conversationId == group.id },
+      unread: counted(unread.groups.get(group.id).or(0))
+    })
+  }
+  let teamLines = teams.map { |team|
+    entryPartial(Entry {
+      action: "team",
+      subject: "id",
+      key: team.id,
+      caption: "@${team.handle}",
+      current?: team.id == tab.team
+    })
+  }
+  let room = Room {
+    viewer: user,
+    people: people,
+    teams: teams,
+    reactions: reactions,
+    responses: responses,
+    files: cabinet.stored,
+    commands: commands,
+    channel?: conversation.map { |open| !open.direct? }.or(false),
+    invocations: invocations
+  }
+  let unsent = { |threadId|
+    drafts
+      .find { |draft| draft.conversationId == shown && draft.threadId == threadId }
+      .map { |draft| draft.body }
+      .or("")
+  }
+  let beside = if !thread.empty?
+    threadPane(room, thread, unsent(opened(thread)))
+  elif !tab.team.empty?
+    teamPane(tab, user, people, teams, channels)
+  else
+    profilePane(tab, user, organization, people, online)
+  end
+  let place = conversation
+    .map { |open| located(organization, open, user, thread) }
+    .or("")
+  let named = conversation
+    .map { |open| "${titled(open, user, people)} · ${organization.name}" }
+    .or(organization.name)
+  let caption = unread.total > 0 then "(${counted(unread.total)}) ${named}" else named
+  let open = pane(
+    tab,
+    room,
+    conversation,
+    messages,
+    cabinet,
+    thread.empty? && tab.dialog.empty?,
+    doing,
+    unsent("")
+  )
   frame(
-    tab.failure, tab.notice, badges.join("\n"), organization.name, channelLines.join("\n"), personLines.join("\n"), robotLines.join("\n"), topbar(me),
-    pane(tab, user, people, conversation, messages, reactions, responses, thread.empty? && tab.dialog.empty?, doing) + beside,
-    asking(tab, organization, people, bots, me), place, caption
+    tab.failure,
+    tab.notice,
+    badges.join("\n"),
+    organization.name,
+    channelLines.join("\n"),
+    ([selfLine] + groupLines + personLines).join("\n"),
+    robotLines.join("\n"),
+    teamLines.join("\n"),
+    topbar(me, true),
+    open + beside,
+    asking(tab, organization, people, bots, me, teams, conversation),
+    place,
+    caption
   )
 end
 
 private do
   # The bar across the top: who is signed in, and under their name what
-  # they say about themselves and the way to change it.
-  topbar : User -> String
-  let topbar(me) do
+  # they say about themselves and the way to change it. `placed?` is whether
+  # they are in an organization, where they have a profile to open.
+  topbar : User -> Bool -> String
+  let topbar(me, placed?) do
     let set = !me.statusEmoji.empty? || !me.statusText.empty?
     let saying = set then "${me.statusEmoji} ${me.statusText}".trim else "No status set"
-    topbarPartial(me.shown, me.statusEmoji, saying, set)
+    topbarPartial(me.shown, me.statusEmoji, saying, set, placed? then me.id else "")
   end
+
+  # The profile a tab has open, if it is of somebody in the organization.
+  # A bot's says whose it is: a person's, or the organization's.
+  profilePane : Tab -> User -> Organization -> [User] -> [String] -> String
+  let profilePane(tab, user, organization, people, online) do
+    match people.find { |person| person.id == tab.profile } do
+      None => ""
+      Just(person) => do
+        let active = person.bot? || online.contains?(person.id)
+        let owner = people.find { |each| each.id == person.ownerId }
+        let keeper = if person.ownerOrganizationId.empty?
+          owner.map { |each| each.shown }.or(person.bot? then "Someone" else "")
+        else
+          organization.name
+        end
+        profilePartial(Card {
+          key: person.id,
+          caption: person.shown,
+          initial: person.shown.take(1).upperCase,
+          tint: "${BEAM.erlang.phash2(person.id, 8)}",
+          badged: person.bot? then "BOT" else "",
+          emblem: person.statusEmoji,
+          motto: person.statusText,
+          presence: active then "Active" else "Away",
+          active?: active,
+          mail: person.bot? then "" else person.email,
+          keeper: keeper,
+          keeperKey: owner.map { |each| each.id }.or(""),
+          own?: person.id == user.id,
+          alias: person.shown == person.name then "" else person.name,
+          role: person.title,
+          team: person.department,
+          dial: person.phone,
+          zone: person.timeZone,
+          about: person.bio
+        })
+      end
+    end
+  end
+
+  # The team a tab has open, if it is one of the organization's: who is in
+  # it, the channels it owns that this person may read, and — unless a sync
+  # keeps it — who else could be added.
+  teamPane : Tab -> User -> [User] -> [Team] -> [Conversation] -> String
+  let teamPane(tab, user, people, teams, channels) do
+    match teams.find { |team| team.id == tab.team } do
+      None => ""
+      Just(team) => do
+        let mates = team.members.flatMap { |id|
+          people.find { |person| person.id == id }.map { |person|
+            [matePartial(Mate {
+              key: person.id,
+              caption: person.id == user.id then "${person.shown} (you)" else person.shown,
+              action: "profile",
+              subject: "user",
+              badged: person.bot? then "BOT" else "",
+              removable?: !team.managed?
+            })]
+          }.or([])
+        }
+        let rooms = channels
+          .filter { |channel| channel.teamId == team.id }
+          .map { |channel|
+            matePartial(Mate {
+              key: channel.id,
+              caption: channelName(channel),
+              action: "open",
+              subject: "id"
+            })
+          }
+        let candidates = people
+          .reject { |person| team.includes?(person.id) }
+          .map { |person|
+            let id = Template.escapeHtml(person.id)
+            "<option value=\"${id}\">${Template.escapeHtml(person.shown)}</option>"
+          }
+        let count = team.members.count
+        teamPartial(
+          Crew {
+            moniker: team.handle,
+            caption: team.name,
+            blurb: team.description,
+            tally: count == 1 then "1 member" else "${count} members",
+            synced?: team.managed?,
+            mine?: team.includes?(user.id)
+          },
+          mates.join("\n"),
+          rooms.join("\n"),
+          candidates.join("")
+        )
+      end
+    end
+  end
+
+  # A channel as a list shows it: `# name`, or `🔒 name` for a private one.
+  channelName : Conversation -> String
+  let channelName(channel) = channel.open? then "# ${channel.title}" else "🔒 ${channel.title}"
+
+  # A group chat as a list shows it: the others in it, by name.
+  gathered : Conversation -> User -> [User] -> String
+  let gathered(group, user, people) = group.participants
+    .reject { |id| id == user.id }
+    .map { |id| shownAs(people, id, "Someone") }
+    .sort
+    .join(", ")
 
   # Where a conversation is, as an address: the one the address bar shows
   # and `App.Live.Chat.arrived` reads back.
   located : Organization -> Conversation -> User -> [Message] -> String
   let located(organization, conversation, user, thread) do
-    let channel = App.Paths.channelPath.filled({"organization": organization.slug, "name": conversation.title})
-    let direct = App.Paths.directPath.filled({"organization": organization.slug, "person": conversation.counterpart(user.id)})
-    App.Paths.threaded(conversation.channel? then channel else direct, opened(thread))
+    let channel = App.Paths.channelPath.filled({
+      "organization": organization.slug,
+      "name": conversation.title
+    })
+    let direct = App.Paths.directPath.filled({
+      "organization": organization.slug,
+      "person": conversation.counterpart(user.id)
+    })
+    let group = App.Paths.groupPath.filled({
+      "organization": organization.slug,
+      "group": conversation.id
+    })
+    let address = match conversation.kind do
+      "channel" => channel
+      "group" => group
+      _ => direct
+    end
+    App.Paths.threaded(address, opened(thread))
   end
 
   # The id of the message an open thread starts with; "" when none is open.
@@ -195,55 +592,229 @@ private do
   # each is, by the name they go by.
   answered : Message -> User -> [User] -> [Answer] -> [Given]
   let answered(message, user, people, responses) do
-    responses.filter { |each| each.messageId == message.id }.map { |each|
-      let who = people.find { |person| person.id == each.userId }.map { |person| person.shown }.or("Someone")
-      Given { form: each.form, who: who, mine?: each.userId == user.id, answer: each.answer }
-    }
+    responses
+      .filter { |each| each.messageId == message.id }
+      .map { |each|
+        Given {
+          form: each.form,
+          who: shownAs(people, each.userId, "Someone"),
+          mine?: each.userId == user.id,
+          answer: each.answer
+        }
+      }
   end
 
+  # What somebody is called, by id; `otherwise` for nobody known.
+  shownAs : [User] -> String -> String -> String
+  let shownAs(people, id, otherwise) = people
+    .find { |person| person.id == id }
+    .map { |person| person.shown }
+    .or(otherwise)
+
   # The dialog a tab has open, if any.
-  asking : Tab -> Organization -> [User] -> [User] -> User -> String
-  let asking(tab, organization, people, bots, me) do
+  asking : Tab -> Organization -> [User] -> [User] -> User -> [Team] -> Conversation? -> String
+  let asking(tab, organization, people, bots, me, teams, conversation) do
     if tab.dialog == "status"
-      let presets = App.Models.Emoji.STATUSES.map { |entry| match entry do (glyph, words) => preset(glyph, words) end }
-      let glyphs = [""] + App.Models.Emoji.STATUSES.map { |entry| match entry do (glyph, _) => glyph end } + App.Models.Emoji.KNOWN.map { |entry| match entry do (_, glyph) => glyph end }
-      let options = glyphs.map { |glyph| choice(glyph, glyph == me.statusEmoji) }
+      let presets = App.Models.Emoji.STATUSES.map { |entry|
+        match entry do
+          (glyph, words) => preset(glyph, words)
+        end
+      }
+      let statusGlyphs = App.Models.Emoji.STATUSES.map { |entry|
+        match entry do
+          (glyph, _) => glyph
+        end
+      }
+      let knownGlyphs = App.Models.Emoji.KNOWN.map { |entry|
+        match entry do
+          (_, glyph) => glyph
+        end
+      }
+      let options = ([""] + statusGlyphs + knownGlyphs).map { |glyph|
+        choice(glyph, glyph == me.statusEmoji)
+      }
       return moodPartial(presets.join(""), options.join(""), me.statusText, tab.dialogProblem)
+    end
+
+    if tab.dialog == "profile"
+      let inputs = App.Models.User.DETAILS.map { |entry|
+        match entry do
+          (column, label, longest) => detailPartial(Detail {
+            key: column,
+            caption: label,
+            worth: me.detail(column),
+            longest: "${longest}",
+            hint: column == "time_zone" then "Europe/Budapest" else "",
+            long?: column == "bio",
+            locked?: me.locked?(column)
+          })
+        end
+      }
+      return detailsPartial(
+        inputs.join("\n"),
+        me.nicknameShown?,
+        tab.dialogProblem,
+        !me.managed.empty?
+      )
     end
 
     if tab.dialog == "bots"
       let rows = bots.map { |bot|
         let shared = !bot.ownerOrganizationId.empty?
         botPartial(Robot {
-          key: bot.id, caption: bot.shown, here?: shared || people.any? { |person| person.id == bot.id }, spot: organization.name,
+          key: bot.id,
+          caption: bot.shown,
+          here?: shared || people.any? { |person| person.id == bot.id },
+          spot: organization.name,
           belonging: shared then "belongs to ${organization.name}" else "yours"
         })
       }
-      return botsPartial(organization.name, rows.join("\n"), tab.dialogProblem, tab.secret, tab.secretFor)
+      return botsPartial(
+        organization.name,
+        rows.join("\n"),
+        tab.dialogProblem,
+        tab.secret,
+        tab.secretFor
+      )
     end
 
     if tab.dialog == "channel"
-      return dialogPartial(
+      let owners = teams
+        .filter { |team| team.includes?(me.id) }
+        .map { |team|
+          "<option value=\"${Template.escapeHtml(team.id)}\">@${Template.escapeHtml(team.handle)}</option>"
+        }
+      return channelPartial(
         "Create a channel",
-        "Everyone in ${organization.name} can read it and write in it. Lower-case letters, digits and dashes.",
+        "A name of lower-case letters, digits and dashes.",
         "create",
-        "title",
-        "new-channel",
+        organization.name,
+        owners.join(""),
+        tab.dialogProblem,
+        "Create",
+        false
+      )
+    end
+
+    if tab.dialog == "promote"
+      return channelPartial(
+        "Make it a channel",
+        "Everyone in this chat stays in it, with everything said so far. " +
+          "A channel everyone can read shows them all of it, too.",
+        "promote-set",
+        organization.name,
+        "",
+        tab.dialogProblem,
+        "Make it a channel",
+        true
+      )
+    end
+
+    if tab.dialog == "group"
+      let others = people.reject { |person| person.id == me.id }
+      return peoplePartial(
+        "Start a group chat",
+        "Everyone you pick, and you: only you can read it. Pick one person for a private chat.",
+        "gather",
+        picks(others),
+        tab.dialogProblem,
+        "Start"
+      )
+    end
+
+    if tab.dialog == "admit"
+      let outside = conversation
+        .map { |open| people.reject { |person| open.admits?(person.id) } }
+        .or([])
+      let named = conversation.map { |open| open.title }.or("")
+      return peoplePartial(
+        "Add people to ${named}",
+        "They can read everything said in it, and write in it.",
+        "admit-set",
+        picks(outside),
+        tab.dialogProblem,
+        "Add"
+      )
+    end
+
+    if tab.dialog == "team"
+      return teamFormPartial(
+        "Create a team",
+        "People mentioned all at once, who can own channels. You are in it to start with.",
+        "team-form",
+        "",
+        "",
+        "",
+        false,
         tab.dialogProblem,
         "Create"
       )
     end
 
-    return dialogPartial("Create an organization", "Its own channels and people, apart from every other.", "charter", "name", "Acme", tab.dialogProblem, "Create") if tab.dialog == "organization"
-    return dialogPartial("Add people to ${organization.name}", "The email somebody registered with. They are in as soon as you add them.", "enlist", "email", "name@example.com", tab.dialogProblem, "Add") if tab.dialog == "invite"
+    if tab.dialog == "team-edit"
+      match teams.find { |team| team.id == tab.team } do
+        Just(team) => return teamFormPartial(
+          "Edit @${team.handle}",
+          "Its handle stays: it is how it was mentioned so far.",
+          "team-set",
+          team.name,
+          team.handle,
+          team.description,
+          true,
+          tab.dialogProblem,
+          "Save"
+        )
+        None => return ""
+      end
+    end
+
+    if tab.dialog == "organization"
+      return dialogPartial(
+        "Create an organization",
+        "Its own channels and people, apart from every other.",
+        "charter",
+        "name",
+        "Acme",
+        tab.dialogProblem,
+        "Create"
+      )
+    end
+
+    if tab.dialog == "invite"
+      return dialogPartial(
+        "Add people to ${organization.name}",
+        "The email somebody registered with. They are in as soon as you add them.",
+        "enlist",
+        "email",
+        "name@example.com",
+        tab.dialogProblem,
+        "Add"
+      )
+    end
 
     ""
   end
 
+  # People to pick, as checkboxes.
+  picks : [User] -> String
+  let picks(people) = people
+    .map { |person|
+      pickPartial(Pick {
+        key: person.id,
+        caption: person.shown,
+        badged: person.bot? then "BOT" else ""
+      })
+    }
+    .join("\n")
+
   # A ready-made status, set with one click. Both are this program's own
   # constants, not anything typed.
   preset : String -> String -> String
-  let preset(glyph, words) = "<button type=\"button\" data-event=\"status-set\" data-emoji=\"${glyph}\" data-text=\"${words}\">${glyph} ${words}</button>"
+  let preset(glyph, words) = [
+    "<button type=\"button\" data-event=\"status-set\"",
+    " data-emoji=\"${glyph}\" data-text=\"${words}\">",
+    "${glyph} ${words}</button>"
+  ].join("")
 
   choice : String -> Bool -> String
   let choice("", chosen?) = "<option value=\"\">No emoji</option>"
@@ -253,7 +824,16 @@ private do
   # The emoji buttons that type into one message box.
   picked : String -> String
   let picked(target) do
-    App.Models.Emoji.KNOWN.map { |entry| match entry do (code, glyph) => "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\" data-target=\"${target}\" title=\":${code}:\">${glyph}</button>" end }.join("")
+    App.Models.Emoji.KNOWN
+      .map { |entry|
+        match entry do
+          (code, glyph) => [
+            "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\"",
+            " data-target=\"${target}\" title=\":${code}:\">${glyph}</button>"
+          ].join("")
+        end
+      }
+      .join("")
   end
 
   tallied : Integer -> String
@@ -261,77 +841,355 @@ private do
   let tallied(1) = "1 reply"
   let tallied(replies) = "${replies} replies"
 
-  # The thread beside the conversation: its first message, then the replies.
-  threadPane : User -> [User] -> [Reaction] -> [Answer] -> [Message] -> String
-  let threadPane(user, people, reactions, responses, thread) do
-    let opener = thread.take(1).map { |message| bubble(message, user, people, reactions, responses, true, false) }.join("")
-    let followups = sequence(thread.drop(1), "", 0, user, people, reactions, responses, true)
-    let summary = followups.empty? then "No replies yet" else tallied(followups.count)
-    threadPartial(opener, summary, followups.join("\n"), composerPartial("reply", "reply-box", "Reply…", picked("#reply-box"), true))
+  # A number of unread messages as a badge shows it; nothing for none.
+  counted : Integer -> String
+  let counted(0) = ""
+  let counted(count) = count > 99 then "99+" else "${count}"
+
+  # Somebody in the sidebar, as a line that opens the private chat with
+  # them.
+  let personEntry(
+    person: User,
+    conversation: Conversation?,
+    user: User,
+    online: [String],
+    drafts: [Draft],
+    unread: Unread
+  ) -> Entry do
+    let chatting = conversation
+      .map { |open| open.direct? && open.counterpart(user.id) == person.id }
+      .or(false)
+    Entry {
+      action: "direct",
+      subject: "user",
+      key: person.id,
+      caption: person.shown,
+      current?: chatting,
+      badged: person.bot? then "BOT" else "",
+      online?: person.bot? || online.contains?(person.id),
+      emblem: person.statusEmoji,
+      emblemNote: person.statusText,
+      drafted?: !chatting && waiting(drafts, person.id),
+      unread: counted(unread.people.get(person.id).or(0))
+    }
   end
 
-  pane : Tab -> User -> [User] -> Conversation? -> [Message] -> [Reaction] -> [Answer] -> Bool -> [Note] -> String
-  let pane(tab, user, people, None, messages, reactions, responses, alone?, doing) = "<section class=\"pane\"><p class=\"empty\">That conversation is not there, or is not yours to read. Pick one on the left.</p></section>"
-  let pane(tab, user, people, Just(conversation), messages, reactions, responses, alone?, doing) do
-    let title = titled(conversation, user, people)
-    let heading = headingPartial(title, App.Models.Emoji.shown(conversation.topic), conversation.channel?, tab.retitling?)
-    let bubbles = sequence(messages, "", 0, user, people, reactions, responses, false)
-    let emptied = messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
-    "<section class=\"pane\">${heading}<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">${emptied}${bubbles.join("\n")}</div><p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">${statuses(doing, people)}</p>${composerPartial("send", "message-box", "Message ${title}", picked("#message-box"), alone?)}</section>"
+  # Whether a private chat with somebody has something written and not sent.
+  waiting : [Draft] -> String -> Bool
+  let waiting(drafts, personId) = drafts.any? { |draft|
+    !draft.personId.empty? && draft.personId == personId
+  }
+
+  # The thread beside the conversation: its first message, then the replies.
+  threadPane : Room -> [Message] -> String -> String
+  let threadPane(room, thread, unsent) do
+    let opener = thread.take(1).map { |message| bubble(room, message, true, false) }.join("")
+    let uses = room.invocations.filter { |used| used.threadId == opened(thread) }
+    let followups = woven(room, thread.drop(1), uses, "", 0, true)
+    let summary = followups.empty? then "No replies yet" else tallied(followups.count)
+    let composer = composerPartial(
+      "reply",
+      "reply-box",
+      "Reply…",
+      picked("#reply-box"),
+      true,
+      unsent,
+      "",
+      false,
+      mentionable(room),
+      offered(room)
+    )
+    threadPartial(opener, summary, followups.join("\n"), composer)
   end
+
+  # The conversation, or with `tab.view` "files", what was sent into it.
+  # Either way files can be dropped anywhere on it, pasted into it or
+  # chosen with 📎, and wait in the message box to be sent. `unsent` is
+  # what is written in its message box and not sent yet.
+  let pane(
+    tab: Tab,
+    room: Room,
+    conversation: Conversation?,
+    messages: [Message],
+    cabinet: Cabinet,
+    alone?: Bool,
+    doing: [Note],
+    unsent: String
+  ) -> String do
+    match conversation do
+      None => return [
+        "<section class=\"pane\"><p class=\"empty\">",
+        "That conversation is not there, or is not yours to read. Pick one on the left.",
+        "</p></section>"
+      ].join("")
+      Just(open) => do
+        let title = titled(open, room.viewer, room.people)
+        let filing = tab.view == "files"
+        let heading = headingPartial(
+          title,
+          App.Models.Emoji.shown(open.topic),
+          open.channel?,
+          tab.retitling?,
+          filing,
+          cabinet.stored.empty? then "" else "${cabinet.stored.count}",
+          noted(open, room.teams),
+          open.channel? && !open.open?,
+          open.group?
+        )
+        let queued = cabinet.queued
+          .map { |file| queuedPartial(enclosed(file, room.people, "")) }
+          .join("")
+        let composer = composerPartial(
+          "send",
+          "message-box",
+          open.solo? then "Jot something down…" else "Message ${title}",
+          picked("#message-box"),
+          alone?,
+          unsent,
+          queued,
+          true,
+          mentionable(room),
+          offered(room)
+        )
+        let shown = if filing
+          filed(cabinet, room.people)
+        else
+          let uses = room.invocations.filter { |used| used.threadId.empty? }
+          let bubbles = woven(room, messages, uses, "", 0, false)
+          let emptied = if open.solo?
+            soloIntro
+          else
+            messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
+          end
+          [
+            "<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">",
+            emptied,
+            bubbles.join("\n"),
+            "</div>",
+            "<p class=\"statuses\" id=\"statuses\" aria-live=\"polite\">",
+            statuses(doing, room.people),
+            "</p>"
+          ].join("")
+        end
+        return [
+          "<section class=\"pane\" data-live-drop=\"share\">",
+          heading,
+          shown,
+          composer,
+          "</section>"
+        ].join("")
+      end
+    end
+  end
+
+  # What a conversation's heading says about who can read it, under its
+  # topic: who owns a channel, and who is in a private one or a group chat.
+  noted : Conversation -> [Team] -> String
+  let noted(conversation, teams) do
+    let owner = teams.find { |team| team.id == conversation.teamId }.map { |team| "@${team.handle}" }
+    let count = conversation.participants.count
+    match conversation.kind do
+      "direct" => "Private: only the two of you can read this."
+      "group" => "Private: only the ${count} of you can read this."
+      _ => do
+        let belongs = owner.map { |handle| " Belongs to ${handle}." }.or("")
+        let people = count == 1 then "1 person" else "${count} people"
+        conversation.open? then belongs.trim else "🔒 Private: only its ${people} can read this.${belongs}"
+      end
+    end
+  end
+
+  # Who the composer offers to mention, as JSON for its hook: everyone here
+  # but whoever is writing, then the teams.
+  mentionable : Room -> String
+  let mentionable(room) do
+    let people : [Any] = room.people
+      .reject { |person| person.id == room.viewer.id }
+      .map { |person|
+        let entry : {String: Any} = {"name": person.shown, "detail": person.bot? then "bot" else ""}
+        entry
+      }
+    let teams : [Any] = room.teams.map { |team|
+      let count = team.members.count
+      let entry : {String: Any} = {
+        "name": team.handle,
+        "detail": "team · ${team.name} · ${count == 1 then "1 person" else "${count} people"}"
+      }
+      entry
+    }
+    JSON.stringify(people + teams)
+  end
+
+  # The commands the composer offers, as JSON for its hook: each with what
+  # choosing it types — in a channel the bot's name first, since a bot there
+  # only hears what mentions it.
+  offered : Room -> String
+  let offered(room) do
+    let listed : [Any] = room.commands.map { |command|
+      let bot = shownAs(room.people, command.botId, "")
+      let typed = room.channel? then "@${bot} /${command.name} " else "/${command.name} "
+      let entry : {String: Any} = {
+        "name": command.name,
+        "description": command.description,
+        "bot": bot,
+        "insert": typed
+      }
+      entry
+    }
+    JSON.stringify(listed)
+  end
+
+  # Everything sent into a conversation, newest first.
+  filed : Cabinet -> [User] -> String
+  let filed(cabinet, people) do
+    if cabinet.stored.empty?
+      return [
+        "<div class=\"files\"><p class=\"empty\">",
+        "No files here yet. Drop some in, paste them, or attach them with 📎.",
+        "</p></div>"
+      ].join("")
+    end
+
+    let cards = cabinet.stored.map { |file|
+      filePartial(enclosed(file, people, cabinet.glimpses.get(file.id).or("")))
+    }
+    "<div class=\"files\"><ul class=\"file-grid\">${cards.join("\n")}</ul></div>"
+  end
+
+  # A file as the page shows it.
+  enclosed : Attachment -> [User] -> String -> Enclosure
+  let enclosed(file, people, glimpse) = Enclosure {
+    key: file.id,
+    caption: file.filename,
+    href: file.address,
+    weight: file.sized,
+    pictured?: file.picture?,
+    glimpse: glimpse,
+    sender: shownAs(people, file.userId, "Someone"),
+    stamp: file.uploadedOn.take(16).replace("T", " ")
+  }
+
+  # What somebody's chat with themselves is for, at the start of it.
+  let soloIntro = Kex.embed("chat/_solo.html")
 
   # "Ada is typing…", or what a bot says it is doing: "deploy-bot Deploying…".
   statuses : [Note] -> [User] -> String
   let statuses(doing, people) do
-    doing.map { |note|
-      let who = people.find { |person| person.id == note.member }.map { |person| person.shown }.or("Someone")
-      let what = note.saying.empty? then "is typing…" else "${note.saying}…"
-      statusPartial(Standing { who: who, doing: what, lapses: "${note.lapses}" })
-    }.join(" ")
+    doing
+      .map { |note|
+        statusPartial(Standing {
+          who: shownAs(people, note.member, "Someone"),
+          doing: note.saying.empty? then "is typing…" else "${note.saying}…",
+          lapses: "${note.lapses}"
+        })
+      }
+      .join(" ")
   end
 
   # What a conversation is called for this person: `# name` for a channel,
-  # the other person for a private chat.
+  # `🔒 name` for a private one, the others for a group chat, the other
+  # person for a private chat, and themselves "(you)".
   titled : Conversation -> User -> [User] -> String
   let titled(conversation, user, people) do
-    return "# ${conversation.title}" if conversation.channel?
+    return channelName(conversation) if conversation.channel?
+    return gathered(conversation, user, people) if conversation.group?
 
     let other = conversation.counterpart(user.id)
-    people.find { |person| person.id == other }.map { |person| person.shown }.or("Private chat")
+    return "${shownAs(people, other, user.shown)} (you)" if other == user.id
+    shownAs(people, other, "Private chat")
   end
 
   # How long after a message the same person's next one still counts as
   # carrying on from it, in milliseconds.
   let RUN = 300000
 
-  # Messages in order, each knowing whether it carries on from the one
-  # before: consecutive messages of one person are shown as one block, under
-  # one name. `lastUser` and `lastAt` are the message before.
-  sequence : [Message] -> String -> Integer -> User -> [User] -> [Reaction] -> [Answer] -> Bool -> [String]
-  let sequence([], lastUser, lastAt, user, people, reactions, responses, inThread?) = []
-  let sequence([message | rest], lastUser, lastAt, user, people, reactions, responses, inThread?) do
-    let carries = message.userId == lastUser && message.sentAt - lastAt < RUN
-    [bubble(message, user, people, reactions, responses, inThread?, carries)] + sequence(rest, message.userId, message.sentAt, user, people, reactions, responses, inThread?)
+  # Messages, and the slash commands used among them, in the order they
+  # happened. Consecutive messages of one person are one block, under one
+  # name; a command used between them ends the block. `lastUser` and
+  # `lastAt` are the message before.
+  woven : Room -> [Message] -> [Invocation] -> String -> Integer -> Bool -> [String]
+  let woven(room, [], uses, lastUser, lastAt, inThread?) = uses.map { |used| usage(room, used) }
+  let woven(room, [message | rest], uses, lastUser, lastAt, inThread?) do
+    let before = uses.filter { |used| used.invokedAt < message.sentAt }
+    if !before.empty?
+      let lines = before.map { |used| usage(room, used) }
+      lines + woven(room, [message] + rest, uses.drop(before.count), "", 0, inThread?)
+    else
+      let carries = message.userId == lastUser && message.sentAt - lastAt < RUN
+      [bubble(room, message, inThread?, carries)] + woven(room, rest, uses, message.userId, message.sentAt, inThread?)
+    end
   end
+
+  # One slash command used, as its line in the conversation.
+  usage : Room -> Invocation -> String
+  let usage(room, used) = usedPartial(Usage {
+    key: used.id,
+    who: shownAs(room.people, used.userId, "Someone"),
+    verb: used.command,
+    extra: used.arguments,
+    addressee: "@${shownAs(room.people, used.botId, "a bot")}",
+    stamp: used.invokedOn.drop(11).take(5)
+  })
 
   # `inThread?` is whether it is shown in the thread pane, where a message
   # has its own element id and no way to open the thread it is already in.
-  bubble : Message -> User -> [User] -> [Reaction] -> [Answer] -> Bool -> Bool -> String
-  let bubble(message, user, people, reactions, responses, inThread?, carries) do
-    let writer = people.find { |person| person.id == message.userId }
+  bubble : Room -> Message -> Bool -> Bool -> String
+  let bubble(room, message, inThread?, carries) do
+    let writer = room.people.find { |person| person.id == message.userId }
     let author = writer.map { |person| person.shown }.or("Someone")
-    let badged = writer.map { |person| person.bot? }.or(false) then "BOT" else ""
-    let emblem = writer.map { |person| person.statusEmoji }.or("")
-    let emblemNote = writer.map { |person| person.statusText }.or("")
-    let mine = reactions.filter { |reaction| reaction.messageId == message.id }
-    let chips = mine.map { |reaction| reaction.emoji }.uniq.map { |glyph|
-      let givers = mine.filter { |reaction| reaction.emoji == glyph }
-      chipPartial(Chip { key: message.id, glyph: glyph, tally: "${givers.count}", own?: givers.any? { |reaction| reaction.userId == user.id } })
+    let mine = room.reactions.filter { |reaction| reaction.messageId == message.id }
+    let chips = mine
+      .map { |reaction| reaction.emoji }
+      .uniq
+      .map { |glyph|
+        let givers = mine.filter { |reaction| reaction.emoji == glyph }
+        chipPartial(Chip {
+          key: message.id,
+          glyph: glyph,
+          tally: "${givers.count}",
+          own?: givers.any? { |reaction| reaction.userId == room.viewer.id }
+        })
+      }
+    let offers = App.Models.Emoji.PALETTE.map { |glyph|
+      chipPartial(Chip {
+        key: message.id,
+        glyph: glyph,
+        tally: "",
+        own?: false
+      })
     }
-    let offers = App.Models.Emoji.PALETTE.map { |glyph| chipPartial(Chip { key: message.id, glyph: glyph, tally: "", own?: false }) }
+    let attached = room.files
+      .filter { |file| file.messageId == message.id }
+      .reverse
+      .map { |file| attachmentPartial(enclosed(file, room.people, "")) }
+    let given = answered(message, room.viewer, room.people, room.responses)
     bubblePartial(
-      Bubble { key: message.id, anchor: inThread? then "thread-${message.id}" else "message-${message.id}", answers: inThread? then "" else tallied(message.replyCount), threadable?: !inThread?, continued?: carries, author: author, badged: badged, emblem: emblem, emblemNote: emblemNote, initial: author.take(1).upperCase, tint: "${BEAM.erlang.phash2(message.userId, 8)}", stamp: message.sentOn.drop(11).take(5), content: App.Helpers.RichText.shown(message.body, message.id, answered(message, user, people, responses)), own?: message.userId == user.id },
-      chips.join(""), offers.join("")
+      Bubble {
+        key: message.id,
+        anchor: inThread? then "thread-${message.id}" else "message-${message.id}",
+        answers: inThread? then "" else tallied(message.replyCount),
+        threadable?: !inThread?,
+        continued?: carries,
+        author: author,
+        badged: writer.map { |person| person.bot? }.or(false) then "BOT" else "",
+        emblem: writer.map { |person| person.statusEmoji }.or(""),
+        emblemNote: writer.map { |person| person.statusText }.or(""),
+        initial: author.take(1).upperCase,
+        writer: message.userId,
+        tint: "${BEAM.erlang.phash2(message.userId, 8)}",
+        stamp: message.sentOn.drop(11).take(5),
+        content: App.Helpers.RichText.mentioned(
+          App.Helpers.RichText.shown(message.body, message.id, given),
+          room.people.map { |person| person.shown } + room.teams.map { |team| team.handle },
+          [shownAs(room.people, room.viewer.id, room.viewer.shown)] + room.teams
+            .filter { |team| team.includes?(room.viewer.id) }
+            .map { |team| team.handle }
+        ),
+        own?: message.userId == room.viewer.id
+      },
+      chips.join(""),
+      offers.join(""),
+      attached.join("")
     )
   end
 end

@@ -1,0 +1,23 @@
+---
+params: [heading: String, lead: String, verb: String, rows: String, problem: String, label: String]
+---
+<div class="backdrop">
+  <section class="editor" id="editor" role="dialog" aria-modal="true" aria-label="<%= heading %>">
+    <h2><%= heading %></h2>
+    <p class="hint"><%= lead %></p>
+    <form class="asking details-form" data-live="<%= verb %>" data-live-quiet>
+      <% if rows.empty? %>
+        <p class="empty">There is nobody else to pick.</p>
+      <% else %>
+        <ul class="picks-list"><%== rows %></ul>
+      <% end %>
+      <% if !problem.empty? %>
+        <p class="problem" role="alert"><%= problem %></p>
+      <% end %>
+      <div class="actions">
+        <button type="submit" class="primary"><%= label %></button>
+        <button type="button" class="quiet" data-event="cancel">Cancel</button>
+      </div>
+    </form>
+  </section>
+</div>

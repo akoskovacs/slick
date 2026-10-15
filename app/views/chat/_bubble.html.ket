@@ -1,15 +1,18 @@
 ---
-params: [bubble: Bubble, chips: String, offers: String]
+params: [bubble: Bubble, chips: String, offers: String, attached: String]
 ---
 <article class="message<% if bubble.own? %> own<% end %><% if bubble.continued? %> continued<% end %>" id="<%= bubble.anchor %>">
 <% if bubble.continued? %>
   <time class="gutter"><%= bubble.stamp %></time>
 <% else %>
-  <span class="avatar tint-<%= bubble.tint %>" aria-hidden="true"><%= bubble.initial %></span>
+  <button type="button" class="avatar tint-<%= bubble.tint %>"
+    tabindex="-1" aria-hidden="true"
+    data-event="profile" data-user="<%= bubble.writer %>"><%= bubble.initial %></button>
 <% end %>
   <div class="said">
   <% if !bubble.continued? %>
-    <p class="byline"><strong><%= bubble.author %></strong>
+    <p class="byline"><button type="button" class="author"
+      data-event="profile" data-user="<%= bubble.writer %>"><strong><%= bubble.author %></strong></button>
     <% if !bubble.emblem.empty? %>
       <span class="emblem" title="<%= bubble.emblemNote %>"><%= bubble.emblem %></span>
     <% end %>
@@ -19,6 +22,9 @@ params: [bubble: Bubble, chips: String, offers: String]
     <time><%= bubble.stamp %></time></p>
   <% end %>
   <div class="body"><%== bubble.content %></div>
+  <% if !attached.empty? %>
+    <div class="attachments"><%== attached %></div>
+  <% end %>
   <div class="reactions"><%== chips %></div>
   <% if !bubble.answers.empty? %>
     <button type="button" class="answers" data-event="thread" data-message="<%= bubble.key %>"><%= bubble.answers %></button>

@@ -1,0 +1,13 @@
+---
+params: [mate: Mate]
+---
+<li>
+  <button type="button" class="link" data-event="<%= mate.action %>" data-<%= mate.subject %>="<%= mate.key %>"><%= mate.caption %></button>
+  <% if !mate.badged.empty? %>
+    <span class="flag"><%= mate.badged %></span>
+  <% end %>
+  <% if mate.removable? %>
+    <button type="button" class="quiet" data-event="team-remove" data-user="<%= mate.key %>"
+      title="Take <%= mate.caption %> out of the team">✕</button>
+  <% end %>
+</li>

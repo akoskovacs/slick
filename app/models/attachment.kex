@@ -1,0 +1,53 @@
+# A file somebody uploaded: its bytes are in `Metro.Storage` under its id.
+# It is theirs alone until it is sent with a message into a conversation.
+module App.Models.Attachment
+
+using Units.Data
+
+record Attachment do
+  id : String
+  userId : String
+  conversationId : String = ""
+  messageId : String = ""
+  filename : String
+  contentType : String
+  byteSize : Integer
+  checksum : String = ""
+  uploadedAt : Integer = 0
+  # When, in this server's time, as messages say it: "2026-10-15T10:11:…".
+  uploadedOn : String = ""
+end
+
+make Attachment do
+  # Whether it has been sent yet.
+  let sent? -> Bool = !@messageId.empty?
+
+  # Whether it is a picture a page can show.
+  let picture? -> Bool = Metro.Storage.picture?(@contentType)
+
+  # Whether it is text worth showing the start of.
+  let textual? -> Bool = @contentType.startsWith?("text/") || @contentType == "application/json"
+
+  # Where it is fetched from: the name at the end is for whoever saves it.
+  let address -> String = "/files/${@id}"
+
+  # Its size in words, to a tenth: "512 B", "4.3 KB", "1.5 MB" — decimal
+  # units, as a file manager shows them.
+  let sized -> String do
+    return "${@byteSize} B" if @byteSize < 1.kilobyte
+    let unit = @byteSize < 1.megabyte then KB else (@byteSize < 1.gigabyte then MB else GB)
+    @byteSize.byte
+      .convertTo(unit)
+      .map { |size| "${(size.value * 10.0).round / 10.0} ${size.unit.symbol}" }
+      .or("${@byteSize} B")
+  end
+
+  # The blob `Metro.Storage.served` answers with.
+  let blob -> Metro.Storage.Blob = Metro.Storage.Blob {
+    key: @id,
+    filename: @filename,
+    contentType: @contentType,
+    byteSize: @byteSize,
+    checksum: @checksum
+  }
+end

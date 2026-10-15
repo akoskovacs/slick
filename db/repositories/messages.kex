@@ -18,6 +18,27 @@ foul latest(conversationId: String, limit: Integer) -> Result<[Message], String>
     .map { |rows| rows.map { |row| decoded(row) }.reverse }
 end
 
+# How many messages of a conversation are newer than `since`, in
+# milliseconds since 1970. Replies are not counted: they are read in their
+# thread.
+foul newer(conversationId: String, since: Integer) -> Result<Integer, String> do
+  return Database.select().from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.conversationId.eq(conversationId))
+    .where(DB.Schema.Messages.parentId.eq(""))
+    .where(DB.Schema.Messages.sentAt.gt(since))
+    .count
+end
+
+# The replies to any of these messages newer than `since`, oldest first.
+foul replyingTo(rootIds: [String], since: Integer) -> Result<[Message], String> do
+  return Database.select().from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.parentId.in(rootIds))
+    .where(DB.Schema.Messages.sentAt.gt(since))
+    .orderBy([:sent_at, :id])
+    .all
+    .map { |rows| rows.map { |row| decoded(row) } }
+end
+
 # The replies to a message, oldest first.
 foul answering(rootId: String) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)
@@ -50,17 +71,23 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     sent_on: message.sentOn,
     parent_id: parent
   }
-  let stored = Database.insert(DB.Schema.Messages)
-    .values(row)
-    .run
-  return stored.map { |_| message } if stored.error? || parent.empty?
-
-  let replies = answering(parent).try
-  return Database.update(DB.Schema.Messages)
-    .set({reply_count: replies.count})
-    .where(DB.Schema.Messages.id.eq(parent))
-    .run
-    .map { |_| message }
+  # A reply and its thread's count change together, or not at all.
+  let stored : Result<Integer, String> = Database.transaction do
+    let inserted = Database.insert(DB.Schema.Messages)
+      .values(row)
+      .run
+      .try
+    if parent.empty?
+      Ok(inserted)
+    else
+      let replies = answering(parent).try
+      Database.update(DB.Schema.Messages)
+        .set({reply_count: replies.count})
+        .where(DB.Schema.Messages.id.eq(parent))
+        .run
+    end
+  end
+  return stored.map { |_| message }
 end
 
 # One message, or `None`.
