@@ -196,14 +196,14 @@ fixed, and simplifying where a workaround stayed.
 | Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
 | Slick `app/live/chat.kex` | `redescribed`, `givenFor` | kexhq/kex#451; a local `chosen` | `described`, `chosen` |
 | Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |
-| Slick `db/repositories/messages.kex` | `newer(…, since:)` | `after` is a keyword | `after` |
+| Slick `db/repositories/messages.kex` | `newer(…, since:)` | kexhq/kex#508: `after` is a keyword | `after` |
 | Slick `app/models/attachment.kex` | rounding by hand | kexhq/kex#491 | `to(String, places: 1)` |
 | Harmat `changeColumn` | one block of two lines: what it was, what it becomes | kexhq/kex#499 | `from:` and `to:` blocks |
-| Harmat `migration.kex` | `prior`, `changed` | `after` is a keyword | `before`, `after` |
-| Slick `app/models/conversation.kex` | `open?` | `public` is a keyword | `public?` |
+| Harmat `migration.kex` | `prior`, `changed` | kexhq/kex#508: `after` is a keyword | `before`, `after` |
+| Slick `app/models/conversation.kex` | `open?` | kexhq/kex#508: `public` is a keyword | `public?` |
 | Slick `app/views/chat.kex` | `Crew.moniker`, `Crew.caption`, `Crew.blurb` | #448 (Harmat has a `tag`) | `handle`, `name`, `description` |
-| Harmat `Database` | `every(table)` | like #492, with a make-block method (`Select.all`) | `all(table)` |
-| Harmat `Insert` | `valuesOf(record)` | `record` is a keyword | `record(…)` |
-| Harmat `database.kex` | `readAs`, one clause per type name | match arms of different types do not check, even into `Any` | one `match` |
-| Slick `app/models/conversation.kex` | `accessOf`, clauses | two constructors of one type in `then … else` do not check as that type | `access == "private" then Private else Public` |
-| Slick `db/schema` | `Type.named("App.Models.Conversation.Kind")` | `Type.of(Channel)` on an imported constructor answers the constructor, not its type | `Type.of(Channel)` |
+| Harmat `Database` | `every(table)` | kexhq/kex#492 (comment: a make-block method, `Select.all`) | `all(table)` |
+| Harmat `Insert` | `valuesOf(record)` | kexhq/kex#508: `record` is a keyword | `record(…)` |
+| Harmat `database.kex` | `readAs`, one clause per type name | kexhq/kex#506 | one `match` |
+| Slick `app/models/conversation.kex` | `accessOf`, clauses | kexhq/kex#504 | `access == "private" then Private else Public` |
+| Slick `db/schema` | `Type.named("App.Models.Conversation.Kind")` | kexhq/kex#505, #509 | `Type.of(Kind)` |

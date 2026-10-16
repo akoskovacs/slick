@@ -33,7 +33,8 @@ end
 
 # Who may read a channel, as a form says it: "private", or anything else
 # for everyone. (Clauses, not `then … else`: two constructors of one type
-# in the branches of `then … else` do not check as that type.)
+# in the branches of `then … else` do not check as that type —
+# kexhq/kex#504.)
 accessOf : String -> Access
 let accessOf("private") = Private
 let accessOf(text) = Public
