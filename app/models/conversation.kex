@@ -5,19 +5,24 @@ module App.Models.Conversation
 using App.Models.Organization, only: [OrganizationId]
 
 type ConversationId = String
+
+# What a conversation is: a channel, a private chat between two people, or a
+# group chat between three or more. Stored as "channel", "direct", "group".
+type Kind = Channel | Direct | Group
+
+# Who may read a channel: anyone in the organization, or only who is in it —
+# as only who is in it may read a group chat.
+type Access = Public | Private
 record Conversation do
   id : ConversationId
-  # "channel", "direct" or "group".
-  kind : String = "channel"
+  kind : Kind = Channel
   slug : String = ""
   title : String = ""
   topic : String = ""
   firstUser : String = ""
   secondUser : String = ""
   organizationId : OrganizationId = ""
-  # "public" for a channel anyone in the organization may read; "private"
-  # for one only its participants may — as a group chat always is.
-  access : String = "public"
+  access : Access = Public
   # The team that owns a channel; "" for none.
   teamId : String = ""
   # Who may read a private channel or a group chat: its participants and,
@@ -25,6 +30,13 @@ record Conversation do
   # in; it is empty for the rest.
   participants : [String] = []
 end
+
+# Who may read a channel, as a form says it: "private", or anything else
+# for everyone. (Clauses, not `then … else`: two constructors of one type
+# in the branches of `then … else` do not check as that type.)
+accessOf : String -> Access
+let accessOf("private") = Private
+let accessOf(text) = Public
 
 # The channel every workspace starts with.
 let GENERAL = "general"
@@ -40,25 +52,25 @@ gathering : [String] -> String
 let gathering(people) = "&${people.uniq.sort.join(",")}"
 
 make Conversation do
-  let channel? -> Bool = @kind == "channel"
-  let group? -> Bool = @kind == "group"
-  let direct? -> Bool = @kind == "direct"
+  let channel? -> Bool = @kind == Channel
+  let group? -> Bool = @kind == Group
+  let direct? -> Bool = @kind == Direct
 
   # Whether anyone in the organization may read it: a public channel.
   # (`open?`, not `public?`: `public` is a Kex keyword.)
-  let open? -> Bool = @kind == "channel" && @access == "public"
+  let open? -> Bool = @kind == Channel && @access == Public
 
   # Whether this person may read and write here, given that they are in its
   # organization: anyone in a public channel, the two people of a private
   # chat, and the participants of anything else.
   let admits?(userId: String) -> Bool do
-    return true if @kind == "channel" && @access == "public"
-    return @firstUser == userId || @secondUser == userId if @kind == "direct"
+    return true if @kind == Channel && @access == Public
+    return @firstUser == userId || @secondUser == userId if @kind == Direct
     @participants.contains?(userId)
   end
 
   # Whether it is somebody's chat with themselves.
-  let solo? -> Bool = @kind == "direct" && @firstUser == @secondUser
+  let solo? -> Bool = @kind == Direct && @firstUser == @secondUser
 
   # The other person of a private chat.
   let counterpart(userId: String) -> String = @firstUser == userId then @secondUser else @firstUser

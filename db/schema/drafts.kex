@@ -1,17 +1,15 @@
-# The `drafts` table. `thread_id` is the message a thread starts with, or ""
-# for the conversation's own message box; `person_id` who a private chat is
-# with, and "" in a channel.
+# The `drafts` table. See db/migrate/N0014_create_drafts.kex.
 module DB.Schema.Drafts
 
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :drafts do |t|
+let definition = Table.define :drafts, doc: "What somebody has written and not sent, in each message box" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:user_id)
-  t.text(:conversation_id)
-  t.text(:thread_id)
-  t.text(:person_id)
+  t.belongsTo(:user, :users)
+  t.belongsTo(:conversation, :conversations)
+  t.belongsTo(:thread, :messages, doc: "The message a thread starts with; empty for the conversation's own box")
+  t.belongsTo(:person, :users, doc: "Who a private chat is with; empty elsewhere")
   t.text(:body)
   t.bigint(:saved_at)
 end

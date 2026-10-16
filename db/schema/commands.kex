@@ -5,10 +5,10 @@ module DB.Schema.Commands
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :commands do |t|
+let definition = Table.define :commands, doc: "Each bot's slash commands, by name" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:bot_id)
-  t.text(:name)
+  t.belongsTo(:bot, :users)
+  t.text(:name, doc: "Without the slash: model")
   t.text(:description, default: "")
 end
 

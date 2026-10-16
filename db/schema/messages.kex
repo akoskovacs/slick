@@ -4,15 +4,22 @@ module DB.Schema.Messages
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :messages do |t|
+let definition = Table.define :messages, doc: "What was said, and replies in threads" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:conversation_id)
-  t.text(:user_id)
+  t.belongsTo(:conversation, :conversations)
+  t.belongsTo(:user, :users)
   t.text(:body)
-  t.bigint(:sent_at)
+  t.bigint(:sent_at, doc: "Milliseconds since 1970")
   t.text(:sent_on)
-  t.text(:parent_id, default: "")
+  t.belongsTo(:parent, :messages, default: "", doc: "The message a reply answers; empty for one that is not a reply")
   t.int(:reply_count, default: 0)
+  t.hasMany(:drafts, :drafts)
+  t.hasMany(:readings, :readings)
+  t.hasMany(:files, :files)
+  t.hasMany(:reactions, :reactions)
+  t.hasMany(:invocations, :invocations)
+  t.hasMany(:answers, :answers)
+  t.hasMany(:replies, :messages)
 end
 
 let table = DB.Schema.Messages.definition.table

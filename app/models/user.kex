@@ -6,12 +6,14 @@ module App.Models.User
 using App.Models.Organization, only: [OrganizationId]
 
 type UserId = String
+
+# Whether someone is a person, who signs in with a password, or a bot.
+type Role = Person | Bot
 record User do
   id : UserId
   email : String
   name : String = ""
-  # "person" or "bot".
-  kind : String = "person"
+  kind : Role = Person
   # A bot belongs to a person or to an organization: one of these is set
   # on a bot, and neither on a person.
   ownerId : String = ""
@@ -32,7 +34,7 @@ record User do
   # A name they may go by instead, everywhere they are shown, when they
   # choose to.
   nickname : String = ""
-  nicknameShown? : Bool = false
+  showNickname? : Bool = false
   phone : String = ""
   timeZone : String = ""
   # The details a sync has taken over, by column: they are shown, and are
@@ -54,12 +56,12 @@ let DETAILS = [
 ]
 
 make User do
-  let bot? -> Bool = @kind == "bot"
+  let bot? -> Bool = @kind == Bot
 
   # What to call them: their nickname, if they go by it; else their name,
   # or the front of their email until they have one.
   let shown -> String do
-    return @nickname if @nicknameShown? && !@nickname.empty?
+    return @nickname if @showNickname? && !@nickname.empty?
     return @email.split("@").first.or(@email) if @name.empty?
     @name
   end

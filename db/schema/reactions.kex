@@ -4,11 +4,11 @@ module DB.Schema.Reactions
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :reactions do |t|
+let definition = Table.define :reactions, doc: "Emoji on messages" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:conversation_id)
-  t.text(:message_id)
-  t.text(:user_id)
+  t.belongsTo(:conversation, :conversations)
+  t.belongsTo(:message, :messages)
+  t.belongsTo(:user, :users)
   t.text(:emoji)
 end
 

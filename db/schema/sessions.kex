@@ -1,14 +1,13 @@
-# The `sessions` table: who is signed in where. `token_digest` is the SHA-256
-# of the token in the browser's cookie; `expires_at` is seconds since 1970.
+# The `sessions` table. See db/migrate/N0002_create_sessions.kex.
 module DB.Schema.Sessions
 
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :sessions do |t|
-  t.text(:token_digest, primaryKey: true)
-  t.text(:user_id)
-  t.bigint(:expires_at)
+let definition = Table.define :sessions, doc: "Who is signed in where" do |t|
+  t.text(:token_digest, primaryKey: true, doc: "The SHA-256 of the token in the browser's cookie")
+  t.belongsTo(:user, :users)
+  t.bigint(:expires_at, doc: "Seconds since 1970")
   t.text(:created_at)
 end
 

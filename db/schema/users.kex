@@ -1,20 +1,20 @@
-# The `users` table. `password_hash` is a `Metro.Auth.Password` line, never a
-# password; `name` is what a person is called in a conversation.
+# The `users` table. See db/migrate/N0001_create_users.kex and the
+# migrations that add to it.
 module DB.Schema.Users
 
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :users do |t|
+let definition = Table.define :users, doc: "People, who sign in with a password, and bots, which use the API with a token" do |t|
   t.text(:id, primaryKey: true)
   t.text(:email)
-  t.text(:password_hash)
+  t.text(:password_hash, doc: "A Metro.Auth.Password line, never a password")
   t.text(:created_at)
-  t.text(:name, default: "")
-  t.text(:kind, default: "person", oneOf: ["person", "bot"])
-  t.text(:owner_id, default: "")
+  t.text(:name, doc: "What they are called in a conversation", default: "")
+  t.text(:kind, default: "person", oneOf: Harmat.Column.choices(Type.named("App.Models.User.Role")), doc: "A person or a bot")
+  t.belongsTo(:owner, :users, default: "", doc: "The person a bot belongs to")
   t.text(:api_token_digest, default: "")
-  t.text(:owner_organization_id, default: "")
+  t.belongsTo(:owner_organization, :organizations, default: "", doc: "The organization a bot belongs to")
   t.text(:status_emoji, default: "")
   t.text(:status_text, default: "")
   t.text(:title, default: "")
@@ -24,7 +24,28 @@ let definition = Table.define :users do |t|
   t.text(:show_nickname, default: "")
   t.text(:phone, default: "")
   t.text(:time_zone, default: "")
-  t.text(:managed, default: "")
+  t.text(:managed, default: "", doc: "The details a sync has taken over, by column, separated by commas")
+  t.hasMany(:drafts, :drafts, via: :user_id)
+  t.hasMany(:drafts_with, :drafts, via: :person_id)
+  t.hasMany(:team_memberships, :team_members)
+  t.hasMany(:sessions, :sessions)
+  t.hasMany(:memberships, :memberships)
+  t.hasMany(:readings, :readings)
+  t.hasMany(:files, :files)
+  t.hasMany(:first_chats, :conversations, via: :first_user)
+  t.hasMany(:second_chats, :conversations, via: :second_user)
+  t.hasMany(:conversations_created, :conversations, via: :created_by)
+  t.hasMany(:bots, :users)
+  t.hasMany(:commands, :commands)
+  t.hasMany(:reactions, :reactions)
+  t.hasMany(:organizations_created, :organizations)
+  t.hasMany(:commands_used, :invocations, via: :bot_id)
+  t.hasMany(:invocations, :invocations, via: :user_id)
+  t.hasMany(:answers_received, :answers, via: :asker_id)
+  t.hasMany(:answers, :answers, via: :user_id)
+  t.hasMany(:teams_created, :teams)
+  t.hasMany(:messages, :messages)
+  t.hasMany(:participants, :participants)
 end
 
 let table = DB.Schema.Users.definition.table

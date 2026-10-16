@@ -9,36 +9,27 @@
 module DB.Repositories.Conversations
 
 using Harmat.Database, as: Database
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, Access, Channel, Direct, Group, Public, Private]
 
 # Every channel of an organization, by name: the private ones too, which
 # not everyone may read.
 foul channels(organizationId: String) -> Result<[Conversation], String> do
-  let rows = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("channel"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
+  return Database.select().from(DB.Schema.Conversations)
+    .by({kind: Channel, organization_id: organizationId})
     .orderBy([:title])
-    .all
-    .try
-  return peopled(rows.map { |row| decoded(row) })
+    .into(BLANK)
+    .flatMap { |found| peopled(found) }
 end
 
 # One conversation, or `None`.
 foul lookup(id: String) -> Result<Conversation?, String> do
-  let row = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.id.eq(id))
-    .first
-    .try
-  return single(row)
+  return Database.find(DB.Schema.Conversations, id, into: BLANK).flatMap { |found| single(found) }
 end
 
 # An organization's channel of this name, or `None`.
 foul channelCalled(organizationId: String, title: String) -> Result<Conversation?, String> do
-  let row = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.slug.eq("${organizationId}#${title}"))
-    .first
-    .try
-  return single(row)
+  return Database.findBy(DB.Schema.Conversations, {slug: "${organizationId}#${title}"}, into: BLANK)
+    .flatMap { |found| single(found) }
 end
 
 # Creates a channel: public, or private to whoever made it — and, when a
@@ -49,35 +40,24 @@ foul founded(
   organizationId: String,
   title: String,
   by: String,
-  access: String = "public",
+  access: Access = Public,
   teamId: String = ""
 ) -> Result<Conversation, String> do
   let channel = Conversation {
     id: Metro.Id.generate(prefix: "c"),
-    kind: "channel",
+    kind: Channel,
     slug: "${organizationId}#${title}",
     title: title,
     organizationId: organizationId,
     access: access,
     teamId: teamId
   }
-  let row = {
-    id: channel.id,
-    kind: "channel",
-    slug: channel.slug,
-    title: title,
-    organization_id: organizationId,
-    access: access,
-    team_id: teamId,
-    created_by: by,
-    created_at: "${DateTime.utcNow()}"
-  }
   let made : Result<Conversation, String> = Database.transaction do
     Database.insert(DB.Schema.Conversations)
-      .values(row)
+      .valuesOf(channel, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
       .run
       .try
-    let first = access == "private" then [by] else []
+    let first = access == Private then [by] else []
     admitted(channel.id, first).try
     Ok(Conversation { ...channel, participants: first })
   end
@@ -90,33 +70,21 @@ end
 foul among(organizationId: String, people: [String], by: String) -> Result<Conversation, String> do
   let everyone = (people + [by]).uniq.sort
   let slug = "${organizationId}${App.Models.Conversation.gathering(everyone)}"
-  let existing = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.slug.eq(slug))
-    .first
-    .try
+  let existing : Conversation? = Database.findBy(DB.Schema.Conversations, {slug: slug}, into: BLANK).try
   match existing do
-    Just(row) => return peopled([decoded(row)]).map { |found| found.first.or(decoded(row)) }
+    Just(chat) => return single(Just(chat)).map { |found| found.or(chat) }
     None => do
       let chat = Conversation {
         id: Metro.Id.generate(prefix: "g"),
-        kind: "group",
+        kind: Group,
         slug: slug,
         organizationId: organizationId,
-        access: "private",
+        access: Private,
         participants: everyone
-      }
-      let row = {
-        id: chat.id,
-        kind: "group",
-        slug: slug,
-        organization_id: organizationId,
-        access: "private",
-        created_by: by,
-        created_at: "${DateTime.utcNow()}"
       }
       let made : Result<Conversation, String> = Database.transaction do
         Database.insert(DB.Schema.Conversations)
-          .values(row)
+          .valuesOf(chat, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
           .run
           .try
         admitted(chat.id, everyone).try
@@ -132,35 +100,32 @@ foul groupsOf(organizationId: String, userId: String) -> Result<[Conversation], 
   let ids : [String] = taking(userId).try
   return Ok([]) if ids.empty?
 
-  let rows = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("group"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
+  return Database.select().from(DB.Schema.Conversations)
+    .by({kind: Group, organization_id: organizationId})
     .where(DB.Schema.Conversations.id.in(ids))
     .orderBy([:created_at, :id])
-    .all
-    .try
-  return peopled(rows.map { |row| decoded(row) })
+    .into(BLANK)
+    .flatMap { |found| peopled(found) }
 end
 
 # Makes a group chat a channel of this name, public or private; whoever
 # was in it is in the channel. Fails when the organization has a channel
 # of that name, or there is no such group chat.
-foul promoted(id: String, title: String, access: String) -> Result<Conversation, String> do
+foul promoted(id: String, title: String, access: Access) -> Result<Conversation, String> do
   let found : Conversation? = lookup(id).try
   match found do
     Just(chat) => do
       return Error("only a group chat becomes a channel") if !chat.group?
 
       let slug = "${chat.organizationId}#${title}"
-      Database.within(DB.Schema.Conversations.kind.eq("group"))
-        .update(DB.Schema.Conversations)
-        .set({kind: "channel", slug: slug, title: title, access: access})
-        .where(DB.Schema.Conversations.id.eq(id))
+      Database.update(DB.Schema.Conversations)
+        .set({kind: Channel, slug: slug, title: title, access: access})
+        .by({id: id, kind: Group})
         .run
         .try
       return Ok(Conversation {
         ...chat,
-        kind: "channel",
+        kind: Channel,
         slug: slug,
         title: title,
         access: access
@@ -175,58 +140,38 @@ end
 foul admitted(conversationId: String, userIds: [String]) -> Result<Integer, String> do
   let present : [String] = (participantsOf([conversationId]).try).get(conversationId).or([])
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
-  # A `.try` inside a block given to `map` would leave only that block:
-  # what failed is collected instead.
-  let failures = newcomers.flatMap { |userId|
-    let stored = Database.insert(DB.Schema.Participants)
-      .values({
-        id: "${conversationId}:${userId}",
-        conversation_id: conversationId,
-        user_id: userId,
-        joined_at: "${DateTime.utcNow()}"
-      })
-      .run
-    match stored do
-      Ok(_) => []
-      Error(reason) => [reason]
-    end
+  let rows = newcomers.map { |userId|
+    {
+      id: "${conversationId}:${userId}",
+      conversation_id: conversationId,
+      user_id: userId,
+      joined_at: "${DateTime.utcNow()}"
+    }
   }
-  return failures.empty? then Ok(newcomers.count) else Error(failures.first.or(""))
+  return Database.insertAll(DB.Schema.Participants, rows)
 end
 
 # The private chat between two people in an organization, created the
 # first time it is asked for.
 foul between(organizationId: String, one: String, other: String) -> Result<Conversation, String> do
   let slug = "${organizationId}${App.Models.Conversation.pairing(one, other)}"
-  let existing = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.slug.eq(slug))
-    .first
+  let existing = Database.findBy(DB.Schema.Conversations, {slug: slug}, into: BLANK)
   match existing do
     Error(reason) => return Error(reason)
-    Ok(Just(row)) => return Ok(decoded(row))
+    Ok(Just(chat)) => return Ok(chat)
     Ok(None) => do
       let first = one <= other then one else other
       let second = one <= other then other else one
       let chat = Conversation {
         id: Metro.Id.generate(prefix: "d"),
-        kind: "direct",
+        kind: Direct,
         slug: slug,
         firstUser: first,
         secondUser: second,
         organizationId: organizationId
       }
-      let row = {
-        id: chat.id,
-        kind: "direct",
-        slug: slug,
-        organization_id: organizationId,
-        first_user: first,
-        second_user: second,
-        created_by: one,
-        created_at: "${DateTime.utcNow()}"
-      }
       return Database.insert(DB.Schema.Conversations)
-        .values(row)
+        .valuesOf(chat, extra: {created_by: one, created_at: "${DateTime.utcNow()}"})
         .run
         .map { |_| chat }
     end
@@ -236,49 +181,39 @@ end
 # The private chats a person has in an organization, whichever of the two
 # they are in it.
 foul directsOf(organizationId: String, userId: String) -> Result<[Conversation], String> do
-  let asFirst = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("direct"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
-    .where(DB.Schema.Conversations.firstUser.eq(userId))
-    .all
+  let asFirst : [Conversation] = Database.select().from(DB.Schema.Conversations)
+    .by({kind: Direct, organization_id: organizationId, first_user: userId})
+    .into(BLANK)
     .try
-  let asSecond = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("direct"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
-    .where(DB.Schema.Conversations.secondUser.eq(userId))
-    .all
+  let asSecond : [Conversation] = Database.select().from(DB.Schema.Conversations)
+    .by({kind: Direct, organization_id: organizationId, second_user: userId})
+    .into(BLANK)
     .try
-  return Ok((asFirst + asSecond).map { |row| decoded(row) })
+  return Ok(asFirst + asSecond)
 end
 
 # Sets a channel's topic; whether there was such a channel. A private chat
 # has no topic, and the condition on `kind` keeps it that way.
 foul retitled(id: String, topic: String) -> Result<Bool, String> do
-  return Database.within(DB.Schema.Conversations.kind.eq("channel"))
-    .update(DB.Schema.Conversations)
+  return Database.update(DB.Schema.Conversations)
     .set({topic: topic})
-    .where(DB.Schema.Conversations.id.eq(id))
+    .by({id: id, kind: Channel})
     .run
     .map { |changed| changed > 0 }
 end
 
 private do
   # A conversation found, or none, with who takes part in it.
-  foul single(row: {String: String}?) -> Result<Conversation?, String> do
-    match row do
-      None => return Ok(None)
-      Just(found) => do
-        let filled : [Conversation] = peopled([decoded(found)]).try
-        return Ok(filled.first)
-      end
-    end
+  foul single(found: Conversation?) -> Result<Conversation?, String> do
+    let filled : [Conversation] = peopled(found.map { |each| [each] }.or([])).try
+    return Ok(filled.first)
   end
 
   # Conversations with who takes part filled in where it matters — in
   # private channels and group chats: their participants, and the members
   # of the team that owns one.
   foul peopled(conversations: [Conversation]) -> Result<[Conversation], String> do
-    let closed = conversations.filter { |conversation| conversation.access == "private" }
+    let closed = conversations.filter { |conversation| conversation.access == Private }
     return Ok(conversations) if closed.empty?
 
     let byConversation : {String: [String]} = participantsOf(closed.map { |each| each.id }).try
@@ -293,37 +228,22 @@ private do
 
   # The participants of some conversations, by conversation.
   foul participantsOf(ids: [String]) -> Result<{String: [String]}, String> do
-    return Ok({}) if ids.empty?
-    let rows = Database.select([:conversation_id, :user_id]).from(DB.Schema.Participants)
-      .where(DB.Schema.Participants.conversationId.in(ids))
-      .orderBy([:joined_at, :id])
-      .all
-      .try
-    return Ok(rows.reduce({}) { |found, row|
-      let place = row.get("conversation_id").or("")
-      found.put(place, found.get(place).or([]) + [row.get("user_id").or("")])
-    })
+    let byConversation : {String: [{String: String}]} = Database.belongingTo(
+      DB.Schema.Participants,
+      DB.Schema.Conversations,
+      ids,
+      orderBy: [:joined_at, :id]
+    ).try
+    return Ok(byConversation.mapValues { |rows| rows.map { |row| row.get("user_id").or("") } })
   end
 
   # The conversations a person takes part in, by id.
   foul taking(userId: String) -> Result<[String], String> do
-    return Database.select([:conversation_id]).from(DB.Schema.Participants)
-      .where(DB.Schema.Participants.userId.eq(userId))
-      .all
-      .map { |rows| rows.map { |row| row.get("conversation_id").or("") } }
+    return Database.select().from(DB.Schema.Participants)
+      .by({user_id: userId})
+      .pluck(:conversation_id)
   end
 
-  decoded : {String: String} -> Conversation
-  let decoded(row) = Conversation {
-    id: row.get("id").or(""),
-    kind: row.get("kind").or("channel"),
-    slug: row.get("slug").or(""),
-    title: row.get("title").or(""),
-    topic: row.get("topic").or(""),
-    firstUser: row.get("first_user").or(""),
-    secondUser: row.get("second_user").or(""),
-    organizationId: row.get("organization_id").or(""),
-    access: row.get("access").or("public"),
-    teamId: row.get("team_id").or("")
-  }
+  # What each row is read into.
+  let BLANK = Conversation { id: "" }
 end

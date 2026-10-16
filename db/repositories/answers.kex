@@ -14,21 +14,18 @@ using App.Models.Answer, only: [Answer]
 # Every answer in a conversation.
 foul collected(conversationId: String) -> Result<[Answer], String> do
   return Database.select().from(DB.Schema.Answers)
-    .where(DB.Schema.Answers.conversationId.eq(conversationId))
+    .by({conversation_id: conversationId})
     .orderBy([:answered_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .into(BLANK)
 end
 
 # Every answer, in an organization, to the forms somebody asked — a bot
 # reading what its own messages were answered with. Oldest first.
 foul addressedTo(organizationId: String, askerId: String) -> Result<[Answer], String> do
   return Database.select().from(DB.Schema.Answers)
-    .where(DB.Schema.Answers.organizationId.eq(organizationId))
-    .where(DB.Schema.Answers.askerId.eq(askerId))
+    .by({organization_id: organizationId, asker_id: askerId})
     .orderBy([:answered_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .into(BLANK)
 end
 
 # Records a person's answer to one form of a message. An earlier answer of
@@ -44,39 +41,20 @@ foul recorded(organizationId: String, message: Message, form: Integer, userId: S
     answer: answer,
     answeredAt: Metro.Clock.milliseconds()
   }
-  let row = {
-    id: id,
-    message_id: message.id,
-    conversation_id: message.conversationId,
-    organization_id: organizationId,
-    asker_id: message.userId,
-    user_id: userId,
-    form: form,
-    answer: answer,
-    answered_at: answered.answeredAt
-  }
   # The earlier answer and this one are swapped in one transaction.
   let swapped : Result<Integer, String> = Database.transaction do
     Database.delete(DB.Schema.Answers)
-      .where(DB.Schema.Answers.id.eq(id))
+      .by({id: id})
       .run
       .try
     Database.insert(DB.Schema.Answers)
-      .values(row)
+      .valuesOf(answered, extra: {id: id, organization_id: organizationId})
       .run
   end
   return swapped.map { |_| answered }
 end
 
 private do
-  decoded : {String: String} -> Answer
-  let decoded(row) = Answer {
-    messageId: row.get("message_id").or(""),
-    conversationId: row.get("conversation_id").or(""),
-    askerId: row.get("asker_id").or(""),
-    userId: row.get("user_id").or(""),
-    form: row.get("form").or("").trim.to(Integer).or(0),
-    answer: row.get("answer").or(""),
-    answeredAt: row.get("answered_at").or("").trim.to(Integer).or(0)
-  }
+  # What each row is read into.
+  let BLANK = Answer { messageId: "", userId: "" }
 end

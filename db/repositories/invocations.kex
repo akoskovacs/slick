@@ -8,20 +8,8 @@ using App.Models.Invocation, only: [Invocation]
 
 # Keeps one, as it is.
 foul recorded(invocation: Invocation) -> Result<Invocation, String> do
-  let row = {
-    id: invocation.id,
-    organization_id: invocation.organizationId,
-    conversation_id: invocation.conversationId,
-    thread_id: invocation.threadId,
-    bot_id: invocation.botId,
-    user_id: invocation.userId,
-    command: invocation.command,
-    arguments: invocation.arguments,
-    invoked_at: invocation.invokedAt,
-    invoked_on: invocation.invokedOn
-  }
   return Database.insert(DB.Schema.Invocations)
-    .values(row)
+    .valuesOf(invocation)
     .run
     .map { |_| invocation }
 end
@@ -29,36 +17,22 @@ end
 # Every one used in a conversation, its threads included, oldest first.
 foul inside(conversationId: String) -> Result<[Invocation], String> do
   return Database.select().from(DB.Schema.Invocations)
-    .where(DB.Schema.Invocations.conversationId.eq(conversationId))
+    .by({conversation_id: conversationId})
     .orderBy([:invoked_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .into(BLANK)
 end
 
 # Those meant for a bot in an organization since `since`, oldest first:
 # what the bot is told.
 foul meantFor(organizationId: String, botId: String, since: Integer) -> Result<[Invocation], String> do
   return Database.select().from(DB.Schema.Invocations)
-    .where(DB.Schema.Invocations.organizationId.eq(organizationId))
-    .where(DB.Schema.Invocations.botId.eq(botId))
-    .where(DB.Schema.Invocations.invokedAt.gt(since))
+    .by({organization_id: organizationId, bot_id: botId})
+    .where(DB.Schema.Invocations.invokedAt > since)
     .orderBy([:invoked_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .into(BLANK)
 end
 
 private do
-  decoded : {String: String} -> Invocation
-  let decoded(row) = Invocation {
-    id: row.get("id").or(""),
-    organizationId: row.get("organization_id").or(""),
-    conversationId: row.get("conversation_id").or(""),
-    threadId: row.get("thread_id").or(""),
-    botId: row.get("bot_id").or(""),
-    userId: row.get("user_id").or(""),
-    command: row.get("command").or(""),
-    arguments: row.get("arguments").or(""),
-    invokedAt: row.get("invoked_at").or("0").to(Integer).or(0),
-    invokedOn: row.get("invoked_on").or("")
-  }
+  # What each row is read into.
+  let BLANK = Invocation { id: "", organizationId: "", conversationId: "", botId: "", userId: "", command: "" }
 end

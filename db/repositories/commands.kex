@@ -10,26 +10,18 @@ using App.Models.Command, only: [Command]
 foul declared(botId: String, commands: [Command]) -> Result<Integer, String> do
   let replaced : Result<Integer, String> = Database.transaction do
     Database.delete(DB.Schema.Commands)
-      .where(DB.Schema.Commands.botId.eq(botId))
+      .by({bot_id: botId})
       .run
       .try
-    # A `.try` inside a block given to `map` would leave only that block:
-    # what failed is collected, so the transaction is undone by it.
-    let failures = commands.flatMap { |command|
-      let stored = Database.insert(DB.Schema.Commands)
-        .values({
-          id: "${botId}:${command.name}",
-          bot_id: botId,
-          name: command.name,
-          description: command.description
-        })
-        .run
-      match stored do
-        Ok(_) => []
-        Error(reason) => [reason]
-      end
+    let rows = commands.map { |command|
+      {
+        id: "${botId}:${command.name}",
+        bot_id: botId,
+        name: command.name,
+        description: command.description
+      }
     }
-    failures.empty? then Ok(commands.count) else Error(failures.first.or(""))
+    Database.insertAll(DB.Schema.Commands, rows)
   end
   return replaced
 end
@@ -39,15 +31,5 @@ foul of(botIds: [String]) -> Result<[Command], String> do
   return Database.select().from(DB.Schema.Commands)
     .where(DB.Schema.Commands.botId.in(botIds))
     .orderBy([:name, :bot_id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
-end
-
-private do
-  decoded : {String: String} -> Command
-  let decoded(row) = Command {
-    botId: row.get("bot_id").or(""),
-    name: row.get("name").or(""),
-    description: row.get("description").or("")
-  }
+    .into(Command { botId: "", name: "" })
 end

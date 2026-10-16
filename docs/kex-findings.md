@@ -202,3 +202,8 @@ fixed, and simplifying where a workaround stayed.
 | Harmat `migration.kex` | `prior`, `changed` | `after` is a keyword | `before`, `after` |
 | Slick `app/models/conversation.kex` | `open?` | `public` is a keyword | `public?` |
 | Slick `app/views/chat.kex` | `Crew.moniker`, `Crew.caption`, `Crew.blurb` | #448 (Harmat has a `tag`) | `handle`, `name`, `description` |
+| Harmat `Database` | `every(table)` | like #492, with a make-block method (`Select.all`) | `all(table)` |
+| Harmat `Insert` | `valuesOf(record)` | `record` is a keyword | `record(…)` |
+| Harmat `database.kex` | `readAs`, one clause per type name | match arms of different types do not check, even into `Any` | one `match` |
+| Slick `app/models/conversation.kex` | `accessOf`, clauses | two constructors of one type in `then … else` do not check as that type | `access == "private" then Private else Public` |
+| Slick `db/schema` | `Type.named("App.Models.Conversation.Kind")` | `Type.of(Channel)` on an imported constructor answers the constructor, not its type | `Type.of(Channel)` |

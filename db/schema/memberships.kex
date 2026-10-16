@@ -4,10 +4,10 @@ module DB.Schema.Memberships
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :memberships do |t|
+let definition = Table.define :memberships, doc: "Who is in which organization" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:organization_id)
-  t.text(:user_id)
+  t.belongsTo(:organization, :organizations)
+  t.belongsTo(:user, :users)
   t.text(:joined_at)
 end
 

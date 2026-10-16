@@ -5,19 +5,27 @@ module DB.Schema.Conversations
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :conversations do |t|
+let definition = Table.define :conversations, doc: "Channels, private chats and group chats" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:kind, oneOf: ["channel", "direct", "group"])
-  t.text(:slug)
+  t.text(:kind, oneOf: Harmat.Column.choices(Type.named("App.Models.Conversation.Kind")), doc: "A channel, a chat between two people, or one between more")
+  t.text(:slug, doc: "Its organization, then #name, @one:other or &all,of,them")
   t.text(:title, default: "")
   t.text(:topic, default: "")
-  t.text(:first_user, default: "")
-  t.text(:second_user, default: "")
-  t.text(:created_by, default: "")
+  t.belongsTo(:first, :users, column: :first_user, default: "", doc: "In a private chat: the person whose id sorts first")
+  t.belongsTo(:second, :users, column: :second_user, default: "", doc: "In a private chat: the other one")
+  t.belongsTo(:creator, :users, column: :created_by, default: "")
   t.text(:created_at)
-  t.text(:organization_id, default: "")
-  t.text(:access, default: "public", oneOf: ["public", "private"])
-  t.text(:team_id, default: "")
+  t.belongsTo(:organization, :organizations, default: "")
+  t.text(:access, default: "public", oneOf: Harmat.Column.choices(Type.named("App.Models.Conversation.Access")), doc: "Anyone in the organization, or only its participants and team")
+  t.belongsTo(:team, :teams, default: "", doc: "The team that owns a channel")
+  t.hasMany(:drafts, :drafts)
+  t.hasMany(:readings, :readings)
+  t.hasMany(:files, :files)
+  t.hasMany(:reactions, :reactions)
+  t.hasMany(:invocations, :invocations)
+  t.hasMany(:answers, :answers)
+  t.hasMany(:messages, :messages)
+  t.hasMany(:participants, :participants)
 end
 
 let table = DB.Schema.Conversations.definition.table

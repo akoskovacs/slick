@@ -5,16 +5,18 @@ module DB.Schema.Teams
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :teams do |t|
+let definition = Table.define :teams, doc: "Named sets of people in an organization, mentioned all at once and able to own channels" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:organization_id)
-  t.text(:handle)
+  t.belongsTo(:organization, :organizations)
+  t.text(:handle, doc: "What it is mentioned by, without the @")
   t.text(:name)
   t.text(:description, default: "")
-  t.text(:external_id, default: "")
-  t.text(:managed, default: "")
-  t.text(:created_by, default: "")
+  t.text(:external_id, default: "", doc: "The id of the SCIM group a sync brought it in from")
+  t.text(:managed, default: "", doc: "yes while a sync keeps its name and members")
+  t.belongsTo(:creator, :users, column: :created_by, default: "")
   t.text(:created_at)
+  t.hasMany(:members, :team_members)
+  t.hasMany(:channels, :conversations)
 end
 
 let table = DB.Schema.Teams.definition.table

@@ -4,12 +4,18 @@ module DB.Schema.Organizations
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :organizations do |t|
+let definition = Table.define :organizations, doc: "Groups of people with their own channels and chats, apart from every other" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:slug)
+  t.text(:slug, doc: "The name as it appears in addresses: /acme/channels/general")
   t.text(:name)
-  t.text(:created_by, default: "")
+  t.belongsTo(:creator, :users, column: :created_by, default: "")
   t.text(:created_at)
+  t.hasMany(:memberships, :memberships)
+  t.hasMany(:conversations, :conversations)
+  t.hasMany(:bots, :users)
+  t.hasMany(:invocations, :invocations)
+  t.hasMany(:answers, :answers)
+  t.hasMany(:teams, :teams)
 end
 
 let table = DB.Schema.Organizations.definition.table

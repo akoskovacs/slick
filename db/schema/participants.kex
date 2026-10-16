@@ -5,10 +5,10 @@ module DB.Schema.Participants
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :participants do |t|
+let definition = Table.define :participants, doc: "Who is in a private channel or a group chat" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:conversation_id)
-  t.text(:user_id)
+  t.belongsTo(:conversation, :conversations)
+  t.belongsTo(:user, :users)
   t.text(:joined_at)
 end
 

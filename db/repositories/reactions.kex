@@ -10,23 +10,20 @@ using App.Models.Reaction, only: [Reaction]
 # Every reaction in a conversation.
 foul throughout(conversationId: String) -> Result<[Reaction], String> do
   return Database.select().from(DB.Schema.Reactions)
-    .where(DB.Schema.Reactions.conversationId.eq(conversationId))
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .by({conversation_id: conversationId})
+    .into(Reaction { messageId: "", userId: "", emoji: "" })
 end
 
 # Puts a person's emoji on a message, or takes it off if it is there.
 # Whether it is on afterwards.
 foul flipped(message: Message, userId: String, emoji: String) -> Result<Bool, String> do
   let id = "${message.id}:${userId}:${emoji}"
-  let existing = Database.select([:id]).from(DB.Schema.Reactions)
-    .where(DB.Schema.Reactions.id.eq(id))
-    .first
+  let existing = Database.find(DB.Schema.Reactions, id)
   match existing do
     Error(reason) => return Error(reason)
     Ok(Just(_)) => do
       return Database.delete(DB.Schema.Reactions)
-        .where(DB.Schema.Reactions.id.eq(id))
+        .by({id: id})
         .run
         .map { |_| false }
     end
@@ -44,13 +41,4 @@ foul flipped(message: Message, userId: String, emoji: String) -> Result<Bool, St
         .map { |_| true }
     end
   end
-end
-
-private do
-  decoded : {String: String} -> Reaction
-  let decoded(row) = Reaction {
-    messageId: row.get("message_id").or(""),
-    userId: row.get("user_id").or(""),
-    emoji: row.get("emoji").or("")
-  }
 end

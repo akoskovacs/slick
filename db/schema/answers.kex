@@ -5,13 +5,13 @@ module DB.Schema.Answers
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :answers do |t|
+let definition = Table.define :answers, doc: "Answers to the forms in messages: one per person and form" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:message_id)
-  t.text(:conversation_id)
-  t.text(:organization_id)
-  t.text(:asker_id)
-  t.text(:user_id)
+  t.belongsTo(:message, :messages)
+  t.belongsTo(:conversation, :conversations)
+  t.belongsTo(:organization, :organizations)
+  t.belongsTo(:asker, :users, doc: "The bot or person whose message asked")
+  t.belongsTo(:user, :users)
   t.int(:form)
   t.text(:answer)
   t.bigint(:answered_at)

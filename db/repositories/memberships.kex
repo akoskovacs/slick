@@ -21,22 +21,13 @@ end
 
 # Whether a person is in an organization.
 foul affiliated?(organizationId: String, userId: String) -> Bool do
-  let membership = Database.select([:id]).from(DB.Schema.Memberships)
-    .where(DB.Schema.Memberships.id.eq("${organizationId}:${userId}"))
-    .first
-  match membership do
-    Ok(Just(_)) => return true
-    _ => return false
-  end
+  return Database.exists?(DB.Schema.Memberships, {id: "${organizationId}:${userId}"}).or(false)
 end
 
 # When a person joined an organization, in milliseconds since 1970; 0 if
 # they are not in it.
 foul joined(organizationId: String, userId: String) -> Integer do
-  let found = Database.select([:joined_at]).from(DB.Schema.Memberships)
-    .where(DB.Schema.Memberships.id.eq("${organizationId}:${userId}"))
-    .first
-  match found do
+  match Database.find(DB.Schema.Memberships, "${organizationId}:${userId}") do
     Ok(Just(row)) => return DateTime.parse(row.get("joined_at").or(""))
       .map { |moment| moment.epochSeconds * 1000 }
       .or(0)
@@ -46,17 +37,15 @@ end
 
 # The ids of the organizations a person is in, oldest membership first.
 foul affiliations(userId: String) -> Result<[String], String> do
-  return Database.select([:organization_id]).from(DB.Schema.Memberships)
-    .where(DB.Schema.Memberships.userId.eq(userId))
+  return Database.select().from(DB.Schema.Memberships)
+    .by({user_id: userId})
     .orderBy([:joined_at, :id])
-    .all
-    .map { |rows| rows.map { |row| row.get("organization_id").or("") } }
+    .pluck(:organization_id)
 end
 
 # The ids of the people in an organization.
 foul roster(organizationId: String) -> Result<[String], String> do
-  return Database.select([:user_id]).from(DB.Schema.Memberships)
-    .where(DB.Schema.Memberships.organizationId.eq(organizationId))
-    .all
-    .map { |rows| rows.map { |row| row.get("user_id").or("") } }
+  return Database.select().from(DB.Schema.Memberships)
+    .by({organization_id: organizationId})
+    .pluck(:user_id)
 end

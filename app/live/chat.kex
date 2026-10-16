@@ -20,7 +20,7 @@ using App.Live.Unread, only: [Unread]
 using App.Models.Attachment, only: [Attachment]
 using App.Models.Command, only: [Command]
 using App.Models.Invocation, only: [Invocation]
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, accessOf]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
 using App.Models.Reading, only: [Reading]
@@ -766,7 +766,7 @@ private do
           timeZone: givenFor(given, "time_zone"),
           bio: givenFor(given, "bio"),
           nickname: givenFor(given, "nickname"),
-          nicknameShown?: field(entries, "show_nickname") == "yes"
+          showNickname?: field(entries, "show_nickname") == "yes"
         }
         match Users.described(changed) do
           Ok(_) => return (settled(tab), true)
@@ -974,7 +974,7 @@ private do
         let owns = owner.map { |team| team.organizationId == organization.id && team.includes?(user.id) }.or(teamId.empty?)
         return (Tab { ...refused, dialogProblem: "A channel can only be made for a team you are in." }, false) if !owns
 
-        let kept = access == "private" then "private" else "public"
+        let kept = accessOf(access)
         match Conversations.founded(organization.id, title, user.id, access: kept, teamId: teamId) do
           Ok(channel) => return (Tab { organization: organization.id, conversation: channel.id }, true)
           Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)
@@ -1016,7 +1016,7 @@ private do
       Just(conversation) => do
         return (settled(tab), false) if !conversation.group?
 
-        let kept = access == "public" then "public" else "private"
+        let kept = accessOf(access)
         match Conversations.promoted(conversation.id, title, kept) do
           Ok(channel) => return (Tab { organization: channel.organizationId, conversation: channel.id }, true)
           Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)

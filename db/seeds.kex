@@ -16,7 +16,8 @@ module DB.Seeds
 
 using Metro.Environment, only: [Environment, Development]
 using App.Models.Team, only: [Team]
-using App.Models.User, only: [User]
+using App.Models.User, only: [User, Bot]
+using App.Models.Conversation, only: [Private]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
@@ -86,7 +87,7 @@ private do
       members: [ada.id, eve.id]
     }
     let team = Teams.formed(design, ada.id).try
-    let studio = Conversations.founded(acme.id, "studio", eve.id, access: "private", teamId: team.id).try
+    let studio = Conversations.founded(acme.id, "studio", eve.id, access: Private, teamId: team.id).try
     Messages.said(studio.id, eve.id, "New mockups are up, @design", "").try
 
     let bots = BOTS.map { |name| bot(name, acme.id).try }
@@ -111,7 +112,7 @@ private do
       id: id,
       email: "${id}@bots.invalid",
       name: name,
-      kind: "bot",
+      kind: Bot,
       ownerOrganizationId: organizationId
     }
     return Users.automated(made, Metro.Auth.Token.digest(token(name)))

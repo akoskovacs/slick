@@ -6,11 +6,11 @@ module DB.Schema.Files
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :files do |t|
+let definition = Table.define :files, doc: "Uploaded files and where they belong; the bytes are in Metro.Storage" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:user_id)
-  t.text(:conversation_id, default: "")
-  t.text(:message_id, default: "")
+  t.belongsTo(:user, :users)
+  t.belongsTo(:conversation, :conversations, default: "")
+  t.belongsTo(:message, :messages, default: "", doc: "The message it was sent with; empty while it waits in a message box")
   t.text(:filename)
   t.text(:content_type)
   t.bigint(:byte_size)

@@ -5,13 +5,13 @@ module DB.Schema.Invocations
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :invocations do |t|
+let definition = Table.define :invocations, doc: "Slash commands somebody used, for the bot they were meant for" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:organization_id)
-  t.text(:conversation_id)
-  t.text(:thread_id, default: "")
-  t.text(:bot_id)
-  t.text(:user_id)
+  t.belongsTo(:organization, :organizations)
+  t.belongsTo(:conversation, :conversations)
+  t.belongsTo(:thread, :messages, default: "", doc: "The message the thread it was used in starts with; empty for none")
+  t.belongsTo(:bot, :users)
+  t.belongsTo(:user, :users)
   t.text(:command)
   t.text(:arguments, default: "")
   t.bigint(:invoked_at)

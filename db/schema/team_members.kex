@@ -5,10 +5,10 @@ module DB.Schema.TeamMembers
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :team_members do |t|
+let definition = Table.define :team_members, doc: "Who is in which team" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:team_id)
-  t.text(:user_id)
+  t.belongsTo(:team, :teams)
+  t.belongsTo(:user, :users)
   t.text(:joined_at)
 end
 

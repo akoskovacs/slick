@@ -10,12 +10,11 @@ using App.Models.Message, only: [Message]
 # not among them: they are read with the thread they belong to.
 foul latest(conversationId: String, limit: Integer) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)
-    .where(DB.Schema.Messages.conversationId.eq(conversationId))
-    .where(DB.Schema.Messages.parentId.eq(""))
+    .by({conversation_id: conversationId, parent_id: ""})
     .orderBy(descending: [:sent_at, :id])
     .limit(limit)
-    .all
-    .map { |rows| rows.map { |row| decoded(row) }.reverse }
+    .into(BLANK)
+    .map { |messages| messages.reverse }
 end
 
 # How many messages of a conversation are newer than `since`, in
@@ -23,9 +22,8 @@ end
 # thread.
 foul newer(conversationId: String, since: Integer) -> Result<Integer, String> do
   return Database.select().from(DB.Schema.Messages)
-    .where(DB.Schema.Messages.conversationId.eq(conversationId))
-    .where(DB.Schema.Messages.parentId.eq(""))
-    .where(DB.Schema.Messages.sentAt.gt(since))
+    .by({conversation_id: conversationId, parent_id: ""})
+    .where(DB.Schema.Messages.sentAt > since)
     .count
 end
 
@@ -33,19 +31,17 @@ end
 foul replyingTo(rootIds: [String], since: Integer) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.parentId.in(rootIds))
-    .where(DB.Schema.Messages.sentAt.gt(since))
+    .where(DB.Schema.Messages.sentAt > since)
     .orderBy([:sent_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .into(BLANK)
 end
 
 # The replies to a message, oldest first.
 foul answering(rootId: String) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)
-    .where(DB.Schema.Messages.parentId.eq(rootId))
+    .by({parent_id: rootId})
     .orderBy([:sent_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .into(BLANK)
 end
 
 # Stores a message, stamped now. With a parent it is a reply, and the
@@ -62,19 +58,10 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     sentOn: "${DateTime.now()}",
     parentId: parent
   }
-  let row = {
-    id: message.id,
-    conversation_id: conversationId,
-    user_id: userId,
-    body: body,
-    sent_at: moment,
-    sent_on: message.sentOn,
-    parent_id: parent
-  }
   # A reply and its thread's count change together, or not at all.
   let stored : Result<Integer, String> = Database.transaction do
     let inserted = Database.insert(DB.Schema.Messages)
-      .values(row)
+      .valuesOf(message)
       .run
       .try
     if parent.empty?
@@ -83,7 +70,7 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
       let replies = answering(parent).try
       Database.update(DB.Schema.Messages)
         .set({reply_count: replies.count})
-        .where(DB.Schema.Messages.id.eq(parent))
+        .by({id: parent})
         .run
     end
   end
@@ -92,22 +79,10 @@ end
 
 # One message, or `None`.
 foul single(id: String) -> Result<Message?, String> do
-  return Database.select().from(DB.Schema.Messages)
-    .where(DB.Schema.Messages.id.eq(id))
-    .first
-    .map { |row| row.map { |found| decoded(found) } }
+  return Database.find(DB.Schema.Messages, id, into: BLANK)
 end
 
 private do
-  decoded : {String: String} -> Message
-  let decoded(row) = Message {
-    id: row.get("id").or(""),
-    conversationId: row.get("conversation_id").or(""),
-    userId: row.get("user_id").or(""),
-    body: row.get("body").or(""),
-    sentAt: row.get("sent_at").or("").trim.to(Integer).or(0),
-    sentOn: row.get("sent_on").or(""),
-    parentId: row.get("parent_id").or(""),
-    replyCount: row.get("reply_count").or("").trim.to(Integer).or(0)
-  }
+  # What each row is read into.
+  let BLANK = Message { id: "", conversationId: "", userId: "", body: "" }
 end

@@ -9,7 +9,7 @@ module App.Views.Chat
 
 using App.Live.Tab, only: [Tab]
 using App.Live.Unread, only: [Unread]
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, Channel, Direct, Group]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
@@ -576,9 +576,9 @@ private do
       "group": conversation.id
     })
     let address = match conversation.kind do
-      "channel" => channel
-      "group" => group
-      _ => direct
+      Channel => channel
+      Group => group
+      Direct => direct
     end
     App.Paths.threaded(address, opened(thread))
   end
@@ -652,7 +652,7 @@ private do
       }
       return detailsPartial(
         inputs.join("\n"),
-        me.nicknameShown?,
+        me.showNickname?,
         tab.dialogProblem,
         !me.managed.empty?
       )
@@ -989,9 +989,9 @@ private do
     let owner = teams.find { |team| team.id == conversation.teamId }.map { |team| "@${team.handle}" }
     let count = conversation.participants.count
     match conversation.kind do
-      "direct" => "Private: only the two of you can read this."
-      "group" => "Private: only the ${count} of you can read this."
-      _ => do
+      Direct => "Private: only the two of you can read this."
+      Group => "Private: only the ${count} of you can read this."
+      Channel => do
         let belongs = owner.map { |handle| " Belongs to ${handle}." }.or("")
         let people = count == 1 then "1 person" else "${count} people"
         conversation.open? then belongs.trim else "🔒 Private: only its ${people} can read this.${belongs}"

@@ -1,17 +1,16 @@
-# The `readings` table: how far each person has read in each conversation.
-# `read_at` is a message's `sent_at`, in milliseconds since 1970;
-# `thread_id` the message a followed thread starts with, or "".
+# The `readings` table. See db/migrate/N0015_create_readings.kex and
+# N0016_add_reading_threads.kex.
 module DB.Schema.Readings
 
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :readings do |t|
+let definition = Table.define :readings, doc: "How far each person has read in each conversation, and in each thread they follow" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:user_id)
-  t.text(:conversation_id)
-  t.bigint(:read_at)
-  t.text(:thread_id, default: "")
+  t.belongsTo(:user, :users)
+  t.belongsTo(:conversation, :conversations)
+  t.bigint(:read_at, doc: "A message's sent_at, in milliseconds since 1970")
+  t.belongsTo(:thread, :messages, default: "", doc: "The message a followed thread starts with; empty for the conversation itself")
 end
 
 let table = DB.Schema.Readings.definition.table
