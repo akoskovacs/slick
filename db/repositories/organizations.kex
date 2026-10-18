@@ -29,10 +29,10 @@ end
 
 # The organization at this address, or `None`.
 foul addressed(slug: String) -> Result<Organization?, String> do
-  return Database.findBy(DB.Schema.Organizations, {slug: slug}, into: Organization { id: "" })
+  return Database.findBy(DB.Schema.Organizations, {slug: slug}, as: Organization)
 end
 
 # The organization with this id, or `None`.
 foul identified(id: String) -> Result<Organization?, String> do
-  return Database.find(DB.Schema.Organizations, id, into: Organization { id: "" })
+  return Database.find(DB.Schema.Organizations, id, as: Organization)
 end

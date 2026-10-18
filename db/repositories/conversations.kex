@@ -9,6 +9,9 @@
 module DB.Repositories.Conversations
 
 using Harmat.Database, as: Database
+# For `||` between conditions; without it the checker reads a Bool
+# (kexhq/kex#532).
+using Harmat.Schema, only: [Cond]
 using App.Models.Conversation, only: [Conversation, Access, Channel, Direct, Group, Public, Private]
 
 # Every channel of an organization, by name: the private ones too, which
@@ -17,18 +20,18 @@ foul channels(organizationId: String) -> Result<[Conversation], String> do
   return Database.select().from(DB.Schema.Conversations)
     .by({kind: Channel, organization_id: organizationId})
     .orderBy([:title])
-    .into(BLANK)
+    .all(as: Conversation)
     .flatMap { |found| peopled(found) }
 end
 
 # One conversation, or `None`.
 foul lookup(id: String) -> Result<Conversation?, String> do
-  return Database.find(DB.Schema.Conversations, id, into: BLANK).flatMap { |found| single(found) }
+  return Database.find(DB.Schema.Conversations, id, as: Conversation).flatMap { |found| single(found) }
 end
 
 # An organization's channel of this name, or `None`.
 foul channelCalled(organizationId: String, title: String) -> Result<Conversation?, String> do
-  return Database.findBy(DB.Schema.Conversations, {slug: "${organizationId}#${title}"}, into: BLANK)
+  return Database.findBy(DB.Schema.Conversations, {slug: "${organizationId}#${title}"}, as: Conversation)
     .flatMap { |found| single(found) }
 end
 
@@ -54,7 +57,7 @@ foul founded(
   }
   let made : Result<Conversation, String> = Database.transaction do
     Database.insert(DB.Schema.Conversations)
-      .valuesOf(channel, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
+      .record(channel, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
       .run
       .try
     let first = access == Private then [by] else []
@@ -70,7 +73,7 @@ end
 foul among(organizationId: String, people: [String], by: String) -> Result<Conversation, String> do
   let everyone = (people + [by]).uniq.sort
   let slug = "${organizationId}${App.Models.Conversation.gathering(everyone)}"
-  let existing : Conversation? = Database.findBy(DB.Schema.Conversations, {slug: slug}, into: BLANK).try
+  let existing : Conversation? = Database.findBy(DB.Schema.Conversations, {slug: slug}, as: Conversation).try
   match existing do
     Just(chat) => return single(Just(chat)).map { |found| found.or(chat) }
     None => do
@@ -84,7 +87,7 @@ foul among(organizationId: String, people: [String], by: String) -> Result<Conve
       }
       let made : Result<Conversation, String> = Database.transaction do
         Database.insert(DB.Schema.Conversations)
-          .valuesOf(chat, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
+          .record(chat, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
           .run
           .try
         admitted(chat.id, everyone).try
@@ -104,7 +107,7 @@ foul groupsOf(organizationId: String, userId: String) -> Result<[Conversation], 
     .by({kind: Group, organization_id: organizationId})
     .where(DB.Schema.Conversations.id.in(ids))
     .orderBy([:created_at, :id])
-    .into(BLANK)
+    .all(as: Conversation)
     .flatMap { |found| peopled(found) }
 end
 
@@ -155,7 +158,7 @@ end
 # first time it is asked for.
 foul between(organizationId: String, one: String, other: String) -> Result<Conversation, String> do
   let slug = "${organizationId}${App.Models.Conversation.pairing(one, other)}"
-  let existing = Database.findBy(DB.Schema.Conversations, {slug: slug}, into: BLANK)
+  let existing = Database.findBy(DB.Schema.Conversations, {slug: slug}, as: Conversation)
   match existing do
     Error(reason) => return Error(reason)
     Ok(Just(chat)) => return Ok(chat)
@@ -171,7 +174,7 @@ foul between(organizationId: String, one: String, other: String) -> Result<Conve
         organizationId: organizationId
       }
       return Database.insert(DB.Schema.Conversations)
-        .valuesOf(chat, extra: {created_by: one, created_at: "${DateTime.utcNow()}"})
+        .record(chat, extra: {created_by: one, created_at: "${DateTime.utcNow()}"})
         .run
         .map { |_| chat }
     end
@@ -181,15 +184,10 @@ end
 # The private chats a person has in an organization, whichever of the two
 # they are in it.
 foul directsOf(organizationId: String, userId: String) -> Result<[Conversation], String> do
-  let asFirst : [Conversation] = Database.select().from(DB.Schema.Conversations)
-    .by({kind: Direct, organization_id: organizationId, first_user: userId})
-    .into(BLANK)
-    .try
-  let asSecond : [Conversation] = Database.select().from(DB.Schema.Conversations)
-    .by({kind: Direct, organization_id: organizationId, second_user: userId})
-    .into(BLANK)
-    .try
-  return Ok(asFirst + asSecond)
+  return Database.select().from(DB.Schema.Conversations)
+    .by({kind: Direct, organization_id: organizationId})
+    .where(DB.Schema.Conversations.firstUser == userId || DB.Schema.Conversations.secondUser == userId)
+    .all(as: Conversation)
 end
 
 # Sets a channel's topic; whether there was such a channel. A private chat
@@ -243,7 +241,4 @@ private do
       .by({user_id: userId})
       .pluck(:conversation_id)
   end
-
-  # What each row is read into.
-  let BLANK = Conversation { id: "" }
 end

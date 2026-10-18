@@ -15,7 +15,7 @@ foul formed(team: Team, by: String) -> Result<Team, String> do
   let made = Team { ...team, id: Metro.Id.generate(prefix: "t") }
   let stored : Result<Team, String> = Database.transaction do
     Database.insert(DB.Schema.Teams)
-      .valuesOf(made, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
+      .record(made, extra: {created_by: by, created_at: "${DateTime.utcNow()}"})
       .run
       .try
     joinedAll(made.id, made.members).try
@@ -29,14 +29,14 @@ foul ofOrganization(organizationId: String) -> Result<[Team], String> do
   let teams : [Team] = Database.select().from(DB.Schema.Teams)
     .by({organization_id: organizationId})
     .orderBy([:handle])
-    .into(BLANK)
+    .all(as: Team)
     .try
   return membered(teams)
 end
 
 # One team, with its members, or `None`.
 foul single(id: String) -> Result<Team?, String> do
-  let found : Team? = Database.find(DB.Schema.Teams, id, into: BLANK).try
+  let found : Team? = Database.find(DB.Schema.Teams, id, as: Team).try
   let teams : [Team] = membered(found.map { |team| [team] }.or([])).try
   return Ok(teams.first)
 end
@@ -115,7 +115,4 @@ private do
     let byTeam : {String: [String]} = rosters(teams.map { |team| team.id }).try
     return Ok(teams.map { |team| Team { ...team, members: byTeam.get(team.id).or([]) } })
   end
-
-  # What each row is read into.
-  let BLANK = Team { id: "" }
 end

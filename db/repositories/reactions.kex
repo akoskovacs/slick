@@ -11,7 +11,7 @@ using App.Models.Reaction, only: [Reaction]
 foul throughout(conversationId: String) -> Result<[Reaction], String> do
   return Database.select().from(DB.Schema.Reactions)
     .by({conversation_id: conversationId})
-    .into(Reaction { messageId: "", userId: "", emoji: "" })
+    .all(as: Reaction)
 end
 
 # Puts a person's emoji on a message, or takes it off if it is there.

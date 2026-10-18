@@ -31,5 +31,5 @@ foul of(botIds: [String]) -> Result<[Command], String> do
   return Database.select().from(DB.Schema.Commands)
     .where(DB.Schema.Commands.botId.in(botIds))
     .orderBy([:name, :bot_id])
-    .into(Command { botId: "", name: "" })
+    .all(as: Command)
 end

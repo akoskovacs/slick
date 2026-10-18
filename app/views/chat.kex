@@ -2,9 +2,7 @@
 # channels and people, and the conversation that is open. The templates are
 # the `.ket` files beside this module; `<%= %>` escapes what it prints.
 #
-# The records here are what the templates print. Their field names are
-# chosen not to match any function in the program, because a template reads
-# `item.name` as a call to `name(item)` when one exists (kexhq/kex#448).
+# The records here are what the templates print.
 module App.Views.Chat
 
 using App.Live.Tab, only: [Tab]
@@ -100,25 +98,27 @@ record Card do
   initial : String
   tint : String
   badged : String = ""
-  emblem : String = ""
-  motto : String = ""
+  statusEmoji : String = ""
+  statusText : String = ""
   # "Active" or "Away".
   presence : String
   active? : Bool
   # Their email; "" for a bot, whose address is nobody's to write to.
   mail : String = ""
   # Who a bot belongs to, and the id of that person to open their profile
-  # with; "" for a person, and a key of "" for an organization's bot.
-  keeper : String = ""
-  keeperKey : String = ""
+  # with; "" for a person, and an id of "" for an organization's bot.
+  owner : String = ""
+  ownerId : String = ""
   # What else their profile says, as they gave it; "" for what it does not.
-  # `alias` is their name when they go by their nickname.
+  # `alias` is their name when they go by their nickname. (Not `name`: a
+  # template reads `card.name` as the standard library's `name` —
+  # kexhq/kex#533.)
   alias : String = ""
-  role : String = ""
-  team : String = ""
-  about : String = ""
-  dial : String = ""
-  zone : String = ""
+  title : String = ""
+  department : String = ""
+  bio : String = ""
+  phone : String = ""
+  timeZone : String = ""
   # Whether it is whoever is looking.
   own? : Bool
 end
@@ -141,6 +141,8 @@ record Enclosure do
   key : String
   caption : String
   # Where it is fetched from, and how big it is in words.
+  # (`href` and `pictured?`, not `link` and `picture?`: a template reads
+  # those as `link` and `Metro.Storage.picture?` — kexhq/kex#533.)
   href : String
   weight : String
   pictured? : Bool = false
@@ -160,27 +162,7 @@ record Cabinet do
   glimpses : {String: String} = {}
 end
 
-# What every message of a conversation is shown with: who is looking, who
-# is there, and the reactions, answers and files of its messages.
-record Room do
-  viewer : User
-  people : [User]
-  # The organization's teams: mentioned, and offered to mention.
-  teams : [Team] = []
-  reactions : [Reaction]
-  responses : [Answer]
-  files : [Attachment]
-  # The slash commands the bots here answer to, and whether here is more
-  # than a private chat — a channel or a group chat, where a bot is only
-  # listening when it is mentioned.
-  commands : [Command] = []
-  channel? : Bool = false
-  # The slash commands used here, oldest first: shown where they happened.
-  invocations : [Invocation] = []
-end
-
-# A slash command somebody used, as the conversation shows it. The fields
-# are not named like functions: a template would call those (kexhq/kex#448).
+# A slash command somebody used, as the conversation shows it.
 record Usage do
   key : String
   who : String
@@ -207,10 +189,10 @@ end
 
 # A team, as the pane beside the conversation shows it.
 record Crew do
-  # Its handle, and its name.
-  moniker : String
+  # Its handle, and its name. (`caption`, not `name`: kexhq/kex#533.)
+  handle : String
   caption : String
-  blurb : String = ""
+  description : String = ""
   # "3 members".
   tally : String
   synced? : Bool = false
@@ -444,6 +426,25 @@ let index(
 end
 
 private do
+  # What every message of a conversation is shown with: who is looking, who
+  # is there, and the reactions, answers and files of its messages.
+  record Room do
+    viewer : User
+    people : [User]
+    # The organization's teams: mentioned, and offered to mention.
+    teams : [Team] = []
+    reactions : [Reaction]
+    responses : [Answer]
+    files : [Attachment]
+    # The slash commands the bots here answer to, and whether here is more
+    # than a private chat — a channel or a group chat, where a bot is only
+    # listening when it is mentioned.
+    commands : [Command] = []
+    channel? : Bool = false
+    # The slash commands used here, oldest first: shown where they happened.
+    invocations : [Invocation] = []
+  end
+
   # The bar across the top: who is signed in, and under their name what
   # they say about themselves and the way to change it. `placed?` is whether
   # they are in an organization, where they have a profile to open.
@@ -474,20 +475,20 @@ private do
           initial: person.shown.take(1).upperCase,
           tint: "${BEAM.erlang.phash2(person.id, 8)}",
           badged: person.bot? then "BOT" else "",
-          emblem: person.statusEmoji,
-          motto: person.statusText,
+          statusEmoji: person.statusEmoji,
+          statusText: person.statusText,
           presence: active then "Active" else "Away",
           active?: active,
           mail: person.bot? then "" else person.email,
-          keeper: keeper,
-          keeperKey: owner.map { |each| each.id }.or(""),
+          owner: keeper,
+          ownerId: owner.map { |each| each.id }.or(""),
           own?: person.id == user.id,
           alias: person.shown == person.name then "" else person.name,
-          role: person.title,
-          team: person.department,
-          dial: person.phone,
-          zone: person.timeZone,
-          about: person.bio
+          title: person.title,
+          department: person.department,
+          phone: person.phone,
+          timeZone: person.timeZone,
+          bio: person.bio
         })
       end
     end
@@ -532,9 +533,9 @@ private do
         let count = team.members.count
         teamPartial(
           Crew {
-            moniker: team.handle,
+            handle: team.handle,
             caption: team.name,
-            blurb: team.description,
+            description: team.description,
             tally: count == 1 then "1 member" else "${count} members",
             synced?: team.managed?,
             mine?: team.includes?(user.id)
@@ -549,7 +550,7 @@ private do
 
   # A channel as a list shows it: `# name`, or `🔒 name` for a private one.
   channelName : Conversation -> String
-  let channelName(channel) = channel.open? then "# ${channel.title}" else "🔒 ${channel.title}"
+  let channelName(channel) = channel.public? then "# ${channel.title}" else "🔒 ${channel.title}"
 
   # A group chat as a list shows it: the others in it, by name.
   gathered : Conversation -> User -> [User] -> String
@@ -933,7 +934,7 @@ private do
           filing,
           cabinet.stored.empty? then "" else "${cabinet.stored.count}",
           noted(open, room.teams),
-          open.channel? && !open.open?,
+          open.channel? && !open.public?,
           open.group?
         )
         let queued = cabinet.queued
@@ -994,7 +995,7 @@ private do
       Channel => do
         let belongs = owner.map { |handle| " Belongs to ${handle}." }.or("")
         let people = count == 1 then "1 person" else "${count} people"
-        conversation.open? then belongs.trim else "🔒 Private: only its ${people} can read this.${belongs}"
+        conversation.public? then belongs.trim else "🔒 Private: only its ${people} can read this.${belongs}"
       end
     end
   end

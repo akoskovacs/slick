@@ -15,7 +15,7 @@ using App.Models.Reading, only: [Reading]
 foul marks(userId: String) -> Result<[Reading], String> do
   return Database.select().from(DB.Schema.Readings)
     .by({user_id: userId})
-    .into(Reading { conversationId: "", readAt: 0 })
+    .all(as: Reading)
 end
 
 # Notes how far a person has read a conversation, or a thread of it: the

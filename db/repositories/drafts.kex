@@ -10,7 +10,7 @@ using App.Models.Draft, only: [Draft]
 foul pending(userId: String) -> Result<[Draft], String> do
   return Database.select().from(DB.Schema.Drafts)
     .by({user_id: userId})
-    .into(Draft { conversationId: "", body: "" })
+    .all(as: Draft)
 end
 
 # Keeps what a person has written in one message box, in place of what was

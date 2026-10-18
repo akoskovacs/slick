@@ -4,6 +4,7 @@ module DB.Schema.Users
 
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
+using App.Models.User, only: [Role]
 
 let definition = Table.define :users, doc: "People, who sign in with a password, and bots, which use the API with a token" do |t|
   t.text(:id, primaryKey: true)
@@ -11,7 +12,7 @@ let definition = Table.define :users, doc: "People, who sign in with a password,
   t.text(:password_hash, doc: "A Metro.Auth.Password line, never a password")
   t.text(:created_at)
   t.text(:name, doc: "What they are called in a conversation", default: "")
-  t.text(:kind, default: "person", oneOf: Harmat.Column.choices(Type.named("App.Models.User.Role")), doc: "A person or a bot")
+  t.text(:kind, default: "person", oneOf: Harmat.Column.choices(Type.of(Role)), doc: "A person or a bot")
   t.belongsTo(:owner, :users, default: "", doc: "The person a bot belongs to")
   t.text(:api_token_digest, default: "")
   t.belongsTo(:owner_organization, :organizations, default: "", doc: "The organization a bot belongs to")

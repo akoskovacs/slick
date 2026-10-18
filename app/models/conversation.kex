@@ -32,12 +32,9 @@ record Conversation do
 end
 
 # Who may read a channel, as a form says it: "private", or anything else
-# for everyone. (Clauses, not `then … else`: two constructors of one type
-# in the branches of `then … else` do not check as that type —
-# kexhq/kex#504.)
+# for everyone.
 accessOf : String -> Access
-let accessOf("private") = Private
-let accessOf(text) = Public
+let accessOf(text) = text == "private" then Private else Public
 
 # The channel every workspace starts with.
 let GENERAL = "general"
@@ -58,8 +55,7 @@ make Conversation do
   let direct? -> Bool = @kind == Direct
 
   # Whether anyone in the organization may read it: a public channel.
-  # (`open?`, not `public?`: `public` is a Kex keyword.)
-  let open? -> Bool = @kind == Channel && @access == Public
+  let public? -> Bool = @kind == Channel && @access == Public
 
   # Whether this person may read and write here, given that they are in its
   # organization: anyone in a public channel, the two people of a private

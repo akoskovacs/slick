@@ -4,10 +4,11 @@ module DB.Schema.Conversations
 
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
+using App.Models.Conversation, only: [Kind, Access]
 
 let definition = Table.define :conversations, doc: "Channels, private chats and group chats" do |t|
   t.text(:id, primaryKey: true)
-  t.text(:kind, oneOf: Harmat.Column.choices(Type.named("App.Models.Conversation.Kind")), doc: "A channel, a chat between two people, or one between more")
+  t.text(:kind, oneOf: Harmat.Column.choices(Type.of(Kind)), doc: "A channel, a chat between two people, or one between more")
   t.text(:slug, doc: "Its organization, then #name, @one:other or &all,of,them")
   t.text(:title, default: "")
   t.text(:topic, default: "")
@@ -16,7 +17,7 @@ let definition = Table.define :conversations, doc: "Channels, private chats and 
   t.belongsTo(:creator, :users, column: :created_by, default: "")
   t.text(:created_at)
   t.belongsTo(:organization, :organizations, default: "")
-  t.text(:access, default: "public", oneOf: Harmat.Column.choices(Type.named("App.Models.Conversation.Access")), doc: "Anyone in the organization, or only its participants and team")
+  t.text(:access, default: "public", oneOf: Harmat.Column.choices(Type.of(Access)), doc: "Anyone in the organization, or only its participants and team")
   t.belongsTo(:team, :teams, default: "", doc: "The team that owns a channel")
   t.hasMany(:drafts, :drafts)
   t.hasMany(:readings, :readings)

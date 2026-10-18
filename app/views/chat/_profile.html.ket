@@ -16,15 +16,15 @@ params: [card: Card]
     <% if !card.alias.empty? %>
       <p class="formal"><%= card.alias %></p>
     <% end %>
-    <% if !card.role.empty? %>
-      <p class="role"><%= card.role %></p>
+    <% if !card.title.empty? %>
+      <p class="role"><%= card.title %></p>
     <% end %>
     <p class="presence<% if card.active? %> active<% end %>"><%= card.presence %></p>
-    <% if !card.emblem.empty? || !card.motto.empty? %>
-      <p class="motto"><%= card.emblem %> <%= card.motto %></p>
+    <% if !card.statusEmoji.empty? || !card.statusText.empty? %>
+      <p class="motto"><%= card.statusEmoji %> <%= card.statusText %></p>
     <% end %>
-    <% if !card.about.empty? %>
-      <p class="bio"><%= card.about %></p>
+    <% if !card.bio.empty? %>
+      <p class="bio"><%= card.bio %></p>
     <% end %>
     <div class="actions">
     <% if card.own? %>
@@ -36,30 +36,30 @@ params: [card: Card]
     <% end %>
     </div>
     <dl class="details">
-    <% if !card.team.empty? %>
+    <% if !card.department.empty? %>
       <dt>Department</dt>
-      <dd><%= card.team %></dd>
+      <dd><%= card.department %></dd>
     <% end %>
     <% if !card.mail.empty? %>
       <dt>Email</dt>
       <dd><a href="mailto:<%= card.mail %>"><%= card.mail %></a></dd>
     <% end %>
-    <% if !card.dial.empty? %>
+    <% if !card.phone.empty? %>
       <dt>Phone</dt>
-      <dd><a href="tel:<%= card.dial %>"><%= card.dial %></a></dd>
+      <dd><a href="tel:<%= card.phone %>"><%= card.phone %></a></dd>
     <% end %>
-    <% if !card.zone.empty? %>
+    <% if !card.timeZone.empty? %>
       <dt>Time zone</dt>
-      <dd><%= card.zone %></dd>
+      <dd><%= card.timeZone %></dd>
     <% end %>
-    <% if !card.keeper.empty? %>
+    <% if !card.owner.empty? %>
       <dt>Belongs to</dt>
-      <% if card.keeperKey.empty? %>
-        <dd><%= card.keeper %></dd>
+      <% if card.ownerId.empty? %>
+        <dd><%= card.owner %></dd>
       <% else %>
         <dd>
           <button type="button" class="link"
-            data-event="profile" data-user="<%= card.keeperKey %>"><%= card.keeper %></button>
+            data-event="profile" data-user="<%= card.ownerId %>"><%= card.owner %></button>
         </dd>
       <% end %>
     <% end %>

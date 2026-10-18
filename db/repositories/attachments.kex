@@ -19,14 +19,14 @@ foul uploaded(userId: String, blob: Metro.Storage.Blob) -> Result<Attachment, St
     uploadedOn: "${DateTime.now()}"
   }
   return Database.insert(DB.Schema.Files)
-    .valuesOf(file)
+    .record(file)
     .run
     .map { |_| file }
 end
 
 # One file, or `None`.
 foul single(id: String) -> Result<Attachment?, String> do
-  return Database.find(DB.Schema.Files, id, into: BLANK)
+  return Database.find(DB.Schema.Files, id, as: Attachment)
 end
 
 # Several files, by id, as many of them as there are.
@@ -34,7 +34,7 @@ foul among(ids: [String]) -> Result<[Attachment], String> do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.id.in(ids))
     .orderBy([:uploaded_at, :id])
-    .into(BLANK)
+    .all(as: Attachment)
 end
 
 # Every file sent into a conversation, newest first.
@@ -42,7 +42,7 @@ foul inside(conversationId: String) -> Result<[Attachment], String> do
   return Database.select().from(DB.Schema.Files)
     .by({conversation_id: conversationId})
     .orderBy(descending: [:uploaded_at, :id])
-    .into(BLANK)
+    .all(as: Attachment)
 end
 
 # Sends a person's files with a message: only theirs, and only those not
@@ -59,9 +59,4 @@ foul sent(
     .where(DB.Schema.Files.id.in(ids))
     .by({message_id: ""})
     .run
-end
-
-private do
-  # What each row is read into.
-  let BLANK = Attachment { id: "", userId: "", filename: "", contentType: "", byteSize: 0 }
 end

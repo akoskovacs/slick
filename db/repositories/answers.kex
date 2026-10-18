@@ -16,7 +16,7 @@ foul collected(conversationId: String) -> Result<[Answer], String> do
   return Database.select().from(DB.Schema.Answers)
     .by({conversation_id: conversationId})
     .orderBy([:answered_at, :id])
-    .into(BLANK)
+    .all(as: Answer)
 end
 
 # Every answer, in an organization, to the forms somebody asked — a bot
@@ -25,7 +25,7 @@ foul addressedTo(organizationId: String, askerId: String) -> Result<[Answer], St
   return Database.select().from(DB.Schema.Answers)
     .by({organization_id: organizationId, asker_id: askerId})
     .orderBy([:answered_at, :id])
-    .into(BLANK)
+    .all(as: Answer)
 end
 
 # Records a person's answer to one form of a message. An earlier answer of
@@ -48,13 +48,8 @@ foul recorded(organizationId: String, message: Message, form: Integer, userId: S
       .run
       .try
     Database.insert(DB.Schema.Answers)
-      .valuesOf(answered, extra: {id: id, organization_id: organizationId})
+      .record(answered, extra: {id: id, organization_id: organizationId})
       .run
   end
   return swapped.map { |_| answered }
-end
-
-private do
-  # What each row is read into.
-  let BLANK = Answer { messageId: "", userId: "" }
 end

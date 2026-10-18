@@ -9,7 +9,7 @@ using App.Models.Invocation, only: [Invocation]
 # Keeps one, as it is.
 foul recorded(invocation: Invocation) -> Result<Invocation, String> do
   return Database.insert(DB.Schema.Invocations)
-    .valuesOf(invocation)
+    .record(invocation)
     .run
     .map { |_| invocation }
 end
@@ -19,7 +19,7 @@ foul inside(conversationId: String) -> Result<[Invocation], String> do
   return Database.select().from(DB.Schema.Invocations)
     .by({conversation_id: conversationId})
     .orderBy([:invoked_at, :id])
-    .into(BLANK)
+    .all(as: Invocation)
 end
 
 # Those meant for a bot in an organization since `since`, oldest first:
@@ -29,10 +29,5 @@ foul meantFor(organizationId: String, botId: String, since: Integer) -> Result<[
     .by({organization_id: organizationId, bot_id: botId})
     .where(DB.Schema.Invocations.invokedAt > since)
     .orderBy([:invoked_at, :id])
-    .into(BLANK)
-end
-
-private do
-  # What each row is read into.
-  let BLANK = Invocation { id: "", organizationId: "", conversationId: "", botId: "", userId: "", command: "" }
+    .all(as: Invocation)
 end

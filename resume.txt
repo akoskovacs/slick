@@ -1,0 +1,3 @@
+Resume this session with:
+claude --resume fefe2aaf-b422-4b35-87fc-a7af2637b54cResume this session with:
+claude --resume fefe2aaf-b422-4b35-87fc-a7af2637b54c

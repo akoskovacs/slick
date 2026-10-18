@@ -1,16 +1,16 @@
 ---
 params: [crew: Crew, mates: String, rooms: String, candidates: String]
 ---
-<aside class="profile team" aria-label="Team @<%= crew.moniker %>">
+<aside class="profile team" aria-label="Team @<%= crew.handle %>">
   <header class="heading thread-head">
     <h1>Team</h1>
     <button type="button" class="quiet" data-event="unteam" title="Close team">✕</button>
   </header>
   <div class="profile-body">
-    <h2>@<%= crew.moniker %></h2>
+    <h2>@<%= crew.handle %></h2>
     <p class="formal"><%= crew.caption %> · <%= crew.tally %></p>
-    <% if !crew.blurb.empty? %>
-      <p class="bio"><%= crew.blurb %></p>
+    <% if !crew.description.empty? %>
+      <p class="bio"><%= crew.description %></p>
     <% end %>
     <% if crew.synced? %>
       <p class="hint">🔒 Kept in sync from your organization's directory: its name and members are changed there.</p>

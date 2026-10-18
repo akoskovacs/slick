@@ -24,8 +24,13 @@ end
 
 # The user registered under an email, with their stored password line.
 foul credentials(email: String) -> Result<(User, String)?, String> do
-  return Database.findBy(DB.Schema.Users, {email: email})
-    .map { |row| row.map { |found| (decoded(found), found.get("password_hash").or("")) } }
+  match Database.findBy(DB.Schema.Users, {email: email}).try do
+    None => return Ok(None)
+    Just(row) => do
+      let user = Database.decoded(row, User, {}).try
+      return Ok(Just((user, row.get("password_hash").or(""))))
+    end
+  end
 end
 
 # Stores a bot. It has no password: `tokenDigest` is how it is known.
@@ -52,7 +57,7 @@ foul operated(owner: String) -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .by({owner_id: owner})
     .orderBy([:name, :id])
-    .into(BLANK)
+    .all(as: User)
 end
 
 # An organization's bots, by name.
@@ -60,7 +65,7 @@ foul maintained(organizationId: String) -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .by({owner_organization_id: organizationId})
     .orderBy([:name, :id])
-    .into(BLANK)
+    .all(as: User)
 end
 
 # Replaces the token of an organization's bot; whether it was that
@@ -78,7 +83,7 @@ end
 foul bearing(tokenDigest: String) -> Result<User?, String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .by({api_token_digest: tokenDigest, kind: Bot})
-    .firstInto(BLANK)
+    .first(as: User)
 end
 
 # Replaces a bot's token; whether it was this owner's bot to change.
@@ -130,14 +135,14 @@ end
 foul member(id: String) -> Result<User?, String> do
   return Database.select().from(DB.Schema.Users)
     .by({id: id})
-    .firstInto(BLANK)
+    .first(as: User)
 end
 
 # Everyone, by name: who can be written to, and whose name goes on a message.
 foul everyone -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .orderBy([:name, :email])
-    .into(BLANK)
+    .all(as: User)
 end
 
 private do
@@ -161,10 +166,4 @@ private do
     :show_nickname,
     :managed
   ]
-
-  # What each row is read into.
-  let BLANK = User { id: "", email: "" }
-
-  decoded : {String: String} -> User
-  let decoded(row) = Harmat.Database.decoded(row, BLANK, {})
 end

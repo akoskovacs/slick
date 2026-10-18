@@ -60,7 +60,7 @@ serving Store do
   # Runs `work` as one transaction, here, on this process's connection:
   # nothing another process asks for is run until it is over.
   foul slot transacted(work: Block<Result<Any, String>>) -> Reply<Result<Any, String>> do
-    return { reply: Harmat.Database.Direct { connection: @connection }.atomically(work) }
+    return { reply: Harmat.Database.Direct { connection: @connection }.transaction(work) }
   end
 end
 
@@ -100,7 +100,7 @@ make StoreConnection, implement: Harmat.Connection do
     end
   end
 
-  foul atomically(work: Block<Result<Any, String>>) -> Result<Any, String> do
+  foul transaction(work: Block<Result<Any, String>>) -> Result<Any, String> do
     return work() if Harmat.Database.ongoing().set?
     return flat(@store.transacted(work, within: 30_000))
   end

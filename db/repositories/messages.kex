@@ -13,27 +13,27 @@ foul latest(conversationId: String, limit: Integer) -> Result<[Message], String>
     .by({conversation_id: conversationId, parent_id: ""})
     .orderBy(descending: [:sent_at, :id])
     .limit(limit)
-    .into(BLANK)
+    .all(as: Message)
     .map { |messages| messages.reverse }
 end
 
-# How many messages of a conversation are newer than `since`, in
+# How many messages of a conversation were sent after `after`, in
 # milliseconds since 1970. Replies are not counted: they are read in their
 # thread.
-foul newer(conversationId: String, since: Integer) -> Result<Integer, String> do
+foul newer(conversationId: String, after: Integer) -> Result<Integer, String> do
   return Database.select().from(DB.Schema.Messages)
     .by({conversation_id: conversationId, parent_id: ""})
-    .where(DB.Schema.Messages.sentAt > since)
+    .where(DB.Schema.Messages.sentAt > after)
     .count
 end
 
-# The replies to any of these messages newer than `since`, oldest first.
-foul replyingTo(rootIds: [String], since: Integer) -> Result<[Message], String> do
+# The replies to any of these messages sent after `after`, oldest first.
+foul replyingTo(rootIds: [String], after: Integer) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.parentId.in(rootIds))
-    .where(DB.Schema.Messages.sentAt > since)
+    .where(DB.Schema.Messages.sentAt > after)
     .orderBy([:sent_at, :id])
-    .into(BLANK)
+    .all(as: Message)
 end
 
 # The replies to a message, oldest first.
@@ -41,7 +41,7 @@ foul answering(rootId: String) -> Result<[Message], String> do
   return Database.select().from(DB.Schema.Messages)
     .by({parent_id: rootId})
     .orderBy([:sent_at, :id])
-    .into(BLANK)
+    .all(as: Message)
 end
 
 # Stores a message, stamped now. With a parent it is a reply, and the
@@ -61,7 +61,7 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
   # A reply and its thread's count change together, or not at all.
   let stored : Result<Integer, String> = Database.transaction do
     let inserted = Database.insert(DB.Schema.Messages)
-      .valuesOf(message)
+      .record(message)
       .run
       .try
     if parent.empty?
@@ -79,10 +79,5 @@ end
 
 # One message, or `None`.
 foul single(id: String) -> Result<Message?, String> do
-  return Database.find(DB.Schema.Messages, id, into: BLANK)
-end
-
-private do
-  # What each row is read into.
-  let BLANK = Message { id: "", conversationId: "", userId: "", body: "" }
+  return Database.find(DB.Schema.Messages, id, as: Message)
 end

@@ -2,8 +2,9 @@
 
 Bugs and limits met while building Slick on Kex 0.4.0-rc.1, on the BEAM.
 Rechecked on Kex main at 286c026 and filed on milestone 0.4.0, except where
-an entry says otherwise. At the end: names in the code that were chosen
-only to avoid these, to rename once they are fixed.
+an entry says otherwise. Most were fixed by main at 6fdaf4c, which Slick,
+Metro and Harmat now need. At the end: names in the code that were chosen
+only to avoid what is still open, to rename once it is fixed.
 
 ## 1. A free function named like a capability method of the same module is not found — [#492](https://github.com/kexhq/kex/issues/492)
 
@@ -56,6 +57,11 @@ called from inside the module or out.
   `Metro.Storage.Service`. That one is not reduced separately but looks
   like the same bug.
 
+**Fixed** on Kex main at 6fdaf4c; the workaround is gone. `Harmat.Connection.transaction` and `Harmat.Database.all` have
+their names. Metro's capability is still `Metro.Storage.Service`: named
+`Metro.Storage`, like the module beside it, it now builds and fails at run
+time with `:undef` (9 below).
+
 ## 2. A `var` assigned inside a `with` block is unbound after it — [#493](https://github.com/kexhq/kex/issues/493)
 
 ```kex
@@ -99,6 +105,8 @@ work's outcome out of a `with` block. The code that needed it now does it all
 inside the block. That turned out not to be the right design for other
 reasons; see 4 below.
 
+**Fixed** on Kex main at 6fdaf4c; the workaround is gone.
+
 ## The others
 
 3. **A capability method named `get` changed what `get(...)` meant elsewhere.**
@@ -127,6 +135,9 @@ reasons; see 4 below.
    that helper, builds. Renamed `failureOf`. Slick's `main.kex` already
    notes the same for a function it had to call `sown` instead of `seeded`.
 
+   **Fixed** on main at 6fdaf4c: Metro's storage is `put`/`get`/`delete`,
+   Harmat's log helpers are `table` and `shown`, opencode-bot's is `failed`.
+
 4. **A block keeps the capability in force where it was written.** That
    matches the Harmat README ("a replacement reaches the blocks written
    inside it"). The surprise: installing another capability around a
@@ -138,8 +149,8 @@ reasons; see 4 below.
 5. **A record declared inside `private do` is a bare tuple at run time.**
    [#495](https://github.com/kexhq/kex/issues/495). It
    type-checks, but every field access fails: `Undefined method: viewer for
-   Tuple`. Hit with `Room` in Slick's `app/views/chat.kex`; moved to the
-   top level.
+   Tuple`. Hit with `Room` in Slick's `app/views/chat.kex`. **Fixed**:
+   `Room` is private again.
 
 6. **A fully qualified function reference fails when called.** Not filed:
    `~Actions.act` works in a small program on 286c026, so it was most likely
@@ -155,15 +166,45 @@ reasons; see 4 below.
    not `put`; `put("/commands", ~commandsDeclared)` type-checked (as some
    other `put` — a map's?) and every route failed when the router was
    built: `.try propagated out: :undef`. Importing `put` fixed it.
+   **Fixed**: now an error when it is built.
 
-8. **A field named like a function is called in a template** (kexhq/kex#448,
-   filed). Met again with `link` (the stdlib's `link`) and `picture?`.
+8. **A field named like a function is called in a template**
+   ([#448](https://github.com/kexhq/kex/issues/448), fixed for a template in
+   the entry file). A template loaded with `Kex.embed` in a module of a
+   package still reads `file.link` as the stdlib's `link`, `card.name` as
+   `Weekday`'s `name`, and `file.picture?` as `Metro.Storage.picture?`:
+   [#533](https://github.com/kexhq/kex/issues/533). The `Card` and `Crew`
+   fields that do not collide now have their `User` and `Team` names.
+
+9. **A capability named like the module beside it fails at run time.** Not
+   filed yet. `capability Metro.Storage` next to `module Metro.Storage`
+   builds, and Metro's storage spec fails with `.try propagated out of the
+   test body: :undef`. Kept as `Metro.Storage.Service`.
+
+10. **A field whose type is an alias can't be read by name.**
+    [#530](https://github.com/kexhq/kex/issues/530). `Type.Field.parse`
+    fails on `type UserId = String`, and nothing says what an alias stands
+    for. Harmat reads such a field as text.
+
+11. **A method named like another, called from another module without its
+    defaulted argument, is missing at link time.**
+    [#531](https://github.com/kexhq/kex/issues/531). `Select.all(as:,
+    renamed: = {})` beside `Select.all`: `undefined function all/3`. Harmat
+    has `all(as:)` and `all(as:, renamed:)` instead.
+
+12. **An overloaded `||` is a Bool when its left side comes from another
+    module's method.** [#532](https://github.com/kexhq/kex/issues/532).
+    `DB.Schema.Conversations.firstUser == id || …` needs `using
+    Harmat.Schema, only: [Cond]` in the file that writes it. Not reduced
+    outside Harmat. `using M, only: [||]` does not parse, though #528 says
+    it does.
 
 ## Layout limits
 
-Not bugs, but they keep lines long where the code style wants them short —
+Not bugs, but they kept lines long where the code style wants them short —
 [#497](https://github.com/kexhq/kex/issues/497) for the first three, and
-[#498](https://github.com/kexhq/kex/issues/498) for the escapes:
+[#498](https://github.com/kexhq/kex/issues/498) for the escapes. All four
+are **fixed** on main at 6fdaf4c.
 
 - A type signature must be on one line: neither `->` at the start of a line
   nor at the end continues it. Typed parameters, one per line, work instead.
@@ -172,7 +213,10 @@ Not bugs, but they keep lines long where the code style wants them short —
 - Strings have no escape for ESC, or for any code point: `\e` is `e` and
   `\u{1b}` is literal. `Console` covers colors.
 - `after`, `main` and `slot` are keywords, which surprises as a parameter or
-  variable name (`since`, `open` and `key` were used).
+  variable name (`since`, `open` and `key` were used). Since
+  [#508](https://github.com/kexhq/kex/issues/508), `after` is a parameter
+  name and any keyword names a method; `main` as a variable, and `slot` as
+  a record field, still are not.
 
 ## Names to change back
 
@@ -181,29 +225,17 @@ fixed, and simplifying where a workaround stayed.
 
 | Where | Now | Because | Rather |
 | --- | --- | --- | --- |
-| `Harmat.Connection` | `atomically` | #492 | `transaction` |
-| Metro | `Metro.Storage.Service` capability | #492 | `Metro.Storage` |
-| Metro | `store` / `fetch` / `discard` | #494 | `put` / `get` / `delete` |
+| Metro | `Metro.Storage.Service` capability | 9 | `Metro.Storage` |
 | Metro | `Metro.Storage.folder()` | ENV is effectful in a constant | a `ROOT` constant, if config may be read once |
-| Harmat | `Harmat.Logger` (logger.kex) beside `Harmat.Log` (log.kex) | a capability is found by its file; and 1 | one `Harmat.Log` |
-| Harmat `log.kex` | `subjectOf`, `valuesOf` | #494 | `table`, `shown` |
-| opencode-bot `local.kex` | `failureOf` | #494 | `failed` |
+| Harmat | `Harmat.Logger` (logger.kex) beside `Harmat.Log` (log.kex) | a capability is found by its file; and 9 | one `Harmat.Log` |
 | Harmat | `Database.ongoing`, `begun`, `ended` | 4 | private to Harmat, if the store's connection can be given the transaction another way |
-| Slick `app/views/chat.kex` | `Enclosure.href`, `pictured?` | #448 | `link`, `picture?` |
-| Slick `app/views/chat.kex` | `Card` fields `formal`, `alias`, `role`, `team`, `dial`, `zone`, `about`, `motto`, `keeper` | #448 | the `User` field names |
+| Harmat `Select` | `all(as:)` and `all(as:, renamed:)`, the same for `first` | kexhq/kex#531 | one each, `renamed:` defaulting to `{}` |
+| Harmat `database.kex` | an alias field read as text | kexhq/kex#530 | read as what it aliases |
+| Slick `db/repositories/conversations.kex`, Harmat's spec | `using Harmat.Schema, only: [Cond]` | kexhq/kex#532 | nothing |
+| Slick `app/views/chat.kex` | `Enclosure.href`, `pictured?` | kexhq/kex#533 | `link`, `picture?` |
+| Slick `app/views/chat.kex` | `Card.alias`, `Crew.caption` | kexhq/kex#533 | `name` |
 | Slick `app/views/chat.kex` | `Detail.key` | `slot` is a keyword | `slot` or `column` |
-| Slick `app/views/chat.kex` | `Room` at the top level | #495 | private |
 | Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
 | Slick `app/live/chat.kex` | `redescribed`, `givenFor` | kexhq/kex#451; a local `chosen` | `described`, `chosen` |
 | Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |
-| Slick `db/repositories/messages.kex` | `newer(…, since:)` | kexhq/kex#508: `after` is a keyword | `after` |
 | Slick `app/models/attachment.kex` | rounding by hand | kexhq/kex#491 | `to(String, places: 1)` |
-| Harmat `changeColumn` | one block of two lines: what it was, what it becomes | kexhq/kex#499 | `from:` and `to:` blocks |
-| Harmat `migration.kex` | `prior`, `changed` | kexhq/kex#508: `after` is a keyword | `before`, `after` |
-| Slick `app/models/conversation.kex` | `open?` | kexhq/kex#508: `public` is a keyword | `public?` |
-| Slick `app/views/chat.kex` | `Crew.moniker`, `Crew.caption`, `Crew.blurb` | #448 (Harmat has a `tag`) | `handle`, `name`, `description` |
-| Harmat `Database` | `every(table)` | kexhq/kex#492 (comment: a make-block method, `Select.all`) | `all(table)` |
-| Harmat `Insert` | `valuesOf(record)` | kexhq/kex#508: `record` is a keyword | `record(…)` |
-| Harmat `database.kex` | `readAs`, one clause per type name | kexhq/kex#506 | one `match` |
-| Slick `app/models/conversation.kex` | `accessOf`, clauses | kexhq/kex#504 | `access == "private" then Private else Public` |
-| Slick `db/schema` | `Type.named("App.Models.Conversation.Kind")` | kexhq/kex#505, #509 | `Type.of(Kind)` |
