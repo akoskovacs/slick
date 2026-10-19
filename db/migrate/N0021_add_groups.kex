@@ -11,10 +11,10 @@ using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [changeColumn, addColumn, createTable, addIndex]
 
 let change = Migration.define :add_groups, follows: :create_teams do
-  changeColumn(:conversations) do |t|
-    t.text(:kind, oneOf: ["channel", "direct"])
-    t.text(:kind, oneOf: ["channel", "direct", "group"])
-  end
+  changeColumn(:conversations,
+    from: { |t| t.text(:kind, oneOf: ["channel", "direct"]) },
+    to: { |t| t.text(:kind, oneOf: ["channel", "direct", "group"])
+  })
   addColumn(:conversations) { |t| t.text(:access, default: "public", oneOf: ["public", "private"]) }
   addColumn(:conversations) { |t| t.text(:team_id, default: "") }
   addIndex(:conversations, [:team_id])

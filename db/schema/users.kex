@@ -27,8 +27,6 @@ let definition = Table.define :users do |t|
   t.text(:managed, default: "")
 end
 
-let table = DB.Schema.Users.definition.table
-
 let id = DB.Schema.Users.definition.textColumn(:id)
 let email = DB.Schema.Users.definition.textColumn(:email)
 let passwordHash = DB.Schema.Users.definition.textColumn(:password_hash)

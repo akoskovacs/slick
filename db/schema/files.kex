@@ -19,8 +19,6 @@ let definition = Table.define :files do |t|
   t.text(:uploaded_on)
 end
 
-let table = DB.Schema.Files.definition.table
-
 let id = DB.Schema.Files.definition.textColumn(:id)
 let userId = DB.Schema.Files.definition.textColumn(:user_id)
 let conversationId = DB.Schema.Files.definition.textColumn(:conversation_id)

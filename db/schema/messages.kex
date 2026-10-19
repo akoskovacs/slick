@@ -15,8 +15,6 @@ let definition = Table.define :messages do |t|
   t.int(:reply_count, default: 0)
 end
 
-let table = DB.Schema.Messages.definition.table
-
 let id = DB.Schema.Messages.definition.textColumn(:id)
 let conversationId = DB.Schema.Messages.definition.textColumn(:conversation_id)
 let userId = DB.Schema.Messages.definition.textColumn(:user_id)

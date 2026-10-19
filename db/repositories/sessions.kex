@@ -20,23 +20,25 @@ end
 # Whose session a digest is, and when it expires (seconds since 1970).
 foul holder(tokenDigest: String) -> Result<(String, Integer)?, String> do
   return Database.select().from(DB.Schema.Sessions)
-    .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
-    .first
-    .map { |row| row.map { |found| held(found) } }
+    .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
+    .first(as: Lease)
+    .map { |session| session.map { |held| (held.userId, held.expiresAt) } }
 end
 
 foul revoke(tokenDigest: String) -> Result<Bool, String> do
   return Database.delete(DB.Schema.Sessions)
-    .where(DB.Schema.Sessions.tokenDigest.eq(tokenDigest))
+    .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
     .run
     .map { |count| count > 0 }
 end
 
 private do
-  # A session row as whose it is and when it expires.
-  held : {String: String} -> (String, Integer)
-  let held(row) = (
-    row.get("user_id").or(""),
-    row.get("expires_at").or("").trim.to(Integer).or(0)
-  )
+  # Only the fields authentication needs; token digests stay in the query.
+  # (`Lease`, not `Session`: Net.HTTP.WebSocket also declares a `Session`,
+  # and once the HTTP stack is linked that one takes the name —
+  # kexhq/kex#451.)
+  record Lease do
+    userId : String
+    expiresAt : Integer
+  end
 end

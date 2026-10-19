@@ -15,19 +15,19 @@ using App.Models.Conversation, only: [Conversation]
 # not everyone may read.
 foul channels(organizationId: String) -> Result<[Conversation], String> do
   let rows = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("channel"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
+    .where(DB.Schema.Conversations.kind == "channel")
+    .where(DB.Schema.Conversations.organizationId == organizationId)
     .orderBy([:title])
-    .all
+    .all(as: Conversation)
     .try
-  return peopled(rows.map { |row| decoded(row) })
+  return peopled(rows)
 end
 
 # One conversation, or `None`.
 foul lookup(id: String) -> Result<Conversation?, String> do
   let row = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.id.eq(id))
-    .first
+    .where(DB.Schema.Conversations.id == id)
+    .first(as: Conversation)
     .try
   return single(row)
 end
@@ -35,8 +35,8 @@ end
 # An organization's channel of this name, or `None`.
 foul channelCalled(organizationId: String, title: String) -> Result<Conversation?, String> do
   let row = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.slug.eq("${organizationId}#${title}"))
-    .first
+    .where(DB.Schema.Conversations.slug == "${organizationId}#${title}")
+    .first(as: Conversation)
     .try
   return single(row)
 end
@@ -91,11 +91,11 @@ foul among(organizationId: String, people: [String], by: String) -> Result<Conve
   let everyone = (people + [by]).uniq.sort
   let slug = "${organizationId}${App.Models.Conversation.gathering(everyone)}"
   let existing = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.slug.eq(slug))
-    .first
+    .where(DB.Schema.Conversations.slug == slug)
+    .first(as: Conversation)
     .try
   match existing do
-    Just(row) => return peopled([decoded(row)]).map { |found| found.first.or(decoded(row)) }
+    Just(row) => return peopled([row]).map { |found| found.first.or(row) }
     None => do
       let chat = Conversation {
         id: Metro.Id.generate(prefix: "g"),
@@ -133,13 +133,13 @@ foul groupsOf(organizationId: String, userId: String) -> Result<[Conversation], 
   return Ok([]) if ids.empty?
 
   let rows = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("group"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
+    .where(DB.Schema.Conversations.kind == "group")
+    .where(DB.Schema.Conversations.organizationId == organizationId)
     .where(DB.Schema.Conversations.id.in(ids))
     .orderBy([:created_at, :id])
-    .all
+    .all(as: Conversation)
     .try
-  return peopled(rows.map { |row| decoded(row) })
+  return peopled(rows)
 end
 
 # Makes a group chat a channel of this name, public or private; whoever
@@ -152,10 +152,10 @@ foul promoted(id: String, title: String, access: String) -> Result<Conversation,
       return Error("only a group chat becomes a channel") if !chat.group?
 
       let slug = "${chat.organizationId}#${title}"
-      Database.within(DB.Schema.Conversations.kind.eq("group"))
+      Database.within(DB.Schema.Conversations.kind == "group")
         .update(DB.Schema.Conversations)
         .set({kind: "channel", slug: slug, title: title, access: access})
-        .where(DB.Schema.Conversations.id.eq(id))
+        .where(DB.Schema.Conversations.id == id)
         .run
         .try
       return Ok(Conversation {
@@ -199,11 +199,11 @@ end
 foul between(organizationId: String, one: String, other: String) -> Result<Conversation, String> do
   let slug = "${organizationId}${App.Models.Conversation.pairing(one, other)}"
   let existing = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.slug.eq(slug))
-    .first
+    .where(DB.Schema.Conversations.slug == slug)
+    .first(as: Conversation)
   match existing do
     Error(reason) => return Error(reason)
-    Ok(Just(row)) => return Ok(decoded(row))
+    Ok(Just(row)) => return Ok(row)
     Ok(None) => do
       let first = one <= other then one else other
       let second = one <= other then other else one
@@ -237,38 +237,38 @@ end
 # they are in it.
 foul directsOf(organizationId: String, userId: String) -> Result<[Conversation], String> do
   let asFirst = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("direct"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
-    .where(DB.Schema.Conversations.firstUser.eq(userId))
-    .all
+    .where(DB.Schema.Conversations.kind == "direct")
+    .where(DB.Schema.Conversations.organizationId == organizationId)
+    .where(DB.Schema.Conversations.firstUser == userId)
+    .all(as: Conversation)
     .try
   let asSecond = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind.eq("direct"))
-    .where(DB.Schema.Conversations.organizationId.eq(organizationId))
-    .where(DB.Schema.Conversations.secondUser.eq(userId))
-    .all
+    .where(DB.Schema.Conversations.kind == "direct")
+    .where(DB.Schema.Conversations.organizationId == organizationId)
+    .where(DB.Schema.Conversations.secondUser == userId)
+    .all(as: Conversation)
     .try
-  return Ok((asFirst + asSecond).map { |row| decoded(row) })
+  return Ok(asFirst + asSecond)
 end
 
 # Sets a channel's topic; whether there was such a channel. A private chat
 # has no topic, and the condition on `kind` keeps it that way.
 foul retitled(id: String, topic: String) -> Result<Bool, String> do
-  return Database.within(DB.Schema.Conversations.kind.eq("channel"))
+  return Database.within(DB.Schema.Conversations.kind == "channel")
     .update(DB.Schema.Conversations)
     .set({topic: topic})
-    .where(DB.Schema.Conversations.id.eq(id))
+    .where(DB.Schema.Conversations.id == id)
     .run
     .map { |changed| changed > 0 }
 end
 
 private do
   # A conversation found, or none, with who takes part in it.
-  foul single(row: {String: String}?) -> Result<Conversation?, String> do
+  foul single(row: Conversation?) -> Result<Conversation?, String> do
     match row do
       None => return Ok(None)
       Just(found) => do
-        let filled : [Conversation] = peopled([decoded(found)]).try
+        let filled : [Conversation] = peopled([found]).try
         return Ok(filled.first)
       end
     end
@@ -307,23 +307,8 @@ private do
 
   # The conversations a person takes part in, by id.
   foul taking(userId: String) -> Result<[String], String> do
-    return Database.select([:conversation_id]).from(DB.Schema.Participants)
-      .where(DB.Schema.Participants.userId.eq(userId))
-      .all
-      .map { |rows| rows.map { |row| row.get("conversation_id").or("") } }
+    return Database.select().from(DB.Schema.Participants)
+      .where(DB.Schema.Participants.userId == userId)
+      .pluck(:conversation_id)
   end
-
-  decoded : {String: String} -> Conversation
-  let decoded(row) = Conversation {
-    id: row.get("id").or(""),
-    kind: row.get("kind").or("channel"),
-    slug: row.get("slug").or(""),
-    title: row.get("title").or(""),
-    topic: row.get("topic").or(""),
-    firstUser: row.get("first_user").or(""),
-    secondUser: row.get("second_user").or(""),
-    organizationId: row.get("organization_id").or(""),
-    access: row.get("access").or("public"),
-    teamId: row.get("team_id").or("")
-  }
 end

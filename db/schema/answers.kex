@@ -17,8 +17,6 @@ let definition = Table.define :answers do |t|
   t.bigint(:answered_at)
 end
 
-let table = DB.Schema.Answers.definition.table
-
 let id = DB.Schema.Answers.definition.textColumn(:id)
 let messageId = DB.Schema.Answers.definition.textColumn(:message_id)
 let conversationId = DB.Schema.Answers.definition.textColumn(:conversation_id)

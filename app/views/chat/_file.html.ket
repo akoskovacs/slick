@@ -2,9 +2,9 @@
 params: [file: Enclosure]
 ---
 <li class="file">
-  <a class="glimpse" href="<%= file.href %>" target="_blank" rel="noopener">
-  <% if file.pictured? %>
-    <img src="<%= file.href %>" alt="<%= file.caption %>" loading="lazy">
+  <a class="glimpse" href="<%= file.link %>" target="_blank" rel="noopener">
+  <% if file.picture? %>
+    <img src="<%= file.link %>" alt="<%= file.caption %>" loading="lazy">
   <% elif !file.glimpse.empty? %>
     <pre><%= file.glimpse %></pre>
   <% else %>
@@ -12,7 +12,7 @@ params: [file: Enclosure]
   <% end %>
   </a>
   <p class="about">
-    <a href="<%= file.href %>" target="_blank" rel="noopener"><strong><%= file.caption %></strong></a>
+    <a href="<%= file.link %>" target="_blank" rel="noopener"><strong><%= file.caption %></strong></a>
   </p>
   <p class="meta"><%= file.sender %> · <%= file.stamp %> · <%= file.weight %></p>
 </li>

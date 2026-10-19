@@ -74,8 +74,9 @@ Docker below.
 
 ## Develop it
 
-With its sources, either Docker or the Kex toolchain (0.4.0-rc.1 or
-newer):
+With its sources, either Docker or a Kex toolchain built from main
+`3111d30` or newer (the migration uses fixes after 0.4.0-rc.2; see
+[the compatibility check](docs/kex-findings.md)):
 
 ```sh
 git clone https://github.com/akoskovacs/slick && cd slick

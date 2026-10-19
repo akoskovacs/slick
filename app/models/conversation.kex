@@ -45,8 +45,7 @@ make Conversation do
   let direct? -> Bool = @kind == "direct"
 
   # Whether anyone in the organization may read it: a public channel.
-  # (`open?`, not `public?`: `public` is a Kex keyword.)
-  let open? -> Bool = @kind == "channel" && @access == "public"
+  let public? -> Bool = @kind == "channel" && @access == "public"
 
   # Whether this person may read and write here, given that they are in its
   # organization: anyone in a public channel, the two people of a private

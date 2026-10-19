@@ -18,8 +18,6 @@ let definition = Table.define :invocations do |t|
   t.text(:invoked_on)
 end
 
-let table = DB.Schema.Invocations.definition.table
-
 let id = DB.Schema.Invocations.definition.textColumn(:id)
 let organizationId = DB.Schema.Invocations.definition.textColumn(:organization_id)
 let conversationId = DB.Schema.Invocations.definition.textColumn(:conversation_id)

@@ -2,8 +2,90 @@
 
 Bugs and limits met while building Slick on Kex 0.4.0-rc.1, on the BEAM.
 Rechecked on Kex main at 286c026 and filed on milestone 0.4.0, except where
-an entry says otherwise. At the end: names in the code that were chosen
+an entry says otherwise; rechecked again on `3111d30`, and each entry below
+carries its status there. At the end: names in the code that were chosen
 only to avoid these, to rename once they are fixed.
+
+## Migration check — 2026-10-19
+
+Checked against local Kex main `3111d30`, with the compiler, runtime and Tey
+rebuilt from that checkout; the installed `kex` still points at an older
+build. Harmat is at `ce0f9ae` and Metro at `683a861`, with the local Metro
+changes described below. The entries below this section are historical
+reproductions, not a list of everything still broken.
+
+Adopted in Slick:
+
+- Harmat's comparison operators (`==`, `>`) instead of `eq`/`gt` calls,
+  and `changeColumn(from: ..., to: ...)` instead of a two-line block.
+- `transaction` in both the store capability implementation and its call
+  to `Harmat.Database.Direct`; Metro storage reads use `Service.get`.
+- `Room` is private again. Template fields use `link`, `picture?`, team
+  `handle`/`name`/`description`, and profile `name`/`title`/`department`/
+  `phone`/`timeZone`/`bio`/`statusText`.
+- Records for every read: `all(as:)`/`first(as:)` in all fourteen
+  repositories, `pluck` for single columns, `Database.decoded` where a
+  row is already in hand — the per-repository `decoded` helpers are gone.
+- `after` for the `since` parameters a timestamp is compared against,
+  and `public?` for the channel predicate `open?` (kexhq/kex#508).
+- One `using Metro.Router, as: Router`: every route call uniformly
+  `Router.get`/`post`/…, so a new route cannot fall into the bare-`get`
+  trap below.
+
+Still needed or deliberately retained:
+
+- **Imported router names still collide (#494).** With Metro's storage
+  `get`/`put` methods loaded, Slick's correctly imported router functions
+  produced `expected Char?, got Metro.Router.Entry` and a diagnostic
+  claiming `Metro.Storage.Service.put` was not imported. Qualifying the
+  calls fixes the build; Slick qualifies all of them through the aliased
+  `Router`, and Metro's generated routes now qualify `get` too.
+- **The storage capability must still be separate.** A reduced program
+  with both `capability Storage` and `module Storage` can call a module
+  helper outside `with Storage`, but inside the replacement it fails:
+  `undef` on BEAM and `Undefined method: received for Storage.Disk` in the
+  interpreter. Keep `Metro.Storage.Service`; its comments now agree with
+  its actual API. Do not assume #492 fixed this different case.
+- **The entrypoint helper still cannot be named `seeded`.** Renaming `sown`
+  back made the full server build fail with `undefined function seeded/1
+  in commanded/3`. The specs do not compile the entrypoint, so this was
+  caught by the separate application build. Keep `sown` and the other
+  function-name workarounds pending a fix.
+- **Transactions remain process-local.** Lexical capability capture is
+  still why Harmat tracks the current transaction in the owning process.
+  Keep `ongoing`/`begun`/`ended` and Slick's direct execution inside it.
+- **A private record named like one in the HTTP stack breaks (kexhq/kex#451).**
+  Sessions were read as a private `Session` record — fine on its own,
+  but once the application (with `Net.HTTP.WebSocket`'s own `Session`)
+  is linked, `.first(as: Session)` fails with `Not a record type: Atom`
+  and every sign-in breaks. It is `Lease` now. The same collision class
+  as `Answer` (not `Response`) and the `open` local (not `main`).
+- Inserts stay explicit maps: `record(model, extra)` hides which columns
+  are written behind reflection, and the `managed`/`show_nickname`
+  spellings it cannot keep had to be smuggled through `extra` anyway —
+  tried and backed out.
+- **Block parameters do not spread tuples from module constants.**
+  `pairs.map { |key, value| }` works in Kex's own `tuple_param_pattern`
+  spec, over a literal — but over a module-level list
+  (`App.Models.Emoji.STATUSES`, `App.Models.User.DETAILS`), the checker
+  gives every parameter the whole tuple: `` `preset` expects argument 1
+  to be String, but got (String, String) ``. The `match entry do
+  (glyph, words) => … end` forms in `app/views/chat.kex` — and their
+  siblings in `app/live/chat.kex` and `app/models/emoji.kex` — stay
+  until it spreads there too. `do |…|` blocks behave the same, and
+  `|(a, b)|` patterns were deliberately never added, so there is no
+  shorter spelling today. Found on `3111d30`; not filed.
+- The manual file-size rounding and other names not migrated here remain;
+  this check does not establish that every historical workaround can go.
+
+Harmat had already adopted the applicable API changes; no further Harmat
+source changes were needed. Slick's complete specs cover the migrated
+queries, migration history, transactions, file previews and view fields.
+
+Validation: Slick builds and passes all 9 specs; Harmat passes 63 and Metro
+46, plus a rerun of Metro's 3 generator specs after changing its template.
+The compiled Slick entrypoint also seeds and starts against a temporary
+SQLite database, and passes `script/smoke.sh` over a real local HTTP port.
 
 ## 1. A free function named like a capability method of the same module is not found — [#492](https://github.com/kexhq/kex/issues/492)
 
@@ -56,6 +138,12 @@ called from inside the module or out.
   `Metro.Storage.Service`. That one is not reduced separately but looks
   like the same bug.
 
+**Closed:** fixed by `kexhq/kex#514` — the program above prints `nothing
+under k` on `3111d30`, and `transaction` is back in Harmat and Slick.
+Metro's `Service` split is a different, still-open case (see the migration
+check): a capability and a module sharing one name, not a free function
+beside a method.
+
 ## 2. A `var` assigned inside a `with` block is unbound after it — [#493](https://github.com/kexhq/kex/issues/493)
 
 ```kex
@@ -99,6 +187,9 @@ work's outcome out of a `with` block. The code that needed it now does it all
 inside the block. That turned out not to be the right design for other
 reasons; see 4 below.
 
+**Closed:** fixed by `kexhq/kex#513` — the program above prints `installed`
+on `3111d30`.
+
 ## The others
 
 3. **A capability method named `get` changed what `get(...)` meant elsewhere.**
@@ -127,27 +218,34 @@ reasons; see 4 below.
    that helper, builds. Renamed `failureOf`. Slick's `main.kex` already
    notes the same for a function it had to call `sown` instead of `seeded`.
 
+   **Still open on `3111d30`:** no fix PR in Kex's log, and Slick's routes
+   still qualify every call through the aliased `Router` for it.
+
 4. **A block keeps the capability in force where it was written.** That
    matches the Harmat README ("a replacement reaches the blocks written
    inside it"). The surprise: installing another capability around a
    block's call does not redirect it, so a transaction cannot be made by
    installing a non-committing connection around the work. Harmat keeps
    the transaction in the process instead (`Harmat.Database.ongoing`).
-   Possibly not a bug, but worth a sentence in the language docs.
+   **Closed as intended behavior:** the language spec (`docs/language-spec.md`,
+   capability rules) now says a block "keeps the replacements of the
+   region it was **written** in". Process-local transactions stay by design.
 
 5. **A record declared inside `private do` is a bare tuple at run time.**
    [#495](https://github.com/kexhq/kex/issues/495). It
    type-checks, but every field access fails: `Undefined method: viewer for
    Tuple`. Hit with `Room` in Slick's `app/views/chat.kex`; moved to the
-   top level.
+   top level. **Closed:** fixed by `kexhq/kex#512` — a private record's
+   field reads correctly on `3111d30`, and `Room` is private again (as is
+   the sessions `Lease`).
 
-6. **A fully qualified function reference fails when called.** Not filed:
-   `~Actions.act` works in a small program on 286c026, so it was most likely
-   a symptom of 3. A route
-   written `post("/uploads", ~App.Controllers.Files.uploaded)`
-   type-checked, then failed on every request with `Undefined method:
-   uploaded for Metro.WebRequest.WebRequest`. Importing the name and
-   writing `~uploaded` works. This may have been a symptom of 3.
+6. **A fully qualified function reference fails when called.**
+   Qualified dispatch itself is `kexhq/kex#476`, fixed by `kexhq/kex#482`
+   before 0.4.0-rc.1 — small programs work. The full-application failure
+   (`~App.Controllers.Files.uploaded` type-checking, then `Undefined
+   method: uploaded for Metro.WebRequest.WebRequest` on every request)
+   was never reduced and tracks the still-open 3; Slick keeps importing
+   `uploaded`/`fetched` by name, which works either way.
 
 7. **A name that was not imported is accepted, then is not there.**
    [#496](https://github.com/kexhq/kex/issues/496).
@@ -155,9 +253,16 @@ reasons; see 4 below.
    not `put`; `put("/commands", ~commandsDeclared)` type-checked (as some
    other `put` — a map's?) and every route failed when the router was
    built: `.try propagated out: :undef`. Importing `put` fixed it.
+   **Closed:** fixed by `kexhq/kex#511` — calling past the `only:` list
+   is now a check error naming the missing import.
 
 8. **A field named like a function is called in a template** (kexhq/kex#448,
    filed). Met again with `link` (the stdlib's `link`) and `picture?`.
+   **Closed for every reported name:** `link`, `picture?`, team
+   `handle`/`name`/`description` and the profile fields all render in
+   Slick's passing specs on `3111d30`. No dedicated Kex fix PR found, so
+   it was resolved incidentally — worth a note on the issue when closing
+   it.
 
 ## Layout limits
 
@@ -165,40 +270,38 @@ Not bugs, but they keep lines long where the code style wants them short —
 [#497](https://github.com/kexhq/kex/issues/497) for the first three, and
 [#498](https://github.com/kexhq/kex/issues/498) for the escapes:
 
-- A type signature must be on one line: neither `->` at the start of a line
-  nor at the end continues it. Typed parameters, one per line, work instead.
-- `using M, only: [...]` must be on one line.
-- A line cannot start with `then`; `if … else … end` as an expression works.
-- Strings have no escape for ESC, or for any code point: `\e` is `e` and
-  `\u{1b}` is literal. `Console` covers colors.
-- `after`, `main` and `slot` are keywords, which surprises as a parameter or
-  variable name (`since`, `open` and `key` were used).
+- **Closed:** signatures span lines with `->` trailing or leading, and
+  `using M, only: [...]` spans its brackets (`kexhq/kex#526`; Kex's own
+  spec passes on `3111d30`).
+- **Closed as specced:** `then` leads the line after a bare condition
+  (`kexhq/kex#526`). After `if` it is still a syntax error — but the
+  canonical `if … else … end` already spans lines, so nothing needs it.
+- **Closed:** `\e`, `\u{1b}` and `\u{1F680}` all escape
+  (`kexhq/kex#527`, verified on `3111d30`).
+- Partly freed: `after` names a parameter, a label and a local now
+  (`kexhq/kex#508`; Slick's timestamp parameters use it, and its `since`
+  locals could follow). `main` and `slot` are still reserved as locals,
+  parameters and — for `slot` — fields, so `open` and `Detail.key` stay.
 
 ## Names to change back
 
 Chosen to avoid the bugs above, or the limits; worth renaming once they are
-fixed, and simplifying where a workaround stayed.
+fixed, and simplifying where a workaround stayed. The 2026-10-19 migration
+changed back `atomically`, `store`/`fetch`/`discard`, `subjectOf`/`valuesOf`,
+the `Enclosure`/`Card`/`Crew` fields, top-level `Room`, `since:`, the
+two-line `changeColumn`, `prior`/`changed` and `open?`; what is left is
+below.
 
 | Where | Now | Because | Rather |
 | --- | --- | --- | --- |
-| `Harmat.Connection` | `atomically` | #492 | `transaction` |
 | Metro | `Metro.Storage.Service` capability | #492 | `Metro.Storage` |
-| Metro | `store` / `fetch` / `discard` | #494 | `put` / `get` / `delete` |
 | Metro | `Metro.Storage.folder()` | ENV is effectful in a constant | a `ROOT` constant, if config may be read once |
 | Harmat | `Harmat.Logger` (logger.kex) beside `Harmat.Log` (log.kex) | a capability is found by its file; and 1 | one `Harmat.Log` |
-| Harmat `log.kex` | `subjectOf`, `valuesOf` | #494 | `table`, `shown` |
 | opencode-bot `local.kex` | `failureOf` | #494 | `failed` |
 | Harmat | `Database.ongoing`, `begun`, `ended` | 4 | private to Harmat, if the store's connection can be given the transaction another way |
-| Slick `app/views/chat.kex` | `Enclosure.href`, `pictured?` | #448 | `link`, `picture?` |
-| Slick `app/views/chat.kex` | `Card` fields `formal`, `alias`, `role`, `team`, `dial`, `zone`, `about`, `motto`, `keeper` | #448 | the `User` field names |
+| Slick `db/repositories/sessions.kex` | `Lease` | kexhq/kex#451 (`Net.HTTP.WebSocket` has a `Session`) | `Session` |
 | Slick `app/views/chat.kex` | `Detail.key` | `slot` is a keyword | `slot` or `column` |
-| Slick `app/views/chat.kex` | `Room` at the top level | #495 | private |
 | Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
 | Slick `app/live/chat.kex` | `redescribed`, `givenFor` | kexhq/kex#451; a local `chosen` | `described`, `chosen` |
 | Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |
-| Slick `db/repositories/messages.kex` | `newer(…, since:)` | `after` is a keyword | `after` |
 | Slick `app/models/attachment.kex` | rounding by hand | kexhq/kex#491 | `to(String, places: 1)` |
-| Harmat `changeColumn` | one block of two lines: what it was, what it becomes | kexhq/kex#499 | `from:` and `to:` blocks |
-| Harmat `migration.kex` | `prior`, `changed` | `after` is a keyword | `before`, `after` |
-| Slick `app/models/conversation.kex` | `open?` | `public` is a keyword | `public?` |
-| Slick `app/views/chat.kex` | `Crew.moniker`, `Crew.caption`, `Crew.blurb` | #448 (Harmat has a `tag`) | `handle`, `name`, `description` |

@@ -9,9 +9,8 @@ using App.Models.Draft, only: [Draft]
 # Everything a person has started writing and not sent.
 foul pending(userId: String) -> Result<[Draft], String> do
   return Database.select().from(DB.Schema.Drafts)
-    .where(DB.Schema.Drafts.userId.eq(userId))
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .where(DB.Schema.Drafts.userId == userId)
+    .all(as: Draft)
 end
 
 # Keeps what a person has written in one message box, in place of what was
@@ -31,7 +30,7 @@ foul kept(userId: String, draft: Draft) -> Result<Integer, String> do
   }
   let swapped : Result<Integer, String> = Database.transaction do
     let cleared = Database.delete(DB.Schema.Drafts)
-      .where(DB.Schema.Drafts.id.eq(id))
+      .where(DB.Schema.Drafts.id == id)
       .run
       .try
     if draft.body.trim.empty?
@@ -43,14 +42,4 @@ foul kept(userId: String, draft: Draft) -> Result<Integer, String> do
     end
   end
   return swapped
-end
-
-private do
-  decoded : {String: String} -> Draft
-  let decoded(row) = Draft {
-    conversationId: row.get("conversation_id").or(""),
-    threadId: row.get("thread_id").or(""),
-    personId: row.get("person_id").or(""),
-    body: row.get("body").or("")
-  }
 end

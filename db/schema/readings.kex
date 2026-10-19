@@ -14,8 +14,6 @@ let definition = Table.define :readings do |t|
   t.text(:thread_id, default: "")
 end
 
-let table = DB.Schema.Readings.definition.table
-
 let id = DB.Schema.Readings.definition.textColumn(:id)
 let userId = DB.Schema.Readings.definition.textColumn(:user_id)
 let conversationId = DB.Schema.Readings.definition.textColumn(:conversation_id)

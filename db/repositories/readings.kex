@@ -14,9 +14,8 @@ using App.Models.Reading, only: [Reading]
 # follow.
 foul marks(userId: String) -> Result<[Reading], String> do
   return Database.select([:conversation_id, :thread_id, :read_at]).from(DB.Schema.Readings)
-    .where(DB.Schema.Readings.userId.eq(userId))
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .where(DB.Schema.Readings.userId == userId)
+    .all(as: Reading)
 end
 
 # Notes how far a person has read a conversation, or a thread of it: the
@@ -33,7 +32,7 @@ foul reached(userId: String, reading: Reading) -> Result<Integer, String> do
   }
   let swapped : Result<Integer, String> = Database.transaction do
     Database.delete(DB.Schema.Readings)
-      .where(DB.Schema.Readings.id.eq(id))
+      .where(DB.Schema.Readings.id == id)
       .run
       .try
     Database.insert(DB.Schema.Readings)
@@ -41,13 +40,4 @@ foul reached(userId: String, reading: Reading) -> Result<Integer, String> do
       .run
   end
   return swapped
-end
-
-private do
-  decoded : {String: String} -> Reading
-  let decoded(row) = Reading {
-    conversationId: row.get("conversation_id").or(""),
-    threadId: row.get("thread_id").or(""),
-    readAt: row.get("read_at").or("0").to(Integer).or(0)
-  }
 end

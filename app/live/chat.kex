@@ -469,7 +469,7 @@ private do
     let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
     let glimpsed = tab.view == "files" then small else []
     let glimpses = glimpsed.reduce({}) { |found, file|
-      let content : Result<Binary, String> = Metro.Storage.Service.fetch(file.id)
+      let content : Result<Binary, String> = Metro.Storage.Service.get(file.id)
       let text = content.map { |bytes| bytes.to(String).or("") }.or("")
       found.put(file.id, text.take(400))
     }
@@ -1032,7 +1032,7 @@ private do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => do
-        return (settled(tab), false) if !conversation.channel? || conversation.open?
+        return (settled(tab), false) if !conversation.channel? || conversation.public?
 
         let newcomers = picked.uniq.filter { |id|
           !conversation.admits?(id) && Memberships.affiliated?(conversation.organizationId, id)

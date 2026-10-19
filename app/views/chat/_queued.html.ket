@@ -2,8 +2,8 @@
 params: [file: Enclosure]
 ---
 <span class="queued">
-  <% if file.pictured? %>
-    <img src="<%= file.href %>" alt="">
+  <% if file.picture? %>
+    <img src="<%= file.link %>" alt="">
   <% else %>
     <span aria-hidden="true">📄</span>
   <% end %>

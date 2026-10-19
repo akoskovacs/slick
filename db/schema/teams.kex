@@ -17,8 +17,6 @@ let definition = Table.define :teams do |t|
   t.text(:created_at)
 end
 
-let table = DB.Schema.Teams.definition.table
-
 let id = DB.Schema.Teams.definition.textColumn(:id)
 let organizationId = DB.Schema.Teams.definition.textColumn(:organization_id)
 let handle = DB.Schema.Teams.definition.textColumn(:handle)

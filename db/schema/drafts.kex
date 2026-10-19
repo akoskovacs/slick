@@ -16,8 +16,6 @@ let definition = Table.define :drafts do |t|
   t.bigint(:saved_at)
 end
 
-let table = DB.Schema.Drafts.definition.table
-
 let id = DB.Schema.Drafts.definition.textColumn(:id)
 let userId = DB.Schema.Drafts.definition.textColumn(:user_id)
 let conversationId = DB.Schema.Drafts.definition.textColumn(:conversation_id)

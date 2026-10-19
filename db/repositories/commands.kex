@@ -10,7 +10,7 @@ using App.Models.Command, only: [Command]
 foul declared(botId: String, commands: [Command]) -> Result<Integer, String> do
   let replaced : Result<Integer, String> = Database.transaction do
     Database.delete(DB.Schema.Commands)
-      .where(DB.Schema.Commands.botId.eq(botId))
+      .where(DB.Schema.Commands.botId == botId)
       .run
       .try
     # A `.try` inside a block given to `map` would leave only that block:
@@ -39,15 +39,5 @@ foul of(botIds: [String]) -> Result<[Command], String> do
   return Database.select().from(DB.Schema.Commands)
     .where(DB.Schema.Commands.botId.in(botIds))
     .orderBy([:name, :bot_id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
-end
-
-private do
-  decoded : {String: String} -> Command
-  let decoded(row) = Command {
-    botId: row.get("bot_id").or(""),
-    name: row.get("name").or(""),
-    description: row.get("description").or("")
-  }
+    .all(as: Command)
 end

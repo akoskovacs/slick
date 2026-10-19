@@ -30,24 +30,13 @@ end
 # The organization at this address, or `None`.
 foul addressed(slug: String) -> Result<Organization?, String> do
   return Database.select().from(DB.Schema.Organizations)
-    .where(DB.Schema.Organizations.slug.eq(slug))
-    .first
-    .map { |row| row.map { |found| decoded(found) } }
+    .where(DB.Schema.Organizations.slug == slug)
+    .first(as: Organization)
 end
 
 # The organization with this id, or `None`.
 foul identified(id: String) -> Result<Organization?, String> do
   return Database.select().from(DB.Schema.Organizations)
-    .where(DB.Schema.Organizations.id.eq(id))
-    .first
-    .map { |row| row.map { |found| decoded(found) } }
-end
-
-private do
-  decoded : {String: String} -> Organization
-  let decoded(row) = Organization {
-    id: row.get("id").or(""),
-    slug: row.get("slug").or(""),
-    name: row.get("name").or("")
-  }
+    .where(DB.Schema.Organizations.id == id)
+    .first(as: Organization)
 end

@@ -37,9 +37,8 @@ end
 # One file, or `None`.
 foul single(id: String) -> Result<Attachment?, String> do
   return Database.select().from(DB.Schema.Files)
-    .where(DB.Schema.Files.id.eq(id))
-    .first
-    .map { |row| row.map { |found| decoded(found) } }
+    .where(DB.Schema.Files.id == id)
+    .first(as: Attachment)
 end
 
 # Several files, by id, as many of them as there are.
@@ -47,17 +46,15 @@ foul among(ids: [String]) -> Result<[Attachment], String> do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.id.in(ids))
     .orderBy([:uploaded_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .all(as: Attachment)
 end
 
 # Every file sent into a conversation, newest first.
 foul inside(conversationId: String) -> Result<[Attachment], String> do
   return Database.select().from(DB.Schema.Files)
-    .where(DB.Schema.Files.conversationId.eq(conversationId))
+    .where(DB.Schema.Files.conversationId == conversationId)
     .orderBy(descending: [:uploaded_at, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .all(as: Attachment)
 end
 
 # Sends a person's files with a message: only theirs, and only those not
@@ -68,26 +65,10 @@ foul sent(
   conversationId: String,
   messageId: String
 ) -> Result<Integer, String> do
-  return Database.within(DB.Schema.Files.userId.eq(userId))
+  return Database.within(DB.Schema.Files.userId == userId)
     .update(DB.Schema.Files)
     .set({conversation_id: conversationId, message_id: messageId})
     .where(DB.Schema.Files.id.in(ids))
-    .where(DB.Schema.Files.messageId.eq(""))
+    .where(DB.Schema.Files.messageId == "")
     .run
-end
-
-private do
-  decoded : {String: String} -> Attachment
-  let decoded(row) = Attachment {
-    id: row.get("id").or(""),
-    userId: row.get("user_id").or(""),
-    conversationId: row.get("conversation_id").or(""),
-    messageId: row.get("message_id").or(""),
-    filename: row.get("filename").or(""),
-    contentType: row.get("content_type").or(""),
-    byteSize: row.get("byte_size").or("0").to(Integer).or(0),
-    checksum: row.get("checksum").or(""),
-    uploadedAt: row.get("uploaded_at").or("0").to(Integer).or(0),
-    uploadedOn: row.get("uploaded_on").or("")
-  }
 end

@@ -13,7 +13,9 @@ module Config.Routes
 
 using Metro.Live.Hub, only: [Hub]
 using Metro.Plugs, only: [providing]
-using Metro.Router, only: [pipeline, scope, get, post, put, live, static]
+# Every router call stays qualified: Metro.Storage.Service still shadows
+# bare imports of get and put.
+using Metro.Router, as: Router
 # Actions are named bare, and so imported by name: a reference through the
 # module (`~App.Controllers.Chat.show`) does not resolve when it is called.
 using App.Controllers.Accounts, only: [signInPage, signIn, signOut, registrationPage, register]
@@ -29,60 +31,60 @@ foul routes(hub) do
   # What people are in the middle of — typing, or what a bot says it is
   # doing. Remembered here and not in the database: it is only true for now.
   let statuses = Process.spawn(Metro.Live.Presence.Presence {})
-  Metro.Router.define do
-    pipeline(:application, [providing(:hub, hub), providing(:statuses, statuses)])
-    pipeline(:browser, [Metro.Plugs.sameOrigin, Metro.Plugs.unstored])
-    pipeline(:members, [App.Controllers.Application.signedIn()])
-    pipeline(:guests, [App.Controllers.Application.signedOut()])
-    pipeline(:bots, [App.Controllers.Application.bearer()])
+  Router.define do
+    Router.pipeline(:application, [providing(:hub, hub), providing(:statuses, statuses)])
+    Router.pipeline(:browser, [Metro.Plugs.sameOrigin, Metro.Plugs.unstored])
+    Router.pipeline(:members, [App.Controllers.Application.signedIn()])
+    Router.pipeline(:guests, [App.Controllers.Application.signedOut()])
+    Router.pipeline(:bots, [App.Controllers.Application.bearer()])
 
-    scope "/api", via: [:application, :bots] do
-      get("/me", ~whoami)
-      put("/commands", ~commandsDeclared)
-      get("/:organization/channels", ~channelList)
-      get("/:organization/channels/:name/messages", ~history)
-      post("/:organization/channels/:name/messages", ~posted)
-      post("/:organization/channels/:name/reactions", ~reacting)
-      post("/:organization/channels/:name/status", ~statusSet)
-      get("/:organization/dm", ~chatList)
-      get("/:organization/answers", ~answerList)
-      get("/:organization/invocations", ~invocationList)
-      get("/:organization/dm/:person/messages", ~history)
-      post("/:organization/dm/:person/messages", ~posted)
-      post("/:organization/dm/:person/reactions", ~reacting)
-      post("/:organization/dm/:person/status", ~statusSet)
-      get("/:organization/groups", ~groupList)
-      get("/:organization/groups/:group/messages", ~history)
-      post("/:organization/groups/:group/messages", ~posted)
-      post("/:organization/groups/:group/reactions", ~reacting)
-      post("/:organization/groups/:group/status", ~statusSet)
+    Router.scope "/api", via: [:application, :bots] do
+      Router.get("/me", ~whoami)
+      Router.put("/commands", ~commandsDeclared)
+      Router.get("/:organization/channels", ~channelList)
+      Router.get("/:organization/channels/:name/messages", ~history)
+      Router.post("/:organization/channels/:name/messages", ~posted)
+      Router.post("/:organization/channels/:name/reactions", ~reacting)
+      Router.post("/:organization/channels/:name/status", ~statusSet)
+      Router.get("/:organization/dm", ~chatList)
+      Router.get("/:organization/answers", ~answerList)
+      Router.get("/:organization/invocations", ~invocationList)
+      Router.get("/:organization/dm/:person/messages", ~history)
+      Router.post("/:organization/dm/:person/messages", ~posted)
+      Router.post("/:organization/dm/:person/reactions", ~reacting)
+      Router.post("/:organization/dm/:person/status", ~statusSet)
+      Router.get("/:organization/groups", ~groupList)
+      Router.get("/:organization/groups/:group/messages", ~history)
+      Router.post("/:organization/groups/:group/messages", ~posted)
+      Router.post("/:organization/groups/:group/reactions", ~reacting)
+      Router.post("/:organization/groups/:group/status", ~statusSet)
     end
 
-    scope "/", via: [:application, :browser, :guests] do
-      get("/signin", ~signInPage)
-      post("/signin", ~signIn)
-      get("/register", ~registrationPage)
-      post("/register", ~register)
+    Router.scope "/", via: [:application, :browser, :guests] do
+      Router.get("/signin", ~signInPage)
+      Router.post("/signin", ~signIn)
+      Router.get("/register", ~registrationPage)
+      Router.post("/register", ~register)
     end
 
-    scope "/", via: [:application, :browser, :members] do
-      get("/", ~show)
+    Router.scope "/", via: [:application, :browser, :members] do
+      Router.get("/", ~show)
       # A conversation has an address; the live view keeps the address bar
       # on the one it is showing, and a reload comes back here.
-      get(App.Paths.channelPath.template, ~show)
-      get(App.Paths.directPath.template, ~show)
-      get(App.Paths.groupPath.template, ~show)
-      post("/signout", ~signOut)
+      Router.get(App.Paths.channelPath.template, ~show)
+      Router.get(App.Paths.directPath.template, ~show)
+      Router.get(App.Paths.groupPath.template, ~show)
+      Router.post("/signout", ~signOut)
       # Files: dropped into a conversation, then fetched by whoever may read
       # it there (App.Controllers.Files).
-      post("/uploads", ~uploaded)
-      get("/files/:id", ~fetched)
+      Router.post("/uploads", ~uploaded)
+      Router.get("/files/:id", ~fetched)
       # The chat kept current: events in, markup out. Behind the same plugs
       # as the page, so a socket from another site, or from nobody, is refused.
-      live "/live" do |request, socket| App.Controllers.Chat.joined(request, socket) end
+      Router.live "/live" do |request, socket| App.Controllers.Chat.joined(request, socket) end
     end
 
     Metro.Live.Client.route()
-    static("public")
+    Router.static("public")
   end
 end

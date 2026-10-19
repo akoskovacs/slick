@@ -140,7 +140,7 @@ foul channelList(request) do
         "id": channel.id,
         "name": channel.title,
         "topic": channel.topic,
-        "private": !channel.open?
+        "private": !channel.public?
       }
       entry
     }

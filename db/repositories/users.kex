@@ -25,9 +25,15 @@ end
 # The user registered under an email, with their stored password line.
 foul credentials(email: String) -> Result<(User, String)?, String> do
   return Database.select().from(DB.Schema.Users)
-    .where(DB.Schema.Users.email.eq(email))
+    .where(DB.Schema.Users.email == email)
     .first
-    .map { |row| row.map { |found| (decoded(found), found.get("password_hash").or("")) } }
+    .flatMap { |row|
+      match row do
+        None => Ok(None)
+        Just(found) => Database.decoded(found, User, USER_COLUMNS)
+          .map { |user| Just((user, found.get("password_hash").or(""))) }
+      end
+    }
 end
 
 # Stores a bot. It has no password: `tokenDigest` is how it is known.
@@ -52,28 +58,26 @@ end
 # A person's bots, by name.
 foul operated(owner: String) -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
-    .where(DB.Schema.Users.ownerId.eq(owner))
+    .where(DB.Schema.Users.ownerId == owner)
     .orderBy([:name, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .all(as: User, renamed: USER_COLUMNS)
 end
 
 # An organization's bots, by name.
 foul maintained(organizationId: String) -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
-    .where(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
+    .where(DB.Schema.Users.ownerOrganizationId == organizationId)
     .orderBy([:name, :id])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .all(as: User, renamed: USER_COLUMNS)
 end
 
 # Replaces the token of an organization's bot; whether it was that
 # organization's to change.
 foul rekeyedFor(botId: String, organizationId: String, tokenDigest: String) -> Result<Bool, String> do
-  return Database.within(DB.Schema.Users.ownerOrganizationId.eq(organizationId))
+  return Database.within(DB.Schema.Users.ownerOrganizationId == organizationId)
     .update(DB.Schema.Users)
     .set({api_token_digest: tokenDigest})
-    .where(DB.Schema.Users.id.eq(botId))
+    .where(DB.Schema.Users.id == botId)
     .run
     .map { |changed| changed > 0 }
 end
@@ -81,18 +85,17 @@ end
 # The bot an API token's digest belongs to, or `None`.
 foul bearing(tokenDigest: String) -> Result<User?, String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
-    .where(DB.Schema.Users.apiTokenDigest.eq(tokenDigest))
-    .where(DB.Schema.Users.kind.eq("bot"))
-    .first
-    .map { |row| row.map { |found| decoded(found) } }
+    .where(DB.Schema.Users.apiTokenDigest == tokenDigest)
+    .where(DB.Schema.Users.kind == "bot")
+    .first(as: User, renamed: USER_COLUMNS)
 end
 
 # Replaces a bot's token; whether it was this owner's bot to change.
 foul rekeyed(botId: String, owner: String, tokenDigest: String) -> Result<Bool, String> do
-  return Database.within(DB.Schema.Users.ownerId.eq(owner))
+  return Database.within(DB.Schema.Users.ownerId == owner)
     .update(DB.Schema.Users)
     .set({api_token_digest: tokenDigest})
-    .where(DB.Schema.Users.id.eq(botId))
+    .where(DB.Schema.Users.id == botId)
     .run
     .map { |changed| changed > 0 }
 end
@@ -101,7 +104,7 @@ end
 foul restyled(id: String, emoji: String, saying: String) -> Result<Integer, String> do
   return Database.update(DB.Schema.Users)
     .set({status_emoji: emoji, status_text: saying})
-    .where(DB.Schema.Users.id.eq(id))
+    .where(DB.Schema.Users.id == id)
     .run
 end
 
@@ -120,7 +123,7 @@ foul described(user: User) -> Result<Integer, String> do
   }
   return Database.update(DB.Schema.Users)
     .set(row)
-    .where(DB.Schema.Users.id.eq(user.id))
+    .where(DB.Schema.Users.id == user.id)
     .run
 end
 
@@ -129,26 +132,27 @@ end
 foul managing(id: String, columns: [String]) -> Result<Integer, String> do
   return Database.update(DB.Schema.Users)
     .set({managed: columns.join(",")})
-    .where(DB.Schema.Users.id.eq(id))
+    .where(DB.Schema.Users.id == id)
     .run
 end
 
 foul member(id: String) -> Result<User?, String> do
   return Database.select().from(DB.Schema.Users)
-    .where(DB.Schema.Users.id.eq(id))
-    .first
-    .map { |row| row.map { |found| decoded(found) } }
+    .where(DB.Schema.Users.id == id)
+    .first(as: User, renamed: USER_COLUMNS)
 end
 
 # Everyone, by name: who can be written to, and whose name goes on a message.
 foul everyone -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .orderBy([:name, :email])
-    .all
-    .map { |rows| rows.map { |row| decoded(row) } }
+    .all(as: User, renamed: USER_COLUMNS)
 end
 
 private do
+  # This field predates the model's name; the other columns follow snake case.
+  let USER_COLUMNS = {"nicknameShown?": "show_nickname"}
+
   # What is read of a user when nobody is signing in: everything but the
   # password line and the token digest.
   let SHOWN = [
@@ -169,24 +173,4 @@ private do
     :show_nickname,
     :managed
   ]
-
-  decoded : {String: String} -> User
-  let decoded(row) = User {
-    id: row.get("id").or(""),
-    email: row.get("email").or(""),
-    name: row.get("name").or(""),
-    kind: row.get("kind").or("person"),
-    ownerId: row.get("owner_id").or(""),
-    ownerOrganizationId: row.get("owner_organization_id").or(""),
-    statusEmoji: row.get("status_emoji").or(""),
-    statusText: row.get("status_text").or(""),
-    title: row.get("title").or(""),
-    department: row.get("department").or(""),
-    phone: row.get("phone").or(""),
-    timeZone: row.get("time_zone").or(""),
-    bio: row.get("bio").or(""),
-    nickname: row.get("nickname").or(""),
-    nicknameShown?: row.get("show_nickname").or("") == "yes",
-    managed: row.get("managed").or("").split(",").reject { |column| column.empty? }
-  }
 end

@@ -11,8 +11,6 @@ let definition = Table.define :memberships do |t|
   t.text(:joined_at)
 end
 
-let table = DB.Schema.Memberships.definition.table
-
 let id = DB.Schema.Memberships.definition.textColumn(:id)
 let organizationId = DB.Schema.Memberships.definition.textColumn(:organization_id)
 let userId = DB.Schema.Memberships.definition.textColumn(:user_id)
