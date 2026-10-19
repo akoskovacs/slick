@@ -74,8 +74,8 @@ Docker below.
 
 ## Develop it
 
-With its sources, either Docker or a Kex toolchain built from main
-`3111d30` or newer (the migration uses fixes after 0.4.0-rc.2; see
+With its sources, either Docker or a Kex 0.4.0-rc.2 toolchain or newer
+(the migration uses fixes first released there; see
 [the compatibility check](docs/kex-findings.md)):
 
 ```sh
@@ -271,7 +271,7 @@ image, with the ODBC drivers it reaches a database through.
 | Variable | |
 | --- | --- |
 | `POSTGRES_PASSWORD` | the database's password; set it anywhere but your own machine |
-| `KEX_IMAGE` | the Kex toolchain image to build on; `ghcr.io/kexhq/kex:rc` unless set |
+| `KEX_IMAGE` | the Kex toolchain image to build on; `ghcr.io/kexhq/kex:0.4.0-rc.2` unless set |
 | `GITHUB_TOKEN` | fetches dependencies kept in private repositories, at build time only |
 
 ## CI

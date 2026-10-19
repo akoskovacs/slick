@@ -16,7 +16,7 @@
 #   DEPENDENCIES_TOKEN   secret: a token that can read the repositories
 #                        package.kex names, for as long as they are private
 #   KEX_IMAGE            variable, optional: the Kex toolchain image, when it
-#                        is not ghcr.io/kexhq/kex:rc
+#                        is not ghcr.io/kexhq/kex:0.4.0-rc.2
 name: CI
 
 on:
@@ -34,7 +34,7 @@ permissions:
   contents: read
 
 env:
-  KEX_IMAGE: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:rc' }}
+  KEX_IMAGE: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:0.4.0-rc.2' }}
 
 jobs:
   test:
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:rc' }}
+      image: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:0.4.0-rc.2' }}
     env:
       # The SQLite ODBC driver by the name Debian registers it under: the
       # specs make their databases with it.

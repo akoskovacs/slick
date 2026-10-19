@@ -7,10 +7,11 @@
 # `tey server` by default, and `docker compose run --rm app migrate` (or
 # `rollback`, `seed`) for the other commands.
 #
-# KEX_IMAGE is the toolchain: any image of Kex 0.4.0-rc.1 or newer. One built
-# from a Kex checkout does (`docker build -f docker/Dockerfile -t kex:dev .`
-# there, then KEX_IMAGE=kex:dev here).
-ARG KEX_IMAGE=ghcr.io/kexhq/kex:rc
+# KEX_IMAGE is the toolchain: Kex 0.4.0-rc.2, the release this was last
+# verified against. One built from a Kex checkout does too
+# (`docker build -f docker/Dockerfile -t kex:dev .` there, then
+# KEX_IMAGE=kex:dev here).
+ARG KEX_IMAGE=ghcr.io/kexhq/kex:0.4.0-rc.2
 FROM ${KEX_IMAGE}
 
 # unixODBC and its drivers: PostgreSQL's, which registers itself as
