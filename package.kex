@@ -16,6 +16,6 @@ package "slick" do
   command("seed", run: "tey run seed", description: "Migrate, then plant what a new database starts with")
   command("odbc", run: "sh script/setup-odbc.sh db/odbc", description: "Build Erlang's ODBC port program into db/odbc, once")
 
-  tey("harmat", git: "https://github.com/kexhq/harmat", branch: "main")
-  tey("metro", git: "https://github.com/kexhq/metro", branch: "main")
+  tey("harmat", git: "https://github.com/kexhq/harmat", tag: "v0.2.0")
+  tey("metro", git: "https://github.com/kexhq/metro", tag: "v0.1.0")
 end
