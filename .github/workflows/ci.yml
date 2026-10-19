@@ -10,6 +10,11 @@
 #            other two: the image goes to ghcr.io/<owner>/<repository>, as
 #            `latest` and `sha-…` from main, and as `1.2.3` and `1.2` from a
 #            tag
+#   release  only for a tag like v1.2.3, and only after publish: a GitHub
+#            release whose notes name the published image tags, the Kex
+#            toolchain, and the Harmat and Metro releases the build resolved
+#
+# To cut one: `git tag -a v0.1.0 -m "Slick 0.1.0" && git push origin v0.1.0`.
 #
 # Set on the repository (Settings → Secrets and variables → Actions):
 #
@@ -116,6 +121,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -143,6 +151,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -156,3 +165,63 @@ jobs:
             github_token=${{ secrets.DEPENDENCIES_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    name: Cut the release
+    needs: [publish]
+    # Tags only: a push to main publishes the image, but only a version
+    # tag makes a release page for it.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the notes below are generated from the commits
+          # since the previous release, and a shallow clone has neither
+          # those nor the tags.
+          fetch-depth: 0
+
+      # The release page names what the image was built from: its own
+      # tags, the Kex toolchain, and the Harmat and Metro releases the
+      # lockfile resolved — read from the tag, not repeated by hand.
+      - name: Write the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAGS: ${{ needs.publish.outputs.tags }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          previous="$(git tag --sort=-v:refname | grep -x -v "$tag" | head -1 || true)"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$tag" ${previous:+-f previous_tag_name="$previous"} \
+            --jq .body > notes.md
+          kex="$(jq -r .toolchain.kex_requirement tey.lock | sed 's/^>= //')"
+          harmat="$(jq -r .packages.harmat.resolved tey.lock)"
+          metro="$(jq -r .packages.metro.resolved tey.lock)"
+          {
+            echo
+            echo "## Images"
+            echo
+            echo '```'
+            printf '%s\n' "$TAGS"
+            echo '```'
+            echo
+            echo "Digest: \`${DIGEST}\`"
+            echo
+            echo "Built on Kex ${kex}, Harmat ${harmat}, Metro ${metro}."
+            echo
+          } >> notes.md
+          cat notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          gh release create "$tag" --title "Slick ${tag#v}" \
+            --notes-file notes.md --target "$GITHUB_SHA"

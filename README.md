@@ -76,7 +76,8 @@ Docker below.
 
 With its sources, either Docker or a Kex 0.4.0-rc.2 toolchain or newer
 (the migration uses fixes first released there; see
-[the compatibility check](docs/kex-findings.md)):
+[the compatibility check](docs/kex-findings.md)). Harmat and Metro are
+pinned by release tag in `package.kex`, to their commits in `tey.lock`:
 
 ```sh
 git clone https://github.com/akoskovacs/slick && cd slick
@@ -281,6 +282,14 @@ toolchain image, then builds the Docker image, starts it beside PostgreSQL
 and uses it from outside with `script/smoke.sh` — before and after a
 restart, so that what was stored is seen to be still there. When both pass
 on main, or on a tag like `v1.2.3`, it publishes the image.
+
+A tag also makes a GitHub release: its notes name the published image
+tags, the Kex toolchain, and the Harmat and Metro releases the build
+resolved. To cut one:
+
+```sh
+git tag -a v0.1.0 -m "Slick 0.1.0" && git push origin v0.1.0
+```
 
 ```sh
 script/smoke.sh http://localhost:4000   # against any running Slick

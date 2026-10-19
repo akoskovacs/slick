@@ -6,6 +6,11 @@ an entry says otherwise; rechecked again on `3111d30`, and each entry below
 carries its status there. At the end: names in the code that were chosen
 only to avoid these, to rename once they are fixed.
 
+Released state: Slick builds on Kex 0.4.0-rc.2 with Harmat v0.2.0 and
+Metro v0.1.0 (see [package.kex](../package.kex) and
+[tey.lock](../tey.lock)). The entries below are the history of getting
+there.
+
 ## Migration check — 2026-10-19
 
 Checked against local Kex main `3111d30`, with the compiler, runtime and Tey
