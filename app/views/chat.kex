@@ -310,7 +310,7 @@ let index(
   administrator: Bool
 ) -> String do
   let shown = conversation.map { |open| open.id }.or("")
-  let badges = organizations.map { |each|
+  let badges = organizations.map do |each|
     badgePartial(Badge {
       key: each.id,
       glyph: each.name.take(1).upperCase,
@@ -318,8 +318,8 @@ let index(
       current?: each.id == organization.id,
       unread: counted(unread.organizations.get(each.id).or(0))
     })
-  }
-  let channelLines = channels.map { |channel|
+  end
+  let channelLines = channels.map do |channel|
     let here = channel.id == shown
     entryPartial(Entry {
       action: "open",
@@ -330,7 +330,7 @@ let index(
       drafted?: !here && drafts.any? { |draft| draft.conversationId == channel.id },
       unread: counted(unread.channels.get(channel.id).or(0))
     })
-  }
+  end
   # This person as stored now: the `user` a tab was opened with does not
   # know of a status set since.
   let me = people.find { |person| person.id == user.id }.or(user)
@@ -351,7 +351,7 @@ let index(
   let robotLines = people
     .filter { |person| person.ownerId == user.id }
     .map { |person| entryPartial(personEntry(person, conversation, user, online, drafts, unread)) }
-  let groupLines = groups.map { |group|
+  let groupLines = groups.map do |group|
     let here = group.id == shown
     entryPartial(Entry {
       action: "open",
@@ -362,8 +362,8 @@ let index(
       drafted?: !here && drafts.any? { |draft| draft.conversationId == group.id },
       unread: counted(unread.groups.get(group.id).or(0))
     })
-  }
-  let teamLines = teams.map { |team|
+  end
+  let teamLines = teams.map do |team|
     entryPartial(Entry {
       action: "team",
       subject: "id",
@@ -371,7 +371,7 @@ let index(
       caption: "@${team.handle}",
       current?: team.id == tab.team
     })
-  }
+  end
   let room = Room {
     viewer: user,
     people: people,
@@ -381,20 +381,22 @@ let index(
     files: cabinet.stored,
     commands: commands,
     channel?: conversation.map { |open| !open.direct? }.or(false),
-    invocations: invocations
+    invocations: invocations,
+    roles: roles,
+    administrator: administrator
   }
-  let unsent = { |threadId|
+  let unsent = do |threadId|
     drafts
       .find { |draft| draft.conversationId == shown && draft.threadId == threadId }
       .map { |draft| draft.body }
       .or("")
-  }
+  end
   let beside = if !thread.empty?
     threadPane(room, thread, unsent(opened(thread)))
   elif !tab.team.empty?
     teamPane(tab, user, people, teams, channels)
   else
-    profilePane(tab, user, organization, people, online, roles, administrator)
+    profilePane(tab, user, organization, people, online, room)
   end
   let place = conversation
     .map { |open| located(organization, open, user, thread) }
@@ -411,8 +413,7 @@ let index(
     cabinet,
     thread.empty? && tab.dialog.empty?,
     doing,
-    unsent(""),
-    administrator
+    unsent("")
   )
   frame(
     tab.failure,
@@ -449,6 +450,10 @@ private do
     channel? : Bool = false
     # The slash commands used here, oldest first: shown where they happened.
     invocations : [Invocation] = []
+    # Each member's role in the organization, and whether the viewer
+    # administers it.
+    roles : {String: String} = {}
+    administrator : Bool = false
   end
 
   # The bar across the top: who is signed in, and under their name what
@@ -464,8 +469,8 @@ private do
   # The profile a tab has open, if it is of somebody in the organization.
   # A bot's says whose it is: a person's, or the organization's. `roles` is
   # each member's role, and `administrator` whether the viewer may change it.
-  profilePane : Tab -> User -> Organization -> [User] -> [String] -> {String: String} -> Bool -> String
-  let profilePane(tab, user, organization, people, online, roles, administrator) do
+  profilePane : Tab -> User -> Organization -> [User] -> [String] -> Room -> String
+  let profilePane(tab, user, organization, people, online, room) do
     match people.find { |person| person.id == tab.profile } do
       None => ""
       Just(person) => do
@@ -476,9 +481,9 @@ private do
         else
           organization.name
         end
-        let role = roles.get(person.id).or("member")
+        let role = room.roles.get(person.id).or("member")
         let roleShown = role == "admin" then "Administrator" else (role == "read-only" then "Read-only" else "Member")
-        let mayManage = administrator && !person.bot? && person.id != user.id
+        let mayManage = room.administrator && !person.bot? && person.id != user.id
         profilePartial(Card {
           key: person.id,
           caption: person.shown,
@@ -515,8 +520,8 @@ private do
     match teams.find { |team| team.id == tab.team } do
       None => ""
       Just(team) => do
-        let mates = team.members.flatMap { |id|
-          people.find { |person| person.id == id }.map { |person|
+        let mates = team.members.flatMap do |id|
+          people.find { |person| person.id == id }.map do |person|
             [matePartial(Mate {
               key: person.id,
               caption: person.id == user.id then "${person.shown} (you)" else person.shown,
@@ -525,24 +530,24 @@ private do
               badged: person.bot? then "BOT" else "",
               removable?: !team.managed?
             })]
-          }.or([])
-        }
+          end.or([])
+        end
         let rooms = channels
           .filter { |channel| channel.teamId == team.id }
-          .map { |channel|
+          .map do |channel|
             matePartial(Mate {
               key: channel.id,
               caption: channelName(channel),
               action: "open",
               subject: "id"
             })
-          }
+          end
         let candidates = people
           .reject { |person| team.includes?(person.id) }
-          .map { |person|
+          .map do |person|
             let id = Template.escapeHtml(person.id)
             "<option value=\"${id}\">${Template.escapeHtml(person.shown)}</option>"
-          }
+          end
         let count = team.members.count
         teamPartial(
           Crew {
@@ -608,14 +613,14 @@ private do
   let answered(message, user, people, responses) do
     responses
       .filter { |each| each.messageId == message.id }
-      .map { |each|
+      .map do |each|
         Given {
           form: each.form,
           who: shownAs(people, each.userId, "Someone"),
           mine?: each.userId == user.id,
           answer: each.answer
         }
-      }
+      end
   end
 
   # What somebody is called, by id; `otherwise` for nobody known.
@@ -629,29 +634,29 @@ private do
   asking : Tab -> Organization -> [User] -> [User] -> User -> [Team] -> Conversation? -> String
   let asking(tab, organization, people, bots, me, teams, conversation) do
     if tab.dialog == "status"
-      let presets = App.Models.Emoji.STATUSES.map { |entry|
+      let presets = App.Models.Emoji.STATUSES.map do |entry|
         match entry do
           (glyph, words) => preset(glyph, words)
         end
-      }
-      let statusGlyphs = App.Models.Emoji.STATUSES.map { |entry|
+      end
+      let statusGlyphs = App.Models.Emoji.STATUSES.map do |entry|
         match entry do
           (glyph, _) => glyph
         end
-      }
-      let knownGlyphs = App.Models.Emoji.KNOWN.map { |entry|
+      end
+      let knownGlyphs = App.Models.Emoji.KNOWN.map do |entry|
         match entry do
           (_, glyph) => glyph
         end
-      }
-      let options = ([""] + statusGlyphs + knownGlyphs).map { |glyph|
+      end
+      let options = ([""] + statusGlyphs + knownGlyphs).map do |glyph|
         choice(glyph, glyph == me.statusEmoji)
-      }
+      end
       return moodPartial(presets.join(""), options.join(""), me.statusText, tab.dialogProblem)
     end
 
     if tab.dialog == "profile"
-      let inputs = App.Models.User.DETAILS.map { |entry|
+      let inputs = App.Models.User.DETAILS.map do |entry|
         match entry do
           (column, label, longest) => detailPartial(Detail {
             key: column,
@@ -663,7 +668,7 @@ private do
             locked?: me.locked?(column)
           })
         end
-      }
+      end
       return detailsPartial(
         inputs.join("\n"),
         me.nicknameShown?,
@@ -673,7 +678,7 @@ private do
     end
 
     if tab.dialog == "bots"
-      let rows = bots.map { |bot|
+      let rows = bots.map do |bot|
         let shared = !bot.ownerOrganizationId.empty?
         botPartial(Robot {
           key: bot.id,
@@ -682,7 +687,7 @@ private do
           spot: organization.name,
           belonging: shared then "belongs to ${organization.name}" else "yours"
         })
-      }
+      end
       return botsPartial(
         organization.name,
         rows.join("\n"),
@@ -695,9 +700,9 @@ private do
     if tab.dialog == "channel"
       let owners = teams
         .filter { |team| team.includes?(me.id) }
-        .map { |team|
+        .map do |team|
           "<option value=\"${Template.escapeHtml(team.id)}\">@${Template.escapeHtml(team.handle)}</option>"
-        }
+        end
       return channelPartial(
         "Create a channel",
         "A name of lower-case letters, digits and dashes.",
@@ -812,13 +817,13 @@ private do
   # People to pick, as checkboxes.
   picks : [User] -> String
   let picks(people) = people
-    .map { |person|
+    .map do |person|
       pickPartial(Pick {
         key: person.id,
         caption: person.shown,
         badged: person.bot? then "BOT" else ""
       })
-    }
+    end
     .join("\n")
 
   # A ready-made status, set with one click. Both are this program's own
@@ -839,14 +844,14 @@ private do
   picked : String -> String
   let picked(target) do
     App.Models.Emoji.KNOWN
-      .map { |entry|
+      .map do |entry|
         match entry do
           (code, glyph) => [
             "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\"",
             " data-target=\"${target}\" title=\":${code}:\">${glyph}</button>"
           ].join("")
         end
-      }
+      end
       .join("")
   end
 
@@ -890,9 +895,9 @@ private do
 
   # Whether a private chat with somebody has something written and not sent.
   waiting : [Draft] -> String -> Bool
-  let waiting(drafts, personId) = drafts.any? { |draft|
+  let waiting(drafts, personId) = drafts.any? do |draft|
     !draft.personId.empty? && draft.personId == personId
-  }
+  end
 
   # The thread beside the conversation: its first message, then the replies.
   threadPane : Room -> [Message] -> String -> String
@@ -928,8 +933,7 @@ private do
     cabinet: Cabinet,
     alone?: Bool,
     doing: [Note],
-    unsent: String,
-    administrator: Bool
+    unsent: String
   ) -> String do
     match conversation do
       None => return [
@@ -951,7 +955,7 @@ private do
           open.channel? && !open.public?,
           open.group?,
           open.botAccess,
-          administrator && (open.channel? || open.group?)
+          room.administrator && (open.channel? || open.group?)
         )
         let queued = cabinet.queued
           .map { |file| queuedPartial(enclosed(file, room.people, "")) }
@@ -1022,18 +1026,18 @@ private do
   let mentionable(room) do
     let people : [Any] = room.people
       .reject { |person| person.id == room.viewer.id }
-      .map { |person|
+      .map do |person|
         let entry : {String: Any} = {"name": person.shown, "detail": person.bot? then "bot" else ""}
         entry
-      }
-    let teams : [Any] = room.teams.map { |team|
+      end
+    let teams : [Any] = room.teams.map do |team|
       let count = team.members.count
       let entry : {String: Any} = {
         "name": team.handle,
         "detail": "team · ${team.name} · ${count == 1 then "1 person" else "${count} people"}"
       }
       entry
-    }
+    end
     JSON.stringify(people + teams)
   end
 
@@ -1042,7 +1046,7 @@ private do
   # only hears what mentions it.
   offered : Room -> String
   let offered(room) do
-    let listed : [Any] = room.commands.map { |command|
+    let listed : [Any] = room.commands.map do |command|
       let bot = shownAs(room.people, command.botId, "")
       let typed = room.channel? then "@${bot} /${command.name} " else "/${command.name} "
       let entry : {String: Any} = {
@@ -1052,7 +1056,7 @@ private do
         "insert": typed
       }
       entry
-    }
+    end
     JSON.stringify(listed)
   end
 
@@ -1067,9 +1071,9 @@ private do
       ].join("")
     end
 
-    let cards = cabinet.stored.map { |file|
+    let cards = cabinet.stored.map do |file|
       filePartial(enclosed(file, people, cabinet.glimpses.get(file.id).or("")))
-    }
+    end
     "<div class=\"files\"><ul class=\"file-grid\">${cards.join("\n")}</ul></div>"
   end
 
@@ -1093,13 +1097,13 @@ private do
   statuses : [Note] -> [User] -> String
   let statuses(doing, people) do
     doing
-      .map { |note|
+      .map do |note|
         statusPartial(Standing {
           who: shownAs(people, note.member, "Someone"),
           doing: note.saying.empty? then "is typing…" else "${note.saying}…",
           lapses: "${note.lapses}"
         })
-      }
+      end
       .join(" ")
   end
 
@@ -1158,7 +1162,7 @@ private do
     let chips = mine
       .map { |reaction| reaction.emoji }
       .uniq
-      .map { |glyph|
+      .map do |glyph|
         let givers = mine.filter { |reaction| reaction.emoji == glyph }
         chipPartial(Chip {
           key: message.id,
@@ -1166,15 +1170,15 @@ private do
           tally: "${givers.count}",
           own?: givers.any? { |reaction| reaction.userId == room.viewer.id }
         })
-      }
-    let offers = App.Models.Emoji.PALETTE.map { |glyph|
+      end
+    let offers = App.Models.Emoji.PALETTE.map do |glyph|
       chipPartial(Chip {
         key: message.id,
         glyph: glyph,
         tally: "",
         own?: false
       })
-    }
+    end
     let attached = room.files
       .filter { |file| file.messageId == message.id }
       .reverse

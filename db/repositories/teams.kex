@@ -79,13 +79,13 @@ foul joinedAll(teamId: String, userIds: [String]) -> Result<Integer, String> do
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   # A `.try` inside a block given to `map` would leave only that block:
   # what failed is collected instead.
-  let failures = newcomers.flatMap { |userId|
+  let failures = newcomers.flatMap do |userId|
     let stored = Grants.granted(Grant { subjectType: "user", subjectId: userId, resourceType: "team", resourceId: teamId, role: "member" })
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
     end
-  }
+  end
   return failures.empty? then Ok(newcomers.count) else Error(failures.first.or(""))
 end
 

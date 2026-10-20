@@ -100,10 +100,10 @@ foul membersOf(resourceType: String, resourceIds: [String]) -> Result<{String: [
     .orderBy([:granted_at, :id])
     .all
     .try
-  return Ok(rows.reduce({}) { |found, row|
+  return Ok(rows.reduce({}) do |found, row|
     let place = row.get("resource_id").or("")
     found.put(place, found.get(place).or([]) + [row.get("subject_id").or("")])
-  })
+  end)
 end
 
 # Who may read each of some resources: everyone holding a grant over one —
@@ -118,10 +118,10 @@ foul readersOf(resourceType: String, resourceIds: [String]) -> Result<{String: [
     .try
   let teamIds = found.filter { |grant| grant.subjectType == "team" }.map { |grant| grant.subjectId }.uniq
   let teams : {String: [String]} = membersOf("team", teamIds).or({})
-  return Ok(found.reduce({}) { |grouped, grant|
+  return Ok(found.reduce({}) do |grouped, grant|
     let holders = grant.subjectType == "user" then [grant.subjectId] else teams.get(grant.subjectId).or([])
     grouped.put(grant.resourceId, (grouped.get(grant.resourceId).or([]) + holders).uniq)
-  })
+  end)
 end
 
 # Who may read one resource.

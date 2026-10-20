@@ -51,9 +51,9 @@ let channelRules = rules do
   validates("title", "A channel name", [
     present,
     sized(2, 30),
-    passing("may only have lower-case letters, digits and dashes.") { |text|
+    passing("may only have lower-case letters, digits and dashes.") do |text|
       text.chars.all? { |char| char.lower? || char.digit? || "${char}" == "-" }
-    }
+    end
   ])
 end
 
@@ -384,12 +384,12 @@ end
 organizations : User -> [Organization]
 foul organizations(user) do
   let mine : [String] = Grants.organizationsOf(user.id).or([])
-  return mine.flatMap { |id|
+  return mine.flatMap do |id|
     match Organizations.identified(id) do
       Ok(Just(organization)) => [organization]
       _ => []
     end
-  }
+  end
 end
 
 private do
@@ -401,10 +401,10 @@ private do
   foul tallied(user, current, mine, marks, open, openThread) do
     let (channels, people, groups) = unreadIn(user, current, marks, open, openThread)
     let others = mine.reject { |each| each.id == current.id }
-    let elsewhere = others.reduce({}) { |found, other|
+    let elsewhere = others.reduce({}) do |found, other|
       let (theirChannels, theirPeople, theirGroups) = unreadIn(user, other, marks, "", "")
       found.put(other.id, summed(theirChannels) + summed(theirPeople) + summed(theirGroups))
-    }
+    end
     return Unread {
       channels: channels,
       people: people,
@@ -432,30 +432,30 @@ private do
     let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
     let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
     let places = (channels + chats + groups).map { |conversation| conversation.id }
-    let follows = marks.filter { |mark|
+    let follows = marks.filter do |mark|
       !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId)
-    }
+    end
     let roots = follows.map { |mark| mark.threadId }
     let oldest = follows.map { |mark| mark.readAt }.min.or(0)
     let replies : [Message] = follows.empty? then [] else Messages.replyingTo(roots, oldest).or([])
-    let answered = replies.filter { |reply|
-      reply.userId != user.id && follows.any? { |mark|
+    let answered = replies.filter do |reply|
+      reply.userId != user.id && follows.any? do |mark|
         mark.threadId == reply.parentId && reply.sentAt > mark.readAt
-      }
-    }
-    let counted = { |conversation|
+      end
+    end
+    let counted = do |conversation|
       let replied = answered.count { |reply| reply.conversationId == conversation.id }
       unseen(conversation, marks, since, open) + replied
-    }
-    let byChannel = channels.reduce({}) { |found, channel|
+    end
+    let byChannel = channels.reduce({}) do |found, channel|
       found.put(channel.id, counted(channel))
-    }
-    let byPerson = chats.reduce({}) { |found, chat|
+    end
+    let byPerson = chats.reduce({}) do |found, chat|
       found.put(chat.counterpart(user.id), counted(chat))
-    }
-    let byGroup = groups.reduce({}) { |found, group|
+    end
+    let byGroup = groups.reduce({}) do |found, group|
       found.put(group.id, counted(group))
-    }
+    end
     return (byChannel, byPerson, byGroup)
   end
 
@@ -488,11 +488,11 @@ private do
     let queued = waiting.filter { |file| file.userId == user.id && !file.sent? }
     let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
     let glimpsed = tab.view == "files" then small else []
-    let glimpses = glimpsed.reduce({}) { |found, file|
+    let glimpses = glimpsed.reduce({}) do |found, file|
       let content : Result<Binary, String> = Metro.Storage.Service.get(file.id)
       let text = content.map { |bytes| bytes.to(String).or("") }.or("")
       found.put(file.id, text.take(400))
-    }
+    end
     return App.Views.Chat.Cabinet {
       stored: stored,
       queued: queued,
@@ -538,9 +538,9 @@ private do
     return false if !rest.startsWith?("/")
 
     let name = rest.drop(1).split(" ").first.or("").lowerCase
-    let candidates = commands.filter { |command|
+    let candidates = commands.filter do |command|
       command.name == name && addressed.map { |bot| command.botId == bot.id }.or(true)
-    }
+    end
     return false if candidates.count != 1
 
     let command = candidates.first.or(Command { botId: "", name: "" })
@@ -622,9 +622,9 @@ private do
 
   # Whether this person follows the thread a message starts.
   followed : [Reading] -> String -> Bool
-  let followed(marks, threadId) = !threadId.empty? && marks.any? { |mark|
+  let followed(marks, threadId) = !threadId.empty? && marks.any? do |mark|
     mark.threadId == threadId
-  }
+  end
 
   # Notes how far somebody has read, if it is further than before.
   noted : User -> [Reading] -> Reading -> Void
@@ -637,11 +637,11 @@ private do
   end
 
   summed : {String: Integer} -> Integer
-  let summed(counts) = counts.entries.reduce(0) { |sum, entry|
+  let summed(counts) = counts.entries.reduce(0) do |sum, entry|
     match entry do
       (_, count) => sum + count
     end
-  }
+  end
 
   # A tab with nothing open over the conversation: no form, no dialog, no
   # message left from the last thing tried.
@@ -857,7 +857,7 @@ private do
         if !App.Services.Authority.canManage(user, organization.id)
           return (Tab { ...refused, failure: "Only an administrator can change a member's role." }, false)
         end
-        let was = App.Services.Authority.roleOf(personId, "organization", organization.id)
+        let was = App.Services.Authority.role(personId, "organization", organization.id)
         return (Tab { ...refused, failure: "They are not in ${organization.name}." }, false) if !was.set?
         if role != "admin" && was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
           return (Tab { ...refused, failure: "The last administrator cannot be demoted." }, false)
@@ -882,7 +882,7 @@ private do
         if !App.Services.Authority.canManage(user, organization.id)
           return (Tab { ...refused, failure: "Only an administrator can remove a member." }, false)
         end
-        let was = App.Services.Authority.roleOf(personId, "organization", organization.id)
+        let was = App.Services.Authority.role(personId, "organization", organization.id)
         return (Tab { ...refused, failure: "They are not in ${organization.name}." }, false) if !was.set?
         if was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
           return (Tab { ...refused, failure: "The last administrator cannot be removed." }, false)
@@ -922,19 +922,19 @@ private do
     let refused = Tab { ...settled(tab), dialog: "profile" }
     match Users.member(user.id) do
       Ok(Just(stored)) => do
-        let given = App.Models.User.DETAILS.map { |entry|
+        let given = App.Models.User.DETAILS.map do |entry|
           match entry do
             (column, _, _) => do
               let kept = stored.locked?(column)
               (column, kept then stored.detail(column) else field(entries, column).trim)
             end
           end
-        }
-        let problems = App.Models.User.DETAILS.flatMap { |entry|
+        end
+        let problems = App.Models.User.DETAILS.flatMap do |entry|
           match entry do
             (column, label, longest) => faults(column, label, longest, givenFor(given, column))
           end
-        }
+        end
         return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
         let changed = User {
@@ -960,11 +960,11 @@ private do
   # What was given for one detail.
   givenFor : [(String, String)] -> String -> String
   let givenFor(pairs, column) = pairs
-    .flatMap { |pair|
+    .flatMap do |pair|
       match pair do
         (key, value) => key == column then [value] else []
       end
-    }
+    end
     .first
     .or("")
 
@@ -1227,9 +1227,9 @@ private do
           return (Tab { ...refused, dialogProblem: "Only an administrator of this channel can add people." }, false)
         end
 
-        let newcomers = picked.uniq.filter { |id|
+        let newcomers = picked.uniq.filter do |id|
           !conversation.admits?(id) && affiliated?(conversation.organizationId, id)
-        }
+        end
         return (Tab { ...refused, dialogProblem: "Pick at least one person who is not in it yet." }, false) if newcomers.empty?
 
         match Conversations.admitted(conversation.id, newcomers) do

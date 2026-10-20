@@ -28,13 +28,13 @@ foul credentials(email: String) -> Result<(User, String)?, String> do
   return Database.select().from(DB.Schema.Users)
     .where(DB.Schema.Users.email == email)
     .first
-    .flatMap { |row|
+    .flatMap do |row|
       match row do
         None => Ok(None)
         Just(found) => Database.decoded(found, User, USER_COLUMNS)
           .map { |user| Just((user, found.get("password_hash").or(""))) }
       end
-    }
+    end
 end
 
 # Stores a bot. It has no password: `tokenDigest` is how it is known.

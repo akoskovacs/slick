@@ -33,17 +33,17 @@ handle? : String -> Bool
 let handle?(text) do
   let first = text.chars.first.map { |char| char.letter? && char.lower? }.or(false)
   let count = text.chars.count
-  first && count >= 2 && count <= LONGEST_HANDLE && text.chars.all? { |char|
+  first && count >= 2 && count <= LONGEST_HANDLE && text.chars.all? do |char|
     (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
-  }
+  end
 end
 
 # The handle a name suggests: lower case, with dashes between its words.
 handled : String -> String
 let handled(name) do
-  let words = name.trim.lowerCase.split(" ").map { |word|
+  let words = name.trim.lowerCase.split(" ").map do |word|
     word.chars.filter { |char| char.lower? || char.digit? || "${char}" == "-" }.map { |char| "${char}" }.join("")
-  }
+  end
   words.reject { |word| word.empty? }.join("-").take(LONGEST_HANDLE)
 end
 

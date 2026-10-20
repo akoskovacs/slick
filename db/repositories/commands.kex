@@ -15,7 +15,7 @@ foul declared(botId: String, commands: [Command]) -> Result<Integer, String> do
       .try
     # A `.try` inside a block given to `map` would leave only that block:
     # what failed is collected, so the transaction is undone by it.
-    let failures = commands.flatMap { |command|
+    let failures = commands.flatMap do |command|
       let stored = Database.insert(DB.Schema.Commands)
         .values({
           id: "${botId}:${command.name}",
@@ -28,7 +28,7 @@ foul declared(botId: String, commands: [Command]) -> Result<Integer, String> do
         Ok(_) => []
         Error(reason) => [reason]
       end
-    }
+    end
     failures.empty? then Ok(commands.count) else Error(failures.first.or(""))
   end
   return replaced

@@ -98,7 +98,7 @@ commandsDeclared : WebRequest -> WebRequest
 foul commandsDeclared(request) do
   let bot = userFor(request)
   let listed : [Any] = request.list("commands")
-  let commands = listed.flatMap { |each|
+  let commands = listed.flatMap do |each|
     let fields : {String: Any} = each
     let name = "${fields.get("name").or("")}".trim.lowerCase
     let named = name.startsWith?("/") then name.drop(1) else name
@@ -108,7 +108,7 @@ foul commandsDeclared(request) do
     else
       []
     end
-  }
+  end
   if commands.count != listed.count || commands.count > App.Models.Command.MOST
     return failed(
       request,
@@ -130,15 +130,12 @@ end
 
 channelList : WebRequest -> WebRequest
 foul channelList(request) do
-  let slug = request.param("organization").or("")
-  let tab = App.Live.Chat.arrived(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
-  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
-
+  let organization = organizationFor(request).try
   let bot = userFor(request)
-  let found : [Conversation] = Conversations.channels(tab.organization).or([])
+  let found : [Conversation] = Conversations.channels(organization).or([])
   let listed : [Any] = found
     .filter { |channel| App.Services.Authority.canRead(bot, channel) }
-    .map { |channel|
+    .map do |channel|
       let entry : {String: Any} = {
         "id": channel.id,
         "name": channel.title,
@@ -146,30 +143,31 @@ foul channelList(request) do
         "private": !channel.public?
       }
       entry
-    }
+    end
   return request.json(listed)
+rescue |error|
+  return error
 end
 
 # The group chats the bot is in, in an organization: who each is with.
 groupList : WebRequest -> WebRequest
 foul groupList(request) do
+  let organization = organizationFor(request).try
   let bot = userFor(request)
-  let slug = request.param("organization").or("")
-  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
-  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
-
   let people : [User] = Users.everyone.or([])
-  let found : [Conversation] = Conversations.groupsOf(tab.organization, bot.id).or([])
-  let listed : [Any] = found.map { |chat|
+  let found : [Conversation] = Conversations.groupsOf(organization, bot.id).or([])
+  let listed : [Any] = found.map do |chat|
     let others = chat.participants.reject { |id| id == bot.id }
-    let names : [Any] = others.map { |id|
+    let names : [Any] = others.map do |id|
       people.find { |each| each.id == id }.map { |each| each.shown }.or("Someone")
-    }
+    end
     let ids : [Any] = others
     let entry : {String: Any} = {"id": chat.id, "people": ids, "names": names}
     entry
-  }
+  end
   return request.json(listed)
+rescue |error|
+  return error
 end
 
 # The private chats the bot has in an organization: who each is with. A
@@ -177,14 +175,11 @@ end
 # make any.
 chatList : WebRequest -> WebRequest
 foul chatList(request) do
+  let organization = organizationFor(request).try
   let bot = userFor(request)
-  let slug = request.param("organization").or("")
-  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
-  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
-
   let people : [User] = Users.everyone.or([])
-  let found : [Conversation] = Conversations.directsOf(tab.organization, bot.id).or([])
-  let listed : [Any] = found.map { |chat|
+  let found : [Conversation] = Conversations.directsOf(organization, bot.id).or([])
+  let listed : [Any] = found.map do |chat|
     let other = chat.firstUser == bot.id then chat.secondUser else chat.firstUser
     let person = people.find { |each| each.id == other }
     {
@@ -193,8 +188,10 @@ foul chatList(request) do
       "name": person.map { |each| each.shown }.or("Someone"),
       "bot": person.map { |each| each.bot? }.or(false)
     }
-  }
+  end
   return request.json(listed)
+rescue |error|
+  return error
 end
 
 # The answers to the forms in the bot's own messages, oldest first: each
@@ -203,16 +200,15 @@ end
 # leaves out the ones a bot has already had.
 answerList : WebRequest -> WebRequest
 foul answerList(request) do
+  let organization = organizationFor(request).try
   let bot = userFor(request)
-  let slug = request.param("organization").or("")
-  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
-  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
-
   let since = request.query("after").or("0").to(Integer).or(0)
   let people : [User] = Users.everyone.or([])
-  let found = Answers.addressedTo(tab.organization, bot.id).or([]).filter { |each| each.answeredAt > since }
+  let found = Answers.addressedTo(organization, bot.id).or([]).filter { |each| each.answeredAt > since }
   let listed : [Any] = found.flatMap { |each| placedAnswer(bot, people, each) }
   return request.json(listed)
+rescue |error|
+  return error
 end
 
 # The slash commands people used for this bot since `after`, oldest first:
@@ -221,21 +217,20 @@ end
 # bot answers as it likes, where it was used.
 invocationList : WebRequest -> WebRequest
 foul invocationList(request) do
+  let organization = organizationFor(request).try
   let bot = userFor(request)
-  let slug = request.param("organization").or("")
-  let tab = App.Live.Chat.arrived(bot, App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
-  return failed(request, 404, "There is no such organization, or this bot is not in it.") if tab.organization.empty?
-
   let since = request.query("after").or("0").to(Integer).or(0)
   let people : [User] = Users.everyone.or([])
-  let found = DB.Repositories.Invocations.meantFor(tab.organization, bot.id, since).or([])
-  let listed : [Any] = found.flatMap { |each|
+  let found = DB.Repositories.Invocations.meantFor(organization, bot.id, since).or([])
+  let listed : [Any] = found.flatMap do |each|
     match Conversations.lookup(each.conversationId) do
       Ok(Just(conversation)) => [toldInvocation(bot, people, each, conversation)]
       _ => []
     end
-  }
+  end
   return request.json(listed)
+rescue |error|
+  return error
 end
 
 # The newest messages of a conversation — a channel, or the private chat
@@ -244,23 +239,21 @@ end
 history : WebRequest -> WebRequest
 foul history(request) do
   let thread = request.query("thread").or("").trim
-  match placed(request, thread) do
-    Error(reply) => return reply
-    Ok((tab, conversation)) => do
-      if !App.Services.Authority.botMayRead(userFor(request), conversation, tab.thread)
-        return request.json([])
-      end
-      return request.json(unfolded(conversation, tab.thread)) if !thread.empty?
-
-      let asked = request.query("limit").or("50").to(Integer).or(50)
-      let limit = asked < 1 || asked > MOST then MOST else asked
-      let since = request.query("after").or("0").to(Integer).or(0)
-      let people : [User] = Users.everyone.or([])
-      let found : [Message] = Messages.latest(conversation.id, limit).or([])
-      let listed : [Any] = found.filter { |message| message.sentAt > since }.map { |message| described(message, people) }
-      return request.json(listed)
-    end
+  let (tab, conversation) = placed(request, thread).try
+  if !App.Services.Authority.botMayRead(userFor(request), conversation, tab.thread)
+    return request.json([])
   end
+  return request.json(unfolded(conversation, tab.thread)) if !thread.empty?
+
+  let asked = request.query("limit").or("50").to(Integer).or(50)
+  let limit = asked < 1 || asked > MOST then MOST else asked
+  let since = request.query("after").or("0").to(Integer).or(0)
+  let people : [User] = Users.everyone.or([])
+  let found : [Message] = Messages.latest(conversation.id, limit).or([])
+  let listed : [Any] = found.filter { |message| message.sentAt > since }.map { |message| described(message, people) }
+  return request.json(listed)
+rescue |error|
+  return error
 end
 
 # Says something, in the conversation or — with `thread` — in a thread.
@@ -269,59 +262,54 @@ foul posted(request) do
   let thread = request.field("thread").or("").trim
   let typed = request.field("body").or("").trim
   let body = typed.empty? then App.Helpers.RichText.composed(request.list("blocks")) else typed
-  match placed(request, thread) do
-    Error(reply) => return reply
-    Ok((tab, conversation)) => do
-      let bot = userFor(request)
-      if bot.bot? && conversation.botsForbidden?
-        return failed(request, 403, "Bots may not write in this conversation.")
-      end
-      let event = thread.empty? then "send" else "reply"
-      let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
-      return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
+  let (tab, conversation) = placed(request, thread).try
 
-      hubFor(request).changed("api", "everyone")
-      let people : [User] = Users.everyone.or([])
-      let inChannel : [Message] = Messages.latest(conversation.id, 1).or([])
-      let inThread : [Message] = Messages.answering(tab.thread).or([])
-      let newest = thread.empty? then inChannel else inThread.reverse.take(1)
-      let answer : {String: Any} = newest.first.map { |message| described(message, people) }.or({})
-      return request.json(201, answer)
-    end
+  let bot = userFor(request)
+  if bot.bot? && conversation.botsForbidden?
+    return failed(request, 403, "Bots may not write in this conversation.")
   end
+  let event = thread.empty? then "send" else "reply"
+  let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
+  return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
+
+  hubFor(request).changed("api", "everyone")
+  let people : [User] = Users.everyone.or([])
+  let inChannel : [Message] = Messages.latest(conversation.id, 1).or([])
+  let inThread : [Message] = Messages.answering(tab.thread).or([])
+  let newest = thread.empty? then inChannel else inThread.reverse.take(1)
+  let answer : {String: Any} = newest.first.map { |message| described(message, people) }.or({})
+  return request.json(201, answer)
+rescue |error|
+  return error
 end
 
 # Puts an emoji on a message, or takes the bot's own one off again.
 reacting : WebRequest -> WebRequest
 foul reacting(request) do
-  match placed(request, "") do
-    Error(reply) => return reply
-    Ok((tab, conversation)) => do
-      let fields = [("event", Just("react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
-      let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, fields)
-      return failed(request, 422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
+  let (tab, _) = placed(request, "").try
+  let fields = [("event", Just("react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
+  let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, fields)
+  return failed(request, 422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
 
-      hubFor(request).changed("api", "everyone")
-      return request.json({"ok": true})
-    end
-  end
+  hubFor(request).changed("api", "everyone")
+  return request.json({"ok": true})
+rescue |error|
+  return error
 end
 
 # Says what the bot is doing in a conversation, or takes it back.
 statusSet : WebRequest -> WebRequest
 foul statusSet(request) do
-  match placed(request, "") do
-    Error(reply) => return reply
-    Ok((tab, conversation)) => do
-      let text = request.field("text").or("").trim.replace("\n", " ").take(STATUS_LONGEST)
-      let asked = request.field("seconds").or("").to(Integer).or(STATUS_SECONDS)
-      let seconds = asked < 1 || asked > STATUS_SECONDS then STATUS_SECONDS else asked
-      App.Live.Chat.noting(statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
-      hubFor(request).changed("api", "everyone")
-      let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
-      return request.json(answer)
-    end
-  end
+  let (tab, _) = placed(request, "").try
+  let text = request.field("text").or("").trim.replace("\n", " ").take(STATUS_LONGEST)
+  let asked = request.field("seconds").or("").to(Integer).or(STATUS_SECONDS)
+  let seconds = asked < 1 || asked > STATUS_SECONDS then STATUS_SECONDS else asked
+  App.Live.Chat.noting(statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
+  hubFor(request).changed("api", "everyone")
+  let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
+  return request.json(answer)
+rescue |error|
+  return error
 end
 
 # A bot's socket: what it may see happening, told as it happens
@@ -429,6 +417,16 @@ private do
 
   failed : WebRequest -> Integer -> String -> WebRequest
   let failed(request, status, reason) = request.json(status, {"error": reason})
+
+  # The organization a request's address names, as the bot is in it — or the
+  # 404 that says it is not.
+  organizationFor : WebRequest -> Result<String, WebRequest>
+  foul organizationFor(request) do
+    let slug = request.param("organization").or("")
+    let tab = App.Live.Chat.arrived(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+    return Error(failed(request, 404, "There is no such organization, or this bot is not in it.")) if tab.organization.empty?
+    return Ok(tab.organization)
+  end
 
   # The conversation the address names, and a tab showing it — if the bot
   # may read it. A route with `:person` is the private chat with them; one

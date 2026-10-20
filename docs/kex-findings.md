@@ -87,6 +87,21 @@ Still needed or deliberately retained:
   0 and produced no beam — and only later failed as "Unknown module" in a
   spec and "Undefined function" at runtime. The name must match the path;
   a mismatched module should be a build error, not a silent skip.
+- **A mixed list does not widen to a union, but a named sum type sidesteps
+  it.** `[div(…), "text"]` is refused as `[Element | String]` ("List elements
+  must be the same type"), so a tree-shaped HTML DSL cannot use an inline
+  union for children. `type Node = Tag(Tag) | Text(String)` works instead:
+  `text(…)` and the element constructors all return `Node`, so the collected
+  children are homogeneous. Two more things this DSL needed, which are easy
+  to get wrong:
+  - **`compiled do` names are `%{expr}`, not `%name`.** The aspirational
+    sketch (`examples/aspirational/compiled.kex`) writes `let %name?(…)`;
+    the working form (stdlib `units/si.kex`) is `let %{name}(…)`, with the
+    loop variable used plain in the body.
+  - **`using Template` hijacks `render` and `Node`.** Template has its own
+    `render`/`Node`; importing it made `Metro.Html`'s recursive `render`
+    compile to `Template.render/1` ("undefined function"). Reference
+    `Template.escapeHtml` fully-qualified instead of importing Template.
 - The manual file-size rounding and other names not migrated here remain;
   this check does not establish that every historical workaround can go.
 

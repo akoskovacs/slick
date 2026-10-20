@@ -19,7 +19,7 @@ let MOST = 25
 named? : String -> Bool
 let named?(name) do
   let first = name.chars.first.map { |char| char.letter? && char.lower? }.or(false)
-  first && name.chars.count <= LONGEST_NAME && name.chars.all? { |char|
+  first && name.chars.count <= LONGEST_NAME && name.chars.all? do |char|
     (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
-  }
+  end
 end

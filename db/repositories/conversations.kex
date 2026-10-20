@@ -184,13 +184,13 @@ end
 foul admitted(conversationId: String, userIds: [String]) -> Result<Integer, String> do
   let present : [String] = (participantsOf([conversationId]).try).get(conversationId).or([])
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
-  let failures = newcomers.flatMap { |userId|
+  let failures = newcomers.flatMap do |userId|
     let stored = Grants.granted(Grant { subjectType: "user", subjectId: userId, resourceType: "conversation", resourceId: conversationId, role: "member" })
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
     end
-  }
+  end
   return failures.empty? then Ok(newcomers.count) else Error(failures.first.or(""))
 end
 
@@ -292,9 +292,9 @@ private do
     return Ok(conversations) if closed.empty?
 
     let byConversation : {String: [String]} = participantsOf(closed.map { |each| each.id }).try
-    return Ok(conversations.map { |conversation|
+    return Ok(conversations.map do |conversation|
       Conversation { ...conversation, participants: byConversation.get(conversation.id).or([]) }
-    })
+    end)
   end
 
   # Who takes part in some conversations, by conversation.

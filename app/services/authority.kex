@@ -13,25 +13,16 @@ using App.Models.Conversation, only: [Conversation]
 using App.Models.Grant, only: [Grant]
 using DB.Repositories.Grants, as: Grants
 
-# Whether this person may make an organization of their own. A bot may not.
-canOrganize? : User -> Bool
-let canOrganize?(user) = !user.bot?
-
-# The strongest role the user holds — directly, or through a team they are
-# in — over a resource; `None` for none.
-foul role(user: User, resourceType: String, resourceId: String) -> String? do
-  return roleOf(user.id, resourceType, resourceId)
-end
-
-# The same, for a user known only by id.
-foul roleOf(userId: String, resourceType: String, resourceId: String) -> String? do
+# The strongest role a user — by id — holds over a resource, directly or
+# through a team they are in; `None` for none.
+foul role(userId: String, resourceType: String, resourceId: String) -> String? do
   let teams : [String] = Grants.teamsOf(userId).or([])
   let over : [Grant] = Grants.over(resourceType, resourceId).or([])
-  let roles = over.flatMap { |grant|
+  let roles = over.flatMap do |grant|
     let held = grant.subjectType == "user" && grant.subjectId == userId
     let viaTeam = grant.subjectType == "team" && teams.contains?(grant.subjectId)
     held || viaTeam then [grant.role] else []
-  }
+  end
   return strongest(roles)
 end
 
@@ -39,10 +30,6 @@ end
 foul admins(organizationId: String) -> [String] do
   return Grants.roleHolders("organization", organizationId, "admin").or([])
 end
-
-# Whether a message names this bot, the way the bot itself looks for it.
-mentions? : String -> String -> Bool
-let mentions?(body, name) = body.lowerCase.contains?("@${name.lowerCase}")
 
 # Whether a bot may read a conversation's thread — `root` "" for its newest
 # messages — given what the conversation lets its bots read. A person is
@@ -56,7 +43,7 @@ foul botMayRead(bot: User, conversation: Conversation, root: String) -> Bool do
 
   match DB.Repositories.Messages.single(root) do
     Ok(Just(message)) => do
-      return true if mentions?(message.body, bot.name)
+      return true if App.Models.User.mentioned?(bot.name, message.body)
       return DB.Repositories.Messages.botAuthors(root, [bot.id]).or([]).count > 0
     end
     _ => return false
@@ -64,12 +51,12 @@ foul botMayRead(bot: User, conversation: Conversation, root: String) -> Bool do
 end
 
 # Whether the user administers the whole server.
-foul serverAdmin?(user: User) -> Bool = role(user, "server", "") == Just("admin")
+foul serverAdmin?(user: User) -> Bool = role(user.id, "server", "") == Just("admin")
 
 # Whether the user may make a channel or a team in an organization.
 foul canCreate(user: User, organizationId: String) -> Bool do
   return true if serverAdmin?(user)
-  let at = role(user, "organization", organizationId)
+  let at = role(user.id, "organization", organizationId)
   return at == Just("member") || at == Just("admin")
 end
 
@@ -77,7 +64,7 @@ end
 # channels.
 foul canManage(user: User, organizationId: String) -> Bool do
   return true if serverAdmin?(user)
-  return role(user, "organization", organizationId) == Just("admin")
+  return role(user.id, "organization", organizationId) == Just("admin")
 end
 
 # Whether the user may read a conversation.
@@ -87,9 +74,9 @@ foul canRead(user: User, conversation: Conversation) -> Bool do
     return conversation.firstUser == user.id || conversation.secondUser == user.id
   end
   if conversation.public?
-    return role(user, "organization", conversation.organizationId).set?
+    return role(user.id, "organization", conversation.organizationId).set?
   end
-  return role(user, "conversation", conversation.id).set?
+  return role(user.id, "conversation", conversation.id).set?
 end
 
 # Whether the user may say something in a conversation.
@@ -99,10 +86,10 @@ foul canWrite(user: User, conversation: Conversation) -> Bool do
     return conversation.firstUser == user.id || conversation.secondUser == user.id
   end
   if conversation.public?
-    let inOrg = role(user, "organization", conversation.organizationId)
+    let inOrg = role(user.id, "organization", conversation.organizationId)
     return inOrg == Just("member") || inOrg == Just("admin")
   end
-  let inConversation = role(user, "conversation", conversation.id)
+  let inConversation = role(user.id, "conversation", conversation.id)
   return inConversation == Just("member") || inConversation == Just("admin")
 end
 
@@ -110,10 +97,10 @@ end
 # bot access.
 foul canAdminister(user: User, conversation: Conversation) -> Bool do
   return true if serverAdmin?(user)
-  if role(user, "organization", conversation.organizationId) == Just("admin")
+  if role(user.id, "organization", conversation.organizationId) == Just("admin")
     return true
   end
-  return role(user, "conversation", conversation.id) == Just("admin")
+  return role(user.id, "conversation", conversation.id) == Just("admin")
 end
 
 private do

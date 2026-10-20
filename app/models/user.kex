@@ -6,6 +6,11 @@ module App.Models.User
 using App.Models.Organization, only: [OrganizationId]
 
 type UserId = String
+
+# Whether a message names somebody, the way a bot looks for itself:
+# "@name", however either is cased.
+mentioned? : String -> String -> Bool
+let mentioned?(name, body) = body.lowerCase.contains?("@${name.lowerCase}")
 record User do
   id : UserId
   email : String

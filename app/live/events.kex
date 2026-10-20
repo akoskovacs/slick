@@ -145,12 +145,8 @@ let heard?(event, bot, name, organizations) do
   let admitted = event.public? || event.people.contains?(bot)
   return admitted if event.botAccess == "all"
 
-  admitted && (mentions?(event.body, name) || event.replied.contains?(bot))
+  admitted && (App.Models.User.mentioned?(name, event.body) || event.replied.contains?(bot))
 end
-
-# Whether a message body names the bot, the way the bot itself looks for it.
-mentions? : String -> String -> Bool
-let mentions?(body, name) = body.lowerCase.contains?("@${name.lowerCase}")
 
 # An event as the bot told of it is shown it: where, as the API takes it,
 # and never more than that.
