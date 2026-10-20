@@ -1,15 +1,9 @@
 ---
-params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String, note: String, admitting?: Bool, promotable?: Bool, botAccess: String, canAdminister: Bool]
+params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String, note: String, admitting?: Bool, promotable?: Bool, botAccess: String, canAdminister: Bool, setting?: Bool]
 ---
 <header class="heading">
   <div class="heading-row">
     <h1><%= title %></h1>
-    <nav class="views" aria-label="Show">
-      <button type="button" class="view<% if !filing? %> current<% end %>"
-        data-event="messages">Messages</button>
-      <button type="button" class="view<% if filing? %> current<% end %>"
-        data-event="files">Files<% if !filed.empty? %> <span class="tally"><%= filed %></span><% end %></button>
-    </nav>
   </div>
   <% if retitling? %>
     <form class="topic-form" data-live="topic" data-live-quiet>
@@ -22,18 +16,6 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
       <button type="button" class="quiet" data-event="retitle">Edit topic</button>
     </p>
   <% end %>
-  <% if canAdminister %>
-    <form class="bot-access" data-live="bot-access" data-live-quiet>
-      <label>Bots here
-        <select name="access" aria-label="What bots may read">
-          <option value="mentions"<% if botAccess == "mentions" %> selected<% end %>>Read only their mentions</option>
-          <option value="all"<% if botAccess == "all" %> selected<% end %>>Read everything</option>
-          <option value="none"<% if botAccess == "none" %> selected<% end %>>Read nothing</option>
-        </select>
-      </label>
-      <button type="submit" class="primary">Save</button>
-    </form>
-  <% end %>
   <% if !note.empty? %>
     <p class="topic"><%= note %>
     <% if admitting? %>
@@ -44,4 +26,13 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
     <% end %>
     </p>
   <% end %>
+    <nav class="views" aria-label="Show">
+      <button type="button" class="view<% if !filing? && !setting? %> current<% end %>"
+        aria-pressed="<%= !filing? && !setting? %>" data-event="messages">Messages</button>
+      <button type="button" class="view<% if filing? %> current<% end %>"
+        aria-pressed="<%= filing? %>" data-event="files">Files<% if !filed.empty? %> <span class="tally"><%= filed %></span><% end %></button>
+      <% if canAdminister %>
+        <button type="button" class="view<% if setting? %> current<% end %>" aria-pressed="<%= setting? %>" data-event="settings" title="Conversation settings">Settings</button>
+      <% end %>
+    </nav>
 </header>

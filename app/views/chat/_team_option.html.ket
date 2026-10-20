@@ -1,0 +1,4 @@
+---
+params: [key: String, handle: String, chosen?: Bool]
+---
+<option value="<%= key %>"<% if chosen? %> selected<% end %>>@<%= handle %></option>

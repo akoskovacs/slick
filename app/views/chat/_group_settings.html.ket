@@ -1,0 +1,21 @@
+---
+params: [botAccess: String]
+---
+<div class="settings-scroll">
+  <form class="settings" data-live="bot-access" data-live-quiet>
+    <div class="settings-intro"><h2>Conversation settings</h2></div>
+    <section class="settings-section">
+      <h3><label for="group-bot-access">Bot access</label></h3>
+      <p class="hint" id="group-bot-help">Choose which messages bots can read.</p>
+      <select id="group-bot-access" name="access" aria-describedby="group-bot-help">
+        <option value="mentions"<% if botAccess == "mentions" %> selected<% end %>>Only messages that mention them</option>
+        <option value="all"<% if botAccess == "all" %> selected<% end %>>All messages</option>
+        <option value="none"<% if botAccess == "none" %> selected<% end %>>No messages</option>
+      </select>
+    </section>
+    <div class="actions settings-actions">
+      <button type="button" data-event="messages">Cancel</button>
+      <button type="submit" class="primary">Save changes</button>
+    </div>
+  </form>
+</div>

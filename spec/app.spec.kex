@@ -420,7 +420,7 @@ describe("Slick") do
       let (crewOnly, _) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", designId)])
       Assert.truthy(App.Live.Chat.visible(bob, crewOnly).set?)
       Assert.equal(App.Live.Chat.visible(eve, crewOnly), None)
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, crewOnly).contains?("Belongs to @design-crew."))
+      Assert.truthy(!App.Live.Chat.markup(statuses, ada, crewOnly).contains?("Belongs to @design-crew."))
       stepped(statuses, eve, Tab { team: designId }, [("event", "team-join")])
       Assert.truthy(App.Live.Chat.visible(eve, crewOnly).set?)
       stepped(statuses, eve, Tab { team: designId }, [("event", "team-leave")])

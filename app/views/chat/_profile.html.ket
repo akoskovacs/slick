@@ -39,17 +39,20 @@ params: [card: Card]
     <% end %>
     </div>
     <% if card.manageable? %>
+      <details class="member-management">
+        <summary>Manage member</summary>
       <form class="role-picker" data-live="role-set" data-live-quiet>
         <input type="hidden" name="user" value="<%= card.key %>">
-        <label>In this organization</label>
-        <select name="role" aria-label="Role">
+        <label for="member-role">Workspace role</label>
+        <select id="member-role" name="role" aria-label="Role">
           <option value="member"<% if card.role == "member" %> selected<% end %>>Member</option>
           <option value="admin"<% if card.role == "admin" %> selected<% end %>>Administrator</option>
           <option value="read-only"<% if card.role == "read-only" %> selected<% end %>>Read-only</option>
         </select>
-        <button type="submit" class="primary">Change</button>
+        <button type="submit" class="primary">Save role</button>
       </form>
       <button type="button" class="quiet" data-event="role-remove" data-user="<%= card.key %>">Remove from organization</button>
+      </details>
     <% end %>
     <dl class="details">
     <% if !card.department.empty? %>

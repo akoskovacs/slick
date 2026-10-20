@@ -1,0 +1,36 @@
+---
+params: [organization: String, public?: Bool, botAccess: String, teams: String]
+---
+<div class="settings-scroll">
+  <form class="settings" data-live="settings-set" data-live-quiet>
+    <div class="settings-intro">
+      <h2>Channel settings</h2>
+      <p class="hint">Manage access and how apps participate in this channel.</p>
+    </div>
+    <section class="settings-section">
+      <h3>Channel access</h3>
+      <fieldset class="access" aria-label="Channel access">
+        <label class="choice"><input type="radio" name="access" value="public"<% if public? %> checked<% end %>> <span><strong>Public</strong><small>Everyone in <%= organization %> can read this channel.</small></span></label>
+        <label class="choice"><input type="radio" name="access" value="private"<% if !public? %> checked<% end %>> <span><strong>Private</strong><small>Only channel members and the assigned team can read it.</small></span></label>
+      </fieldset>
+    </section>
+    <section class="settings-section">
+      <h3><label for="channel-team">Assigned team</label></h3>
+      <p class="hint" id="channel-team-help">Team members also have access when this channel is private.</p>
+      <select id="channel-team" name="team" aria-describedby="channel-team-help"><option value="">No team</option><%== teams %></select>
+    </section>
+    <section class="settings-section">
+      <h3><label for="channel-bot-access">Bot access</label></h3>
+      <p class="hint" id="channel-bot-help">Choose which messages bots can read.</p>
+      <select id="channel-bot-access" name="bot-access" aria-describedby="channel-bot-help">
+        <option value="mentions"<% if botAccess == "mentions" %> selected<% end %>>Only messages that mention them</option>
+        <option value="all"<% if botAccess == "all" %> selected<% end %>>All messages</option>
+        <option value="none"<% if botAccess == "none" %> selected<% end %>>No messages</option>
+      </select>
+    </section>
+    <div class="actions settings-actions">
+      <button type="button" data-event="messages">Cancel</button>
+      <button type="submit" class="primary">Save changes</button>
+    </div>
+  </form>
+</div>

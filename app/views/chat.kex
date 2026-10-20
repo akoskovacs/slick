@@ -225,6 +225,9 @@ end
 let layout = Template.html(Kex.embed("layouts/application.html.ket"))
 let frame = Template.html(Kex.embed("chat/index.html.ket"))
 let entryPartial = Template.html(Kex.embed("chat/_entry.html.ket"))
+let groupSettingsPartial = Template.html(Kex.embed("chat/_group_settings.html.ket"))
+let settingsPartial = Template.html(Kex.embed("chat/_settings.html.ket"))
+let teamOptionPartial = Template.html(Kex.embed("chat/_team_option.html.ket"))
 let headingPartial = Template.html(Kex.embed("chat/_heading.html.ket"))
 let badgePartial = Template.html(Kex.embed("chat/_badge.html.ket"))
 let botPartial = Template.html(Kex.embed("chat/_bot.html.ket"))
@@ -407,6 +410,7 @@ let index(
   let caption = unread.total > 0 then "(${counted(unread.total)}) ${named}" else named
   let open = pane(
     tab,
+    organization,
     room,
     conversation,
     messages,
@@ -927,6 +931,7 @@ private do
   # what is written in its message box and not sent yet.
   let pane(
     tab: Tab,
+    organization: Organization,
     room: Room,
     conversation: Conversation?,
     messages: [Message],
@@ -944,6 +949,7 @@ private do
       Just(open) => do
         let title = titled(open, room.viewer, room.people)
         let filing = tab.view == "files"
+        let setting = tab.view == "settings" && (open.channel? || open.group?) && room.administrator
         let heading = headingPartial(
           title,
           App.Models.Emoji.shown(open.topic),
@@ -951,11 +957,12 @@ private do
           tab.retitling?,
           filing,
           cabinet.stored.empty? then "" else "${cabinet.stored.count}",
-          noted(open, room.teams),
+          noted(open),
           open.channel? && !open.public?,
           open.group?,
           open.botAccess,
-          room.administrator && (open.channel? || open.group?)
+          room.administrator && (open.channel? || open.group?),
+          setting
         )
         let queued = cabinet.queued
           .map { |file| queuedPartial(enclosed(file, room.people, "")) }
@@ -974,6 +981,8 @@ private do
         )
         let shown = if filing
           filed(cabinet, room.people)
+        elif setting
+          open.channel? then settingsPane(open, organization, room) else groupSettingsPartial(open.botAccess)
         else
           let uses = room.invocations.filter { |used| used.threadId.empty? }
           let bubbles = woven(room, messages, uses, "", 0, false)
@@ -996,7 +1005,7 @@ private do
           "<section class=\"pane\" data-live-drop=\"share\">",
           heading,
           shown,
-          composer,
+          setting then "" else composer,
           "</section>"
         ].join("")
       end
@@ -1004,18 +1013,16 @@ private do
   end
 
   # What a conversation's heading says about who can read it, under its
-  # topic: who owns a channel, and who is in a private one or a group chat.
-  noted : Conversation -> [Team] -> String
-  let noted(conversation, teams) do
-    let owner = teams.find { |team| team.id == conversation.teamId }.map { |team| "@${team.handle}" }
+  # topic. Team ownership is shown in channel settings.
+  noted : Conversation -> String
+  let noted(conversation) do
     let count = conversation.participants.count
     match conversation.kind do
       "direct" => "Private: only the two of you can read this."
       "group" => "Private: only the ${count} of you can read this."
       _ => do
-        let belongs = owner.map { |handle| " Belongs to ${handle}." }.or("")
         let people = count == 1 then "1 person" else "${count} people"
-        conversation.public? then belongs.trim else "🔒 Private: only its ${people} can read this.${belongs}"
+        conversation.public? then "" else "🔒 Private: only its ${people} can read this."
       end
     end
   end
@@ -1075,6 +1082,16 @@ private do
       filePartial(enclosed(file, people, cabinet.glimpses.get(file.id).or("")))
     end
     "<div class=\"files\"><ul class=\"file-grid\">${cards.join("\n")}</ul></div>"
+  end
+
+  # A channel's settings, as a full pane: who may read it, the team that owns
+  # it, and how much its bots may read.
+  settingsPane : Conversation -> Organization -> Room -> String
+  let settingsPane(conversation, organization, room) do
+    let owners = room.teams
+      .filter { |team| team.includes?(room.viewer.id) || team.id == conversation.teamId }
+      .map { |team| teamOptionPartial(team.id, team.handle, team.id == conversation.teamId) }
+    settingsPartial(organization.name, conversation.public?, conversation.botAccess, owners.join(""))
   end
 
   # A file as the page shows it.

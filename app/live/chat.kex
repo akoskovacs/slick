@@ -224,6 +224,8 @@ foul handled(events, statuses, user, tab, entries) do
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
     "profile" => profiled(user, tab, field(entries, "user"))
     "bot-access" => botAccessSet(user, tab, field(entries, "access"))
+    "settings" => (Tab { ...settled(tab), thread: "", profile: "", team: "", view: "settings" }, false)
+    "settings-set" => settingsSet(user, tab, entries)
     "role-set" => roleGiven(user, tab, field(entries, "user"), field(entries, "role"))
     "role-remove" => roleTaken(user, tab, field(entries, "user"))
     "unprofile" => (Tab { ...settled(tab), profile: "" }, false)
@@ -835,6 +837,43 @@ private do
 
         match Conversations.botAccess(conversation.id, access) do
           Ok(true) => return (Tab { ...refused, notice: "Bots here read ${access}." }, true)
+          Ok(false) => return (Tab { ...refused, failure: "That conversation is not there." }, false)
+          Error(reason) => return (Tab { ...refused, failure: reason }, false)
+        end
+      end
+    end
+  end
+
+  # Changes a channel's settings at once: who may read it, the team that
+  # owns it, and how much its bots may read. Only an administrator, and only
+  # a channel.
+  settingsSet : User -> Tab -> [(String, String?)] -> (Tab, Bool)
+  foul settingsSet(user, tab, entries) do
+    let refused = Tab { ...settled(tab), view: "settings" }
+    let access = field(entries, "access")
+    let botAccess = field(entries, "bot-access")
+    let teamId = field(entries, "team")
+    return (Tab { ...refused, failure: "Pick who may read it." }, false) if !["public", "private"].contains?(access)
+    return (Tab { ...refused, failure: "Pick what bots may read." }, false) if !["none", "mentions", "all"].contains?(botAccess)
+
+    match visible(user, tab) do
+      None => return (tab, false)
+      Just(conversation) => do
+        return (tab, false) if !conversation.channel?
+        if !App.Services.Authority.canAdminister(user, conversation)
+          return (Tab { ...refused, failure: "Only an administrator can change a channel's settings." }, false)
+        end
+        if !teamId.empty? && teamId != conversation.teamId
+          let owner : Team? = match Teams.single(teamId) do
+            Ok(found) => found
+            Error(_) => None
+          end
+          let owns = owner.map { |team| team.organizationId == conversation.organizationId && team.includes?(user.id) }.or(false)
+          return (Tab { ...refused, failure: "A channel can only belong to a team you are in." }, false) if !owns
+        end
+
+        match Conversations.configured(conversation.id, access, teamId, botAccess) do
+          Ok(true) => return (Tab { ...settled(tab), view: "", notice: "Channel settings saved." }, true)
           Ok(false) => return (Tab { ...refused, failure: "That conversation is not there." }, false)
           Error(reason) => return (Tab { ...refused, failure: reason }, false)
         end

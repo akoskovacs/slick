@@ -271,6 +271,36 @@ foul botAccess(id: String, access: String) -> Result<Bool, String> do
     .map { |changed| changed > 0 }
 end
 
+# A channel's settings at once: who may read it, the team that owns it, and
+# how much its bots may read. Only a channel; a private chat or a group chat
+# has its own ways.
+foul configured(id: String, access: String, teamId: String, botAccess: String) -> Result<Bool, String> do
+  let found : Conversation? = lookup(id).try
+  match found do
+    None => return Error("that conversation is not there")
+    Just(conversation) => do
+      return Error("only a channel is configured this way") if !conversation.channel?
+      return Database.transaction do
+        Database.update(DB.Schema.Conversations)
+          .set({access: access, team_id: teamId, bot_access: botAccess})
+          .where(DB.Schema.Conversations.id == id)
+          .run
+          .try
+        # The team that owns the channel administers it, and only that team.
+        if conversation.teamId != teamId
+          if !conversation.teamId.empty?
+            Grants.revoked(Grants.key("team", conversation.teamId, "conversation", id)).try
+          end
+          if !teamId.empty?
+            Grants.granted(Grant { subjectType: "team", subjectId: teamId, resourceType: "conversation", resourceId: id, role: "admin" }).try
+          end
+        end
+        Ok(true)
+      end
+    end
+  end
+end
+
 private do
   # A conversation found, or none, with who takes part in it.
   foul single(row: Conversation?) -> Result<Conversation?, String> do
