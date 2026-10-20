@@ -103,10 +103,14 @@ end
 # message of nothing but emoji is wrapped for big rendering.
 shown : String -> String -> [Given] -> String
 let shown(body, key, given) do
-  let content = blocks(body).mapIndexed do |block, index|
+  let content : [Html.Node] = blocks(body).mapIndexed do |block, index|
     [rendered(block, key, index)] + answers(block, given.filter { |each| each.form == index })
   end.reduce([]) { |all, nodes| all + nodes }
-  let tree = App.Models.Emoji.emojiOnly?(body) then [Html.element("div", {"class": "big-emoji"}, content)] else content
+  let tree = App.Models.Emoji.emojiOnly?(body) then [
+    Html.div({"class": "big-emoji"}) do
+      ...content
+    end
+  ] else content
   return tree.map { |node| Html.render(node) }.join("")
 end
 
@@ -208,21 +212,29 @@ private do
   # A block as markup. `key` is the message it is in and `index` which of
   # its blocks it is: what a form sends back to be answered.
   rendered : ContentBlock -> String -> Integer -> Html.Node
-  let rendered(Paragraph(lines), key, index) = Html.element("p", {}, broken(lines))
-  let rendered(Heading(text), key, index) = Html.element("h3", {}, inline(text))
-  let rendered(Bullets(items), key, index) = Html.element("ul", {}, items.map { |item| Html.element("li", {}, inline(item)) })
-  let rendered(Quote(lines), key, index) = Html.element("blockquote", {}, broken(lines))
-  let rendered(Listing(text), key, index) = Html.element("pre", {}, [Html.element("code", {}, [Html.text(text)])])
+  let rendered(Paragraph(lines), key, index) = Html.p({}) do ...broken(lines) end
+  let rendered(Heading(text), key, index) = Html.h3({}) do ...inline(text) end
+  let rendered(Bullets(items), key, index) = Html.ul({}) do
+    ...(items.map { |item| Html.li({}) do ...inline(item) end })
+  end
+  let rendered(Quote(lines), key, index) = Html.blockquote({}) do ...broken(lines) end
+  let rendered(Listing(text), key, index) = Html.pre({}) do
+    Html.code({}) do
+      Html.text(text)
+    end
+  end
   let rendered(Divider, key, index) = Html.hr({})
   # One choice of a few options is a button for each; of more, a select
   # and Send, like a form that asks several things.
   let rendered(Form([Choice(label, options)]), key, index) do
     return fieldsOf([Choice(label, options)], key, index) if options.count > BUTTONS
 
-    Html.element("div", {"class": "asking-form choices"}, [
-      Html.element("p", {"class": "asked"}, inline(label)),
-      Html.element("div", {"class": "options"}, options.map { |option| offered(key, index, label, option) })
-    ])
+    Html.div({"class": "asking-form choices"}) do
+      Html.p({"class": "asked"}) do ...inline(label) end
+      Html.div({"class": "options"}) do
+        ...(options.map { |option| offered(key, index, label, option) })
+      end
+    end
   end
   let rendered(Form(fields), key, index) = fieldsOf(fields, key, index)
 
@@ -237,8 +249,12 @@ private do
       Html.input({"type": "hidden", "name": "message", "value": key}),
       Html.input({"type": "hidden", "name": "form", "value": "${index}"})
     ]
-    let send = Html.element("button", key.empty? then {"type": "submit", "class": "primary", "disabled": ""} else {"type": "submit", "class": "primary"}, [Html.text("Send")])
-    Html.element("form", {"class": "asking-form", "data-live": "answer", "data-live-quiet": "", "data-live-reset": "", "data-live-keep": ""}, hidden + inputs + [send])
+    let send = Html.button(key.empty? then {"type": "submit", "class": "primary", "disabled": ""} else {"type": "submit", "class": "primary"}) do
+      Html.text("Send")
+    end
+    Html.form({"class": "asking-form", "data-live": "answer", "data-live-quiet": "", "data-live-reset": "", "data-live-keep": ""}) do
+      ...(hidden + inputs + [send])
+    end
   end
 
   # Whether a tag opens or closes code, where nothing is a mention.
@@ -279,7 +295,9 @@ private do
   offered : String -> Integer -> String -> String -> Html.Node
   let offered(key, index, label, option) do
     let atts = {"type": "button", "class": "option", "data-event": "answer", "data-message": key, "data-form": "${index}", "data-label": label, "data-value": option}
-    Html.element("button", key.empty? then atts.put("disabled", "") else atts, inline(option))
+    Html.button(key.empty? then atts.put("disabled", "") else atts) do
+      ...inline(option)
+    end
   end
 
   # The answers a form has had, under it: whose, and what. Nothing for a
@@ -290,13 +308,19 @@ private do
     let lines = given.map do |each|
       let said = told(fields, each.answer)
       let whose = each.mine? then "response mine" else "response"
-      Html.element("li", {"class": whose}, [
-        Html.element("strong", {}, [Html.text(each.who)]),
-        Html.text(" "),
-        Html.element("span", {}, [Html.text(said)])
-      ])
+      Html.li({"class": whose}) do
+        Html.strong({}) do
+          Html.text(each.who)
+        end
+        Html.text(" ")
+        Html.span({}) do
+          Html.text(said)
+        end
+      end
     end
-    [Html.element("ul", {"class": "responses", "aria-label": "Answers"}, lines)]
+    [Html.ul({"class": "responses", "aria-label": "Answers"}) do
+      ...lines
+    end]
   end
   let answers(block, given) = []
 
@@ -310,14 +334,16 @@ private do
 
   # One field of a form with several, under its label.
   input : Field -> Integer -> Html.Node
-  let input(Asked(label), position) = Html.element("label", {"class": "field"}, [
-    Html.element("span", {}, inline(label)),
+  let input(Asked(label), position) = Html.label({"class": "field"}) do
+    Html.span({}) do ...inline(label) end
     Html.input({"name": "f${position}", "maxlength": "${LONGEST_ANSWER}", "autocomplete": "off"})
-  ])
-  let input(Choice(label, options), position) = Html.element("label", {"class": "field"}, [
-    Html.element("span", {}, inline(label)),
-    Html.element("select", {"name": "f${position}"}, options.map { |option| Html.element("option", {}, [Html.text(option)]) })
-  ])
+  end
+  let input(Choice(label, options), position) = Html.label({"class": "field"}) do
+    Html.span({}) do ...inline(label) end
+    Html.select({"name": "f${position}"}) do
+      ...(options.map { |option| Html.option({}) do Html.text(option) end })
+    end
+  end
 
   # A form shown where there is no message to answer it in cannot be used.
   disabled : String -> {String: String}
@@ -419,11 +445,13 @@ private do
 
   marked : Span -> Html.Node
   let marked(Words(text)) = Html.text(App.Models.Emoji.shown(text))
-  let marked(Bold(inner)) = Html.element("strong", {}, inner.map { |span| marked(span) })
-  let marked(Italic(inner)) = Html.element("em", {}, inner.map { |span| marked(span) })
-  let marked(Struck(inner)) = Html.element("s", {}, inner.map { |span| marked(span) })
-  let marked(Mono(text)) = Html.element("code", {}, [Html.text(text)])
-  let marked(Anchor(address)) = Html.element("a", {"href": address, "target": "_blank", "rel": "noopener noreferrer nofollow"}, [Html.text(address)])
+  let marked(Bold(inner)) = Html.strong({}) do ...(inner.map { |span| marked(span) }) end
+  let marked(Italic(inner)) = Html.em({}) do ...(inner.map { |span| marked(span) }) end
+  let marked(Struck(inner)) = Html.s({}) do ...(inner.map { |span| marked(span) }) end
+  let marked(Mono(text)) = Html.code({}) do Html.text(text) end
+  let marked(Anchor(address)) = Html.a({"href": address, "target": "_blank", "rel": "noopener noreferrer nofollow"}) do
+    Html.text(address)
+  end
 
   # Words one at a time: an address becomes a link, and everything between
   # two addresses is read for marks together. `pending` is the text since
