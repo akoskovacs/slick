@@ -46,6 +46,20 @@ foul answering(rootId: String) -> Result<[Message], String> do
     .all(as: Message)
 end
 
+# The bot authors of a thread's messages — the root and its replies — by id,
+# from among `botIds`.
+foul botAuthors(rootId: String, botIds: [String]) -> Result<[String], String> do
+  let root = Database.select([:user_id]).from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.id == rootId)
+    .pluck(:user_id)
+    .or([])
+  let replies = Database.select([:user_id]).from(DB.Schema.Messages)
+    .where(DB.Schema.Messages.parentId == rootId)
+    .pluck(:user_id)
+    .or([])
+  return Ok((root + replies).filter { |id| botIds.contains?(id) }.uniq)
+end
+
 # Stores a message, stamped now. With a parent it is a reply, and the
 # parent's count is brought up to date — counted again, not added to, so
 # two replies at once cannot leave it wrong.

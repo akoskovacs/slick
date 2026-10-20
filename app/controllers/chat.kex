@@ -2,7 +2,9 @@
 module App.Controllers.Chat
 
 using Metro.WebRequest, only: [WebRequest]
-using App.Controllers.Application, only: [hubFor, statusesFor, userFor, page]
+using Metro.Environment, only: [Development]
+using Net.HTTP.WebSocket, only: [Text, CloseMessage]
+using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, userFor, page]
 
 # The page, opened at the conversation its address names. The live view
 # takes over from there (`joined`) and keeps the address bar in step.
@@ -26,15 +28,40 @@ joined : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
 foul joined(request, socket) do
   let hub = hubFor(request)
   let statuses = statusesFor(request)
+  let events = eventsFor(request)
   let user = userFor(request)
   let seat = "${Metro.Id.serial()}"
   App.Live.Chat.arriving(statuses, user, seat)
   hub.changed(seat, "everyone")
   Metro.Live.Socket.attached(
     socket, hub, "everyone", App.Live.Chat.arrived(user, request.query("at").or("/")),
-    { |tab, event| App.Live.Chat.handled(statuses, user, tab, event) },
+    { |tab, event| App.Live.Chat.handled(events, statuses, user, tab, event) },
     { |tab| App.Live.Chat.markup(statuses, user, tab) }
   )
   App.Live.Chat.leaving(statuses, user, seat)
   hub.changed(seat, "everyone")
+rescue |error|
+  # Something the page cannot run around. It is said on the way out — in
+  # development, what it was — and the socket is held open so the browser
+  # keeps showing it until the page is reloaded. A live view that dies
+  # without a word leaves whoever is looking at a page that is just broken.
+  IO.printError("slick: ${error}")
+  socket.send(Text("error\n${App.Controllers.Chat.shown(error)}"))
+  loop do
+    match socket.receiveMessage do
+      Ok(CloseMessage(_, _)) => break
+      Ok(_) => Void
+      Error(_) => break
+    end
+  end
+end
+
+# What a live view says when it fails: the reason, in development, and a
+# shrug elsewhere — the server's log always has it.
+shown : Any -> String
+foul shown(error) do
+  match Metro.Environment.current() do
+    Ok(Development) => "${error}"
+    _ => "Something went wrong. The server log says what."
+  end
 end

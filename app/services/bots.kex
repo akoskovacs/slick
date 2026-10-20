@@ -41,6 +41,20 @@ foul renewed(asker, organizationId, botId) do
   return shared then Ok(token) else Error("That is not one of your bots, or of this organization's.")
 end
 
+# Deletes a bot, taking away its access with it: the bot has to be this
+# person's own, or belong to `organizationId` — which the caller has
+# already made sure this person is in.
+removed : User -> OrganizationId -> String -> Result<Bool, String>
+foul removed(asker, organizationId, botId) do
+  let own = Users.removed(botId, asker.id).or(false)
+  return Ok(true) if own
+  return Error("That is not one of your bots.") if organizationId.empty?
+
+  let shared = Users.removedFor(botId, organizationId).or(false)
+
+  return shared then Ok(true) else Error("That is not one of your bots, or of this organization's.")
+end
+
 # The bot an `Authorization: Bearer …` header speaks for, if any.
 bearer : String? -> User?
 foul bearer(header) do

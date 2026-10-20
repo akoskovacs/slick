@@ -1,42 +1,51 @@
 # Every address the application answers, and who gets as far as answering.
 #
-#   :application   the hub and the statuses board, on every request
+#   :application   the hub, the statuses board and the events bus, on every
+#                  request
 #   :browser       no request from another site; nothing kept by a cache
 #   :members       signed in, or sent to sign in
 #   :guests        signed out, or sent home
 #   :bots          a bot's token, or 401
+#   :botsocket     a bot's token — in the header, or ?token= — or 401
 #
 # Who is asking is a session token in the `slick_session` cookie for a
-# person, and an `Authorization: Bearer` token for a bot. Each is looked up
+# person, and an `Authorization: Bearer` token for a bot — a WebSocket that
+# cannot send one sends it in the address (`?token=`). Each is looked up
 # once, by a plug, and the actions are handed who it was.
 module Config.Routes
 
 using Metro.Live.Hub, only: [Hub]
 using Metro.Plugs, only: [providing]
+using App.Live.Events, only: [Bus]
 # Every router call stays qualified: Metro.Storage.Service still shadows
 # bare imports of get and put.
 using Metro.Router, as: Router
 # Actions are named bare, and so imported by name: a reference through the
 # module (`~App.Controllers.Chat.show`) does not resolve when it is called.
 using App.Controllers.Accounts, only: [signInPage, signIn, signOut, registrationPage, register]
-using App.Controllers.Api, only: [whoami, commandsDeclared, channelList, chatList, groupList, answerList, invocationList, history, posted, reacting, statusSet]
+using App.Controllers.Api, only: [whoami, commandsDeclared, evented, channelList, chatList, groupList, answerList, invocationList, history, posted, reacting, statusSet]
 using App.Controllers.Chat, only: [show]
 using App.Controllers.Files, only: [uploaded, fetched]
 
 # Built where the database is installed (main.kex): an action reaches the
 # `Harmat.Connection` that was in force when its route was written, not the
 # one in force when a request arrives.
-routes : Server<Hub> -> Metro.Router.Router
-foul routes(hub) do
+routes : Server<Hub> -> Server<App.Live.Events.Bus> -> Metro.Router.Router
+foul routes(hub, events) do
   # What people are in the middle of — typing, or what a bot says it is
   # doing. Remembered here and not in the database: it is only true for now.
   let statuses = Process.spawn(Metro.Live.Presence.Presence {})
   Router.define do
-    Router.pipeline(:application, [providing(:hub, hub), providing(:statuses, statuses)])
+    Router.pipeline(:application, [providing(:hub, hub), providing(:statuses, statuses), providing(:events, events)])
     Router.pipeline(:browser, [Metro.Plugs.sameOrigin, Metro.Plugs.unstored])
     Router.pipeline(:members, [App.Controllers.Application.signedIn()])
     Router.pipeline(:guests, [App.Controllers.Application.signedOut()])
     Router.pipeline(:bots, [App.Controllers.Application.bearer()])
+    Router.pipeline(:botsocket, [App.Controllers.Application.socketBearer()])
+
+    Router.scope "/api", via: [:application, :botsocket] do
+      Router.live "/events" do |request, socket| App.Controllers.Api.evented(request, socket) end
+    end
 
     Router.scope "/api", via: [:application, :bots] do
       Router.get("/me", ~whoami)

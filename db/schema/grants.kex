@@ -1,0 +1,23 @@
+# The `grants` table: one role a subject holds over a resource. See
+# db/migrate/N0022_create_grants.kex and docs/permissions.md.
+module DB.Schema.Grants
+
+using Harmat.Table, as: Table
+using Harmat.Table, only: [Definition]
+
+let definition = Table.define :grants do |t|
+  t.text(:id, primaryKey: true)
+  t.text(:subject_type, oneOf: ["user", "team"])
+  t.text(:subject_id)
+  t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
+  t.text(:resource_id, default: "")
+  t.text(:role, oneOf: ["admin", "member", "read-only"])
+  t.text(:granted_at, default: "")
+end
+
+let id = DB.Schema.Grants.definition.textColumn(:id)
+let subjectType = DB.Schema.Grants.definition.textColumn(:subject_type)
+let subjectId = DB.Schema.Grants.definition.textColumn(:subject_id)
+let resourceType = DB.Schema.Grants.definition.textColumn(:resource_type)
+let resourceId = DB.Schema.Grants.definition.textColumn(:resource_id)
+let role = DB.Schema.Grants.definition.textColumn(:role)

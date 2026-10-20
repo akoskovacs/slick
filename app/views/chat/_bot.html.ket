@@ -8,4 +8,5 @@ params: [robot: Robot]
     <button type="button" class="quiet" data-event="bot-enlist" data-id="<%= robot.key %>">Add to <%= robot.spot %></button>
   <% end %>
   <button type="button" class="quiet" data-event="bot-rekey" data-id="<%= robot.key %>">New token</button>
+  <button type="button" class="quiet" data-event="bot-remove" data-id="<%= robot.key %>">Remove</button>
 </li>

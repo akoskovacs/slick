@@ -1,0 +1,32 @@
+# One grant of a role to a subject over a resource: who may do what where.
+#
+#   Grant { subjectType: "user", subjectId: user.id,
+#           resourceType: "organization", resourceId: org.id, role: "admin" }
+#
+# The subject is a user (person or bot) or a team; the resource a server
+# (resourceId ""), an organization, a conversation (a channel or a group
+# chat), or a team. See docs/permissions.md.
+module App.Models.Grant
+
+record Grant do
+  id : String = ""
+  # Who holds the grant: a "user" (person or bot) or a "team".
+  subjectType : String = "user"
+  subjectId : String
+  # What it is over: "server", "organization", "conversation" or "team".
+  resourceType : String = "server"
+  # The id of that thing; "" for the server.
+  resourceId : String = ""
+  # "admin", "member" or "read-only".
+  role : String = "member"
+  grantedAt : String = ""
+end
+
+let ROLES = ["admin", "member", "read-only"]
+let SUBJECTS = ["user", "team"]
+let RESOURCES = ["server", "organization", "conversation", "team"]
+
+make Grant do
+  let admin? -> Bool = @role == "admin"
+  let readOnly? -> Bool = @role == "read-only"
+end

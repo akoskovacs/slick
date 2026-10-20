@@ -1,0 +1,178 @@
+# What happened, told to the bots that are watching, as it happens.
+#
+# A bot that wants to know what is new in Slick would otherwise have to look:
+# every channel and private chat it is in, every so often, whether anything
+# changed or not. Here instead is the one place what it could see happening
+# is noted — a message said, a form answered, a command used — and every bot
+# connected to it (`App.Controllers.Api.evented`) is told at once, each only
+# what it may read:
+#
+#   - a message, to a bot that may read the conversation it is in
+#   - an answer, to the one bot whose form was answered
+#   - a command, to the one bot it was used for
+#
+# What is told is where, not what: a bot that wants the words fetches them
+# through the API as ever, which decides again what it may read.
+#
+# Each telling carries a cursor, one more every time, and the bus remembers
+# the last of them (KEPT below); a bot that connects says how far it has
+# already seen (`?after=<cursor>`) and is told what has happened since.
+# Beyond what the bus remembers, or from nowhere, it is told to start again
+# (`reset`): one full look, as a bot that polls would take now and then.
+module App.Live.Events
+
+using Net.HTTP.WebSocket, only: [Text]
+using JSON
+
+# One thing that happened. `kind` is "message", "answer" or "command".
+record Event do
+  # One more every time anything happens; 0 until the bus says it.
+  cursor : Integer = 0
+  kind : String
+  # The organization it happened in: its id, and its address as the API
+  # takes it.
+  organizationId : String = ""
+  organization : String = ""
+  conversationId : String = ""
+  # The conversation as the API addresses it: a channel by its title, and a
+  # group chat by its id. A private chat is addressed by who it is with, so
+  # instead the two of it are kept, and each bot is told its own address.
+  channel : String = ""
+  group : String = ""
+  first : String = ""
+  second : String = ""
+  # The thread it happened in; "" for the conversation itself.
+  thread : String = ""
+  # The message at the middle of it: the one said, or the one a form was
+  # answered in. "" for a command, which is no message.
+  message : String = ""
+  # When it happened, in milliseconds since 1970.
+  at : Integer = 0
+  # Who may be told of it: a message, whoever could read it — a whole
+  # organization when `public?`, and otherwise `people`, the two of a
+  # private chat or the participants of a private channel or a group chat;
+  # an answer or a command, the one bot it is for.
+  public? : Bool = false
+  people : [String] = []
+  bot : String = ""
+  # The message said — kept on the server only, so the bus can tell which
+  # bots it names; never sent out.
+  body : String = ""
+  # How much of the conversation its bots may read: "none", "mentions" or
+  # "all".
+  botAccess : String = "mentions"
+  # The bots that have replied in this thread: a reply reaches them even
+  # when it does not name them.
+  replied : [String] = []
+end
+
+# One connected bot: who it is, the organizations it is in, and where it is
+# told of what happens.
+record Seat do
+  id : String
+  bot : String
+  name : String = ""
+  organizations : [String] = []
+  socket : Net.HTTP.WebSocket.Connection
+end
+
+# How much of what has happened is remembered. A bot that asks for more is
+# told to start again.
+let KEPT = 1000
+
+record Bus do
+  log : [Event] = []
+  cursor : Integer = 0
+  seats : {String: Seat} = {}
+end
+
+serving Bus do
+  # Notes one thing that happened and tells every bot that may hear it,
+  # forgetting any that have gone.
+  slot happened(event: Event) -> Void do
+    let numbered = Event { ...event, cursor: @cursor + 1 }
+    let whole = @log + [numbered]
+    let older = whole.count - KEPT
+    new.cursor = numbered.cursor
+    new.log = older > 0 then whole.drop(older) else whole
+    new.seats = @seats.filter { |_, seat| !for?(numbered, seat) || seat.socket.send(Text(told(seat, numbered))).ok? }
+    return new
+  end
+
+  # Seats a connected bot, and tells it where it stands: what has happened
+  # since it last looked — `after` — while the bus still remembers that far,
+  # and otherwise to start again. Whether the bot is starting again.
+  slot joined(id: String, bot: String, name: String, organizations: [String], after: Integer, socket: Net.HTTP.WebSocket.Connection) -> Reply<Bool> do
+    let seat = Seat { id: id, bot: bot, name: name, organizations: organizations, socket: socket }
+    let current = @cursor
+    let oldest = @log.first.map { |first| first.cursor }.or(1)
+    let again = after <= 0 || after > current || after + 1 < oldest
+    if again
+      socket.send(Text("{\"kind\":\"reset\",\"cursor\":${current}}"))
+    else
+      @log.filter { |event| event.cursor > after && for?(event, seat) }
+        .each { |event| socket.send(Text(told(seat, event))) }
+      socket.send(Text("{\"kind\":\"ready\",\"cursor\":${current}}"))
+    end
+    new.seats = @seats.put(id, seat)
+    return { new, reply: again }
+  end
+
+  # Takes a seat away, when its bot has gone.
+  slot left(id: String) -> Void do
+    new.seats = @seats.delete(id)
+    return new
+  end
+end
+
+# Whether a seat may be told of an event: an answer or a command by the bot
+# it is for; a message by what the conversation lets its bots read — nothing,
+# everything it may read, or only what names it and the threads it is in.
+for? : Event -> Seat -> Bool
+let for?(event, seat) = heard?(event, seat.bot, seat.name, seat.organizations)
+
+# The same, for a bot by its id, its name and the ids of its organizations.
+heard? : Event -> String -> String -> [String] -> Bool
+let heard?(event, bot, name, organizations) do
+  return bot == event.bot && organizations.contains?(event.organizationId) if event.bot != ""
+  return false if !organizations.contains?(event.organizationId)
+
+  # A private chat: the two of it, whatever the channel's setting.
+  return event.first == bot || event.second == bot if event.first != ""
+
+  # A channel or a group chat, gated by what it lets its bots read.
+  return false if event.botAccess == "none"
+  let admitted = event.public? || event.people.contains?(bot)
+  return admitted if event.botAccess == "all"
+
+  admitted && (mentions?(event.body, name) || event.replied.contains?(bot))
+end
+
+# Whether a message body names the bot, the way the bot itself looks for it.
+mentions? : String -> String -> Bool
+let mentions?(body, name) = body.lowerCase.contains?("@${name.lowerCase}")
+
+# An event as the bot told of it is shown it: where, as the API takes it,
+# and never more than that.
+told : Seat -> Event -> String
+let told(seat, event) do
+  let fields : {String: Any} = {
+    "cursor": event.cursor,
+    "kind": event.kind,
+    "organization": event.organization,
+    "place": placed(event, seat.bot),
+    "thread": event.thread,
+    "message": event.message,
+    "at": event.at
+  }
+  JSON.stringify(fields)
+end
+
+# Where an event happened, as the API of the bot asked takes it: a channel
+# by its title, a group chat by its id, and a private chat by who it is with.
+placed : Event -> String -> String
+let placed(event, bot) do
+  return "dm/${event.first == bot then event.second else event.first}" if event.first != ""
+  return "channels/${event.channel}" if event.channel != ""
+  return "groups/${event.group}"
+end

@@ -1,7 +1,9 @@
 using Metro.Live.Presence, only: [Presence]
 using Metro.Environment, only: [Development, Test, Production]
 using App.Live.Tab, only: [Tab]
+using App.Services.Authority
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Grant, only: [Grant]
 using App.Models.User, only: [User]
 
 # Slick as it is linked for serving: the routes are built, so Rodolfo and
@@ -10,14 +12,14 @@ using App.Models.User, only: [User]
 # once the HTTP stack is linked in (kexhq/kex#451); this is the tripwire.
 
 foul stepped(statuses: Server<Presence>, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
-  App.Live.Chat.handled(statuses, user, tab, fields.map { |pair| match pair do (key, value) => (key, Just(value)) end })
+  App.Live.Chat.handled(Process.spawn(App.Live.Events.Bus {}), statuses, user, tab, fields.map { |pair| match pair do (key, value) => (key, Just(value)) end })
 end
 
 describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_groups"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_bot_access"))
   end
 
   it("turns shortcodes into emoji") do
@@ -130,7 +132,7 @@ describe("Slick") do
     let store = DB.Store.started(Config.Database.sqlite(file)).try
     DB.Store.migrate(store).try
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do
-      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}))
+      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
       let here = [("Host", "slick.test"), ("Origin", "http://slick.test")]
 
       # Nobody signed in: sent to sign in, and the page there is not kept.
@@ -207,7 +209,7 @@ describe("Slick") do
 
       # The bot reads a channel through the API, and a thread when it asks
       # for one — but only a thread of the conversation it names.
-      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}))
+      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
       let asBot = [("Authorization", "Bearer ${DB.Seeds.BOT_TOKEN}")]
       let general = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/general/messages", asBot, ""))
       Assert.equal(general.code, 200)
@@ -376,11 +378,11 @@ describe("Slick") do
       Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("data-live-path=\"${address}\""))
 
       # A group chat becomes a channel, and keeps its people and what was said.
-      let (_, badName) = stepped(statuses, eve, trio, [("event", "promote-set"), ("title", "Bad Name!")])
+      let (_, badName) = stepped(statuses, ada, trio, [("event", "promote-set"), ("title", "Bad Name!")])
       Assert.falsy(badName)
-      let (_, taken) = stepped(statuses, eve, trio, [("event", "promote-set"), ("title", "secret"), ("access", "private")])
+      let (_, taken) = stepped(statuses, ada, trio, [("event", "promote-set"), ("title", "secret"), ("access", "private")])
       Assert.falsy(taken)
-      let (promoted, changed) = stepped(statuses, eve, trio, [("event", "promote-set"), ("title", "trio"), ("access", "private")])
+      let (promoted, changed) = stepped(statuses, ada, trio, [("event", "promote-set"), ("title", "trio"), ("access", "private")])
       Assert.truthy(changed)
       Assert.equal(promoted.conversation, trio.conversation)
       let channel = App.Live.Chat.markup(statuses, bob, promoted)
@@ -388,7 +390,7 @@ describe("Slick") do
       Assert.truthy(channel.contains?("the three of us"))
       Assert.truthy(channel.contains?("data-live-path=\"/acme/channels/trio\""))
       Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?(">Bob, Eve"))
-      let (_, twice) = stepped(statuses, eve, promoted, [("event", "promote-set"), ("title", "trio-two")])
+      let (_, twice) = stepped(statuses, ada, promoted, [("event", "promote-set"), ("title", "trio-two")])
       Assert.falsy(twice)
 
       # A team: its handle is mentioned for all of it.
@@ -457,7 +459,7 @@ describe("Slick") do
     let store = DB.Store.started(Config.Database.sqlite(file)).try
     DB.Store.migrate(store).try
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do
-      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}))
+      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
       Assert.truthy(site.table.count > 0)
       let statuses = Process.spawn(Metro.Live.Presence.Presence {})
 
@@ -495,7 +497,10 @@ describe("Slick") do
       let (added, bobAdded) = stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "Bob@Example.com")])
       Assert.truthy(bobAdded)
       Assert.truthy(added.notice.contains?("Bob is now in Acme Corp"))
-      stepped(statuses, bob, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
+      # Only an administrator invites; a member asking does nothing.
+      let (_, bobInvites) = stepped(statuses, bob, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
+      Assert.falsy(bobInvites)
+      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
       let (twice, _) = stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
       Assert.truthy(twice.dialogProblem.contains?("already in"))
 
@@ -1034,23 +1039,28 @@ describe("Slick") do
       Assert.falsy(malBrought)
 
       # A bot belongs to a person or to an organization. An organization's is
-      # looked after by anyone in it — and by nobody outside it.
-      let (sharedTab, _) = stepped(statuses, bob, Tab {}, [("event", "bot-create"), ("name", "acme-bot"), ("owner", "organization")])
+      # looked after by its administrators — and by nobody else.
+      let (sharedTab, _) = stepped(statuses, ada, Tab {}, [("event", "bot-create"), ("name", "acme-bot"), ("owner", "organization")])
       let acmeBot : User = App.Services.Bots.bearer(Just("Bearer ${sharedTab.secret}")).try
       Assert.equal(acmeBot.ownerId, "")
       Assert.equal(acmeBot.ownerOrganizationId, inAcme.organization)
       Assert.equal(deployBot.ownerOrganizationId, "")
-      let evesDialog = App.Live.Chat.markup(statuses, eve, Tab { dialog: "bots" })
-      Assert.truthy(evesDialog.contains?("acme-bot"))
-      Assert.truthy(evesDialog.contains?("belongs to Acme Corp"))
-      Assert.falsy(evesDialog.contains?("<span class=\"hint\">yours</span>"))
+      # A member sees only their own bots; an administrator the organization's too.
+      Assert.falsy(App.Live.Chat.markup(statuses, eve, Tab { dialog: "bots" }).split("<h2>Bots</h2>").drop(1).first.or("").contains?(">acme-bot"))
+      let adasDialog = App.Live.Chat.markup(statuses, ada, Tab { dialog: "bots" })
+      Assert.truthy(adasDialog.contains?("acme-bot"))
+      Assert.truthy(adasDialog.contains?("belongs to Acme Corp"))
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab { dialog: "bots" }).contains?("<span class=\"hint\">yours</span>"))
+      # A member cannot rekey it; an administrator can, and the old token stops
+      # working.
       let (eveRenews, _) = stepped(statuses, eve, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
-      Assert.truthy(eveRenews.secret.contains?("slick_bot_"))
+      Assert.equal(eveRenews.secret, "")
+      let (adaRenews, _) = stepped(statuses, ada, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
+      Assert.truthy(adaRenews.secret.contains?("slick_bot_"))
       Assert.equal(App.Services.Bots.bearer(Just("Bearer ${sharedTab.secret}")), None)
       let (malRenews, _) = stepped(statuses, mal, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
       Assert.equal(malRenews.secret, "")
-      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${eveRenews.secret}")).set?)
+      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${adaRenews.secret}")).set?)
       # Ada is in both organizations, but in Other she cannot touch Acme's bot
       # or bring it over.
       let (adaElsewhere, _) = stepped(statuses, ada, adaInOther, [("event", "bot-rekey"), ("id", acmeBot.id)])
@@ -1059,8 +1069,246 @@ describe("Slick") do
       Assert.falsy(adaBrought)
       Assert.falsy(App.Live.Chat.markup(statuses, mal, Tab {}).contains?("acme-bot"))
 
+      # A bot is removed by its owner, or by an administrator of the
+      # organization it belongs to — and by nobody else. Removing it takes its
+      # access with it: its token is gone, it is out of the organization, and
+      # what it could do (its commands) is gone too.
+      let (malRemoves, malRemoved) = stepped(statuses, mal, Tab {}, [("event", "bot-remove"), ("id", acmeBot.id)])
+      Assert.falsy(malRemoved)
+      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${adaRenews.secret}")).set?)
+      let (adaRemoves, _) = stepped(statuses, ada, Tab {}, [("event", "bot-remove"), ("id", acmeBot.id)])
+      Assert.truthy(adaRemoves.notice.contains?("acme-bot"))
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${adaRenews.secret}")), None)
+      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab { dialog: "bots" }).contains?(">acme-bot"))
+
+      # One's own bot goes the same way, and only its owner removes it.
+      let (adaRemovesOwn, adaRemovedOwn) = stepped(statuses, ada, Tab {}, [("event", "bot-remove"), ("id", deployBot.id)])
+      Assert.falsy(adaRemovedOwn)
+      let (_, bobRemoved) = stepped(statuses, bob, Tab {}, [("event", "bot-remove"), ("id", deployBot.id)])
+      Assert.truthy(bobRemoved)
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${renewed.secret}")), None)
+      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab { dialog: "bots" }).contains?(">deploy-bot"))
+      Assert.falsy(App.Services.Authentication.current(Just(botTab.secret)).set?)
+
       App.Services.Authentication.signOut(Just(adaToken))
       Assert.equal(App.Services.Authentication.current(Just(adaToken)), None)
+    end
+    FS.File.delete(file)
+  end
+end
+
+describe("The events bus, telling bots what happens") do
+  it("tells each bot only what it may read, and where, never what") do
+    let acme = "o1"
+    let other = "o2"
+    # A message in a public channel of Acme that lets bots read everything:
+    # every bot of Acme's, and none of another organization's.
+    let publicMessage = App.Live.Events.Event {
+      kind: "message", organizationId: acme, organization: "acme",
+      conversationId: "c1", channel: "general", message: "m1", at: 100, public?: true, botAccess: "all"
+    }
+    # A message in a private channel of Acme: only its participants.
+    let privateMessage = App.Live.Events.Event {
+      ...publicMessage, conversationId: "c2", channel: "", group: "c2", public?: false, people: ["u1", "b1"]
+    }
+    # An answer to a form: the one bot whose form it was.
+    let answered = App.Live.Events.Event {
+      ...publicMessage, kind: "answer", message: "m9", bot: "b1"
+    }
+    # A command: the one bot it was used for.
+    let commanded = App.Live.Events.Event {
+      ...publicMessage, kind: "command", message: "", bot: "b2"
+    }
+    # A channel that only tells bots what names them, and a mention in it.
+    let mentioned = App.Live.Events.Event {
+      ...publicMessage, botAccess: "mentions", body: "hey @muse, look at this"
+    }
+    # A reply in a thread a bot already replied in: told to that bot, though
+    # it is not named.
+    let replied = App.Live.Events.Event {
+      ...publicMessage, botAccess: "mentions", body: "and 3 + 3?", thread: "m1", replied: ["b1"]
+    }
+    # A channel bots may read nothing of.
+    let forbidden = App.Live.Events.Event {
+      ...publicMessage, botAccess: "none", body: "hey @muse"
+    }
+
+    Assert.truthy(App.Live.Events.heard?(publicMessage, "b1", "muse", [acme]))
+    Assert.truthy(App.Live.Events.heard?(publicMessage, "b2", "deploy", [acme]))
+    Assert.falsy(App.Live.Events.heard?(publicMessage, "b1", "muse", [other]))
+    Assert.falsy(App.Live.Events.heard?(privateMessage, "b2", "deploy", [acme]))
+    Assert.truthy(App.Live.Events.heard?(privateMessage, "b1", "muse", [acme]))
+    Assert.truthy(App.Live.Events.heard?(answered, "b1", "muse", [acme]))
+    Assert.falsy(App.Live.Events.heard?(answered, "b2", "deploy", [acme]))
+    Assert.truthy(App.Live.Events.heard?(commanded, "b2", "deploy", [acme]))
+    Assert.falsy(App.Live.Events.heard?(commanded, "b1", "muse", [acme]))
+    # "mentions": only the bot named, or a thread it is in.
+    Assert.truthy(App.Live.Events.heard?(mentioned, "b1", "muse", [acme]))
+    Assert.falsy(App.Live.Events.heard?(mentioned, "b2", "deploy", [acme]))
+    Assert.truthy(App.Live.Events.heard?(replied, "b1", "muse", [acme]))
+    Assert.falsy(App.Live.Events.heard?(replied, "b2", "deploy", [acme]))
+    # "none": no bot, however it is named.
+    Assert.falsy(App.Live.Events.heard?(forbidden, "b1", "muse", [acme]))
+    Assert.falsy(App.Live.Events.heard?(forbidden, "b2", "deploy", [acme]))
+
+    # Where each of them is told to look, as its own API takes it: a channel
+    # by its title, a group chat by its id, a private chat by who it is with.
+    let between = App.Live.Events.Event {
+      ...publicMessage, channel: "", first: "u1", second: "b1"
+    }
+    Assert.equal(App.Live.Events.placed(publicMessage, "b1"), "channels/general")
+    Assert.equal(App.Live.Events.placed(privateMessage, "b1"), "groups/c2")
+    Assert.equal(App.Live.Events.placed(between, "b1"), "dm/u1")
+    Assert.equal(App.Live.Events.placed(between, "u1"), "dm/b1")
+  end
+end
+
+describe("App.Authority, deciding from grants") do
+  it("gives roles from grants, with teams carrying their roles to members") do
+    let file = "db/spec_authority_${Metro.Clock.milliseconds()}.sqlite3"
+    let store = DB.Store.started(Config.Database.sqlite(file)).try
+    DB.Store.migrate(store).try
+    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+      let ada = User { id: "u1", email: "ada@x", name: "Ada" }
+      let bob = User { id: "u2", email: "bob@x", name: "Bob" }
+      let carl = User { id: "u3", email: "carl@x", name: "Carl" }
+      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
+
+      let general = Conversation { id: "c1", kind: "channel", slug: "o1#general", title: "general", organizationId: "o1", access: "public" }
+      let secret = Conversation { id: "c2", kind: "channel", slug: "o1#secret", title: "secret", organizationId: "o1", access: "private" }
+      let dm = Conversation { id: "d1", kind: "direct", slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
+
+      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u2", resourceType: "organization", resourceId: "o1", role: "admin" }).try
+      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u3", resourceType: "organization", resourceId: "o1", role: "read-only" }).try
+      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+
+      # A public channel: members, admins and read-only users read it; only
+      # members and admins write.
+      Assert.truthy(App.Services.Authority.canRead(ada, general))
+      Assert.truthy(App.Services.Authority.canRead(carl, general))
+      Assert.truthy(App.Services.Authority.canWrite(ada, general))
+      Assert.falsy(App.Services.Authority.canWrite(carl, general))
+      Assert.truthy(App.Services.Authority.canWrite(bob, general))
+
+      # A private channel: nobody until granted — not even an org admin, who
+      # may manage it but does not read it.
+      Assert.falsy(App.Services.Authority.canRead(ada, secret))
+      Assert.falsy(App.Services.Authority.canRead(bob, secret))
+      Assert.truthy(App.Services.Authority.canAdminister(bob, secret))
+
+      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u1", resourceType: "conversation", resourceId: "c2", role: "member" }).try
+      Assert.truthy(App.Services.Authority.canRead(ada, secret))
+      Assert.truthy(App.Services.Authority.canWrite(ada, secret))
+      Assert.falsy(App.Services.Authority.canAdminister(ada, secret))
+
+      # A team that owns the channel hands its members the channel.
+      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u1", resourceType: "team", resourceId: "t1", role: "member" }).try
+      DB.Repositories.Grants.granted(Grant { subjectType: "team", subjectId: "t1", resourceType: "conversation", resourceId: "c2", role: "admin" }).try
+      Assert.truthy(App.Services.Authority.canAdminister(ada, secret))
+      Assert.falsy(App.Services.Authority.canRead(carl, secret))
+
+      # A private chat: the two of them, and nobody else.
+      Assert.truthy(App.Services.Authority.canRead(ada, dm))
+      Assert.truthy(App.Services.Authority.canWrite(bob, dm))
+      Assert.falsy(App.Services.Authority.canRead(carl, dm))
+
+      # Making channels and teams, and managing the organization.
+      Assert.truthy(App.Services.Authority.canCreate(ada, "o1"))
+      Assert.falsy(App.Services.Authority.canCreate(carl, "o1"))
+      Assert.truthy(App.Services.Authority.canManage(bob, "o1"))
+      Assert.falsy(App.Services.Authority.canManage(ada, "o1"))
+
+      # Bots are users, and may not make organizations.
+      Assert.truthy(App.Services.Authority.canRead(bot, general))
+      Assert.falsy(App.Services.Authority.canOrganize?(bot))
+      Assert.truthy(App.Services.Authority.canOrganize?(ada))
+    end
+    FS.File.delete(file)
+  end
+end
+
+describe("App.Authority, roles an administrator gives") do
+  it("promotes, demotes and removes members, but not the last administrator") do
+    let file = "db/spec_roles_${Metro.Clock.milliseconds()}.sqlite3"
+    let store = DB.Store.started(Config.Database.sqlite(file)).try
+    DB.Store.migrate(store).try
+    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+      let statuses = Process.spawn(Metro.Live.Presence.Presence {})
+      let member = { |name, email|
+        let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
+        let user : User = App.Services.Authentication.current(Just(token)).try
+        user
+      }
+      let ada = member("Ada", "ada@example.com")
+      let bob = member("Bob", "bob@example.com")
+      let eve = member("Eve", "eve@example.com")
+      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "charter"), ("name", "Acme")])
+      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "bob@example.com")])
+      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
+
+      Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
+      Assert.falsy(App.Services.Authority.canManage(bob, acme.organization))
+
+      # A member cannot change roles; an administrator can.
+      let (_, bobTries) = stepped(statuses, bob, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
+      Assert.falsy(bobTries)
+      Assert.falsy(App.Services.Authority.canManage(eve, acme.organization))
+
+      let (_, promoted) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
+      Assert.truthy(promoted)
+      Assert.truthy(App.Services.Authority.canManage(eve, acme.organization))
+
+      # Read-only: still in the organization, but cannot write.
+      let (_, muted) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read-only")])
+      Assert.truthy(muted)
+      Assert.truthy(App.Services.Authority.canRead(bob, Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
+      Assert.falsy(App.Services.Authority.canWrite(bob, Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
+
+      # The last administrator cannot be demoted or removed.
+      let (_, demoted) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
+      Assert.truthy(demoted)
+      Assert.equal(App.Services.Authority.admins(acme.organization).count, 1)
+
+      let (_, selfDemote) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", ada.id), ("role", "member")])
+      Assert.falsy(selfDemote)
+      Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
+
+      let (_, removedLast) = stepped(statuses, ada, Tab {}, [("event", "role-remove"), ("user", ada.id)])
+      Assert.falsy(removedLast)
+      Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
+    end
+    FS.File.delete(file)
+  end
+end
+
+describe("App.Authority, what a channel lets its bots read") do
+  it("gates a bot by the setting, and by whether it is named or in the thread") do
+    let file = "db/spec_botscope_${Metro.Clock.milliseconds()}.sqlite3"
+    let store = DB.Store.started(Config.Database.sqlite(file)).try
+    DB.Store.migrate(store).try
+    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
+      let channel = Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: "o1", access: "public", botAccess: "mentions" }
+      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+
+      let asked = DB.Repositories.Messages.said("c1", "u1", "a question", "").try
+      let named = DB.Repositories.Messages.said("c1", "u1", "hey @muse, help", "").try
+      DB.Repositories.Messages.said("c1", "b1", "I am on it", asked.id).try
+
+      # "mentions": the newest messages are not listed, a thread it is named
+      # in is read, and a thread it has replied in is read.
+      Assert.falsy(App.Services.Authority.botMayRead(bot, channel, ""))
+      Assert.truthy(App.Services.Authority.botMayRead(bot, channel, named.id))
+      Assert.truthy(App.Services.Authority.botMayRead(bot, channel, asked.id))
+
+      # "all": everything.
+      DB.Repositories.Conversations.botAccess("c1", "all").try
+      Assert.truthy(App.Services.Authority.botMayRead(bot, Conversation { ...channel, botAccess: "all" }, ""))
+
+      # "none": nothing.
+      let none = Conversation { ...channel, botAccess: "none" }
+      Assert.falsy(App.Services.Authority.botMayRead(bot, none, named.id))
     end
     FS.File.delete(file)
   end

@@ -22,6 +22,7 @@ using App.Models.Command, only: [Command]
 using App.Models.Invocation, only: [Invocation]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
+using App.Models.Grant, only: [Grant]
 using App.Models.Message, only: [Message]
 using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
@@ -36,6 +37,7 @@ using DB.Repositories.Organizations, as: Organizations
 using DB.Repositories.Readings, as: Readings
 using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Answers, as: Answers
+using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Teams, as: Teams
 using DB.Repositories.Users, as: Users
 
@@ -92,6 +94,10 @@ foul markup(statuses, user, tab) do
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now)
         .map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
+      let roles = Grants.over("organization", organization.id).or([])
+        .filter { |grant| grant.subjectType == "user" }
+        .reduce({}) { |found, grant| found.put(grant.subjectId, grant.role) }
+      let administrator = App.Services.Authority.canManage(user, organization.id)
       let drafts : [Draft] = Drafts.pending(user.id).or([])
       let marks : [Reading] = Readings.marks(user.id).or([])
       match visible(user, tab) do
@@ -118,7 +124,9 @@ foul markup(statuses, user, tab) do
             [],
             [],
             [],
-            []
+            [],
+            roles,
+            administrator
           )
         end
         Just(conversation) => do
@@ -168,7 +176,9 @@ foul markup(statuses, user, tab) do
             reactions,
             responses,
             thread,
-            doing.reject { |note| note.member == user.id }
+            doing.reject { |note| note.member == user.id },
+            roles,
+            administrator
           )
         end
       end
@@ -177,9 +187,10 @@ foul markup(statuses, user, tab) do
 end
 
 # Applies one event: the tab's next state, and whether something other tabs
-# show was changed — in which case they are told to refresh.
-handled : Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
-foul handled(statuses, user, tab, entries) do
+# show was changed — in which case they are told to refresh. What changed in
+# what a bot could see is noted to the events bus on the way (`events`).
+handled : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
+foul handled(events, statuses, user, tab, entries) do
   match field(entries, "event") do
     "open" => opened(user, tab, field(entries, "id"))
     "direct" => whispered(user, tab, field(entries, "user"))
@@ -201,17 +212,20 @@ foul handled(statuses, user, tab, entries) do
     "team-add" => teamJoined(user, tab, repeated(entries, "person"))
     "team-leave" => teamLeft(user, tab, user.id)
     "team-remove" => teamLeft(user, tab, field(entries, "user"))
-    "send" => sent(statuses, user, tab, field(entries, "body").trim)
+    "send" => sent(events, statuses, user, tab, field(entries, "body").trim)
     "draft" => drafted(user, tab, field(entries, "place"), field(entries, "body"))
     "typing" => typing(statuses, user, tab)
     "retitle" => (Tab { ...settled(tab), retitling?: true }, false)
     "topic" => retitled(user, tab, field(entries, "topic").trim)
     "react" => reacted(user, tab, field(entries, "message"), field(entries, "emoji"))
-    "answer" => answered(user, tab, entries)
+    "answer" => answered(events, user, tab, entries)
     "cancel" => (settled(tab), false)
     "thread" => threaded(user, tab, field(entries, "message"))
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
     "profile" => profiled(user, tab, field(entries, "user"))
+    "bot-access" => botAccessSet(user, tab, field(entries, "access"))
+    "role-set" => roleGiven(user, tab, field(entries, "user"), field(entries, "role"))
+    "role-remove" => roleTaken(user, tab, field(entries, "user"))
     "unprofile" => (Tab { ...settled(tab), profile: "" }, false)
     "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
     "share" => shared(user, tab, field(entries, "file"))
@@ -221,7 +235,7 @@ foul handled(statuses, user, tab, entries) do
     "messages" => (Tab { ...settled(tab), view: "" }, false)
     "profile-edit" => (Tab { ...settled(tab), dialog: "profile" }, false)
     "profile-set" => redescribed(user, tab, entries)
-    "reply" => replied(statuses, user, tab, field(entries, "body").trim)
+    "reply" => replied(events, statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(user, field(entries, "path")), false)
     "organization" => switched(user, tab, field(entries, "id"))
     "organize" => (Tab { ...settled(tab), dialog: "organization" }, false)
@@ -235,6 +249,7 @@ foul handled(statuses, user, tab, entries) do
     "bot-create" => botMade(user, tab, field(entries, "name").trim, field(entries, "owner"))
     "bot-rekey" => botRenewed(user, tab, field(entries, "id"))
     "bot-enlist" => botBrought(user, tab, field(entries, "id"))
+    "bot-remove" => botRemoved(user, tab, field(entries, "id"))
     _ => (tab, false)
   end
 end
@@ -327,7 +342,7 @@ end
 memberOrganization : User -> String -> Organization?
 foul memberOrganization(user, slug) do
   match Organizations.addressed(slug) do
-    Ok(Just(organization)) => return Memberships.affiliated?(organization.id, user.id) then Just(organization) else None
+    Ok(Just(organization)) => return affiliated?(organization.id, user.id) then Just(organization) else None
     _ => return None
   end
 end
@@ -336,7 +351,7 @@ end
 # and otherwise the first one they are in. `None` is somebody in none.
 home : User -> Tab -> Organization?
 foul home(user, tab) do
-  let mine : [String] = Memberships.affiliations(user.id).or([])
+  let mine : [String] = Grants.organizationsOf(user.id).or([])
   let chosen = mine.contains?(tab.organization) then tab.organization else mine.first.or("")
   return None if chosen.empty?
 
@@ -356,7 +371,7 @@ foul visible(user, tab) do
       let found = tab.conversation.empty? then Conversations.channelCalled(organization.id, App.Models.Conversation.GENERAL) else Conversations.lookup(tab.conversation)
       match found do
         Ok(Just(conversation)) => do
-          return None if conversation.organizationId != organization.id || !conversation.admits?(user.id)
+          return None if conversation.organizationId != organization.id || !App.Services.Authority.canRead(user, conversation)
           return Just(conversation)
         end
         _ => return None
@@ -368,7 +383,7 @@ end
 # The organizations a person is in, oldest membership first.
 organizations : User -> [Organization]
 foul organizations(user) do
-  let mine : [String] = Memberships.affiliations(user.id).or([])
+  let mine : [String] = Grants.organizationsOf(user.id).or([])
   return mine.flatMap { |id|
     match Organizations.identified(id) do
       Ok(Just(organization)) => [organization]
@@ -446,7 +461,12 @@ private do
 
   # The channels of these that this person may read.
   readable : User -> [Conversation] -> [Conversation]
-  let readable(user, channels) = channels.filter { |channel| channel.admits?(user.id) }
+  foul readable(user, channels) = channels.filter { |channel| App.Services.Authority.canRead(user, channel) }
+
+  # Whether a user is in an organization, by their grants.
+  foul affiliated?(organizationId: String, userId: String) -> Bool do
+    return Grants.organizationsOf(userId).or([]).contains?(organizationId)
+  end
 
   # The messages of a conversation newer than how far this person has read
   # there; none in the one they are reading.
@@ -505,8 +525,8 @@ private do
   # it starts with a command a bot here has declared: `/mode` in a bot's
   # private chat; `@opencode /mode auto` in a channel, or `/mode` alone
   # when only one bot here answers to it. Anything else is a message.
-  invoked : User -> Conversation -> String -> String -> Bool
-  foul invoked(user, conversation, threadId, body) do
+  invoked : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> String -> Bool
+  foul invoked(events, user, conversation, threadId, body) do
     let people : [User] = Users.everyone.or([])
     let commands = offering(user, conversation, people)
     return false if commands.empty?
@@ -541,7 +561,48 @@ private do
       DB.Repositories.Invocations.recorded(used).try
       Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
     end
+    if kept.ok?
+      happened(events, conversation, "command", "", used.threadId, used.invokedAt, command.botId, "")
+    end
     return kept.ok?
+  end
+
+  # Notes what happened to the events bus, for the bots that are watching.
+  # Nothing is told but where: what a bot may read of it, it fetches through
+  # the API as ever. A bot "" is no bot: the event is for whoever may read
+  # the conversation. `body` is the message said, kept on the server only so
+  # the bus can tell which bots it names.
+  happened : Server<App.Live.Events.Bus> -> Conversation -> String -> String -> String -> Integer -> String -> String -> Void
+  foul happened(events, conversation, kind, messageId, threadId, at, bot, body) do
+    match Organizations.identified(conversation.organizationId) do
+      Ok(Just(organization)) => do
+        let replied = if kind == "message" && !threadId.empty?
+          Messages.botAuthors(threadId, Users.botIds().or([])).or([])
+        else
+          []
+        end
+        events.happened(App.Live.Events.Event {
+          kind: kind,
+          organizationId: conversation.organizationId,
+          organization: organization.slug,
+          conversationId: conversation.id,
+          channel: conversation.channel? then conversation.title else "",
+          group: conversation.group? then conversation.id else "",
+          first: conversation.direct? then conversation.firstUser else "",
+          second: conversation.direct? then conversation.secondUser else "",
+          thread: threadId,
+          message: messageId,
+          at: at,
+          public?: conversation.public?,
+          people: conversation.public? then [] else (conversation.direct? then [conversation.firstUser, conversation.secondUser] else conversation.participants),
+          bot: bot,
+          body: body,
+          botAccess: conversation.botAccess,
+          replied: replied
+        })
+      end
+      _ => ()
+    end
   end
 
   # The id of the message a thread starts with; "" for no thread.
@@ -598,7 +659,7 @@ private do
 
   switched : User -> Tab -> String -> (Tab, Bool)
   foul switched(user, tab, id) do
-    return (tab, false) if !Memberships.affiliated?(id, user.id)
+    return (tab, false) if !affiliated?(id, user.id)
     return (Tab { organization: id }, false)
   end
 
@@ -625,6 +686,7 @@ private do
     let made : Result<Organization, String> = Harmat.Database.transaction do
       let organization : Organization = Organizations.chartered(name, slug, user.id).try
       Memberships.enlisted(organization.id, user.id).try
+      Grants.granted(Grant { subjectType: "user", subjectId: user.id, resourceType: "organization", resourceId: organization.id, role: "admin" }).try
       let general : Conversation = Conversations
         .founded(organization.id, App.Models.Conversation.GENERAL, user.id)
         .try
@@ -640,12 +702,17 @@ private do
     let refused = Tab { ...settled(tab), dialog: "invite" }
     match home(user, tab) do
       None => return (tab, false)
-      Just(organization) => match Users.credentials(email) do
-        Ok(Just((person, _))) => match Memberships.enlisted(organization.id, person.id) do
-          Ok(_) => return (Tab { ...settled(tab), notice: "${person.shown} is now in ${organization.name}." }, true)
-          Error(_) => return (Tab { ...refused, dialogProblem: "${person.shown} is already in ${organization.name}." }, false)
+      Just(organization) => do
+        if !App.Services.Authority.canManage(user, organization.id)
+          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can invite people." }, false)
         end
-        _ => return (Tab { ...refused, dialogProblem: "Nobody has registered with ${email}. They need an account first." }, false)
+        match Users.credentials(email) do
+          Ok(Just((person, _))) => match Memberships.enlisted(organization.id, person.id) do
+            Ok(_) => return (Tab { ...settled(tab), notice: "${person.shown} is now in ${organization.name}." }, true)
+            Error(_) => return (Tab { ...refused, dialogProblem: "${person.shown} is already in ${organization.name}." }, false)
+          end
+          _ => return (Tab { ...refused, dialogProblem: "Nobody has registered with ${email}. They need an account first." }, false)
+        end
       end
     end
   end
@@ -656,13 +723,15 @@ private do
 
   # Makes a bot of this person's, in the tab's organization. Its token is
   # kept in the tab, to be shown until the dialog is closed, and nowhere else.
-  # The bots a person may look after from a tab: their own, and those of
-  # the organization the tab is in.
+  # The bots a person may look after from a tab: their own, and — for an
+  # administrator — those of the organization the tab is in.
   manageable : User -> Organization -> [User]
   foul manageable(user, organization) do
     let own : [User] = Users.operated(user.id).or([])
-    let shared : [User] = Users.maintained(organization.id).or([])
-    return shared + own
+    if App.Services.Authority.canManage(user, organization.id)
+      return Users.maintained(organization.id).or([]) + own
+    end
+    return own
   end
 
   # `owner` is "me" for a bot of this person's own; anything else makes it
@@ -675,11 +744,16 @@ private do
 
     match home(user, tab) do
       None => return (tab, false)
-      Just(organization) => match App.Services.Bots.built(user, owner == "me" then "" else organization.id, name) do
-        Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        Ok((bot, token)) => do
-          Memberships.enlisted(organization.id, bot.id)
-          return (Tab { ...refused, secret: token, secretFor: bot.name }, true)
+      Just(organization) => do
+        if owner != "me" && !App.Services.Authority.canManage(user, organization.id)
+          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can make a bot for it." }, false)
+        end
+        match App.Services.Bots.built(user, owner == "me" then "" else organization.id, name) do
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+          Ok((bot, token)) => do
+            Memberships.enlisted(organization.id, bot.id)
+            return (Tab { ...refused, secret: token, secretFor: bot.name }, true)
+          end
         end
       end
     end
@@ -691,6 +765,9 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
+        if !ownBot(user, id) && !App.Services.Authority.canManage(user, organization.id)
+          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can manage its bots." }, false)
+        end
         let named = manageable(user, organization).find { |bot| bot.id == id }.map { |bot| bot.name }.or("the bot")
         match App.Services.Bots.renewed(user, organization.id, id) do
           Ok(token) => return (Tab { ...refused, secret: token, secretFor: named }, false)
@@ -712,6 +789,109 @@ private do
       Just(organization) => do
         Memberships.enlisted(organization.id, id)
         return (refused, true)
+      end
+    end
+  end
+
+  # Deletes a bot — this person's own, or the tab's organization's — and
+  # takes its access with it.
+  botRemoved : User -> Tab -> String -> (Tab, Bool)
+  foul botRemoved(user, tab, id) do
+    let refused = Tab { ...settled(tab), dialog: "bots" }
+    match home(user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        if !ownBot(user, id) && !App.Services.Authority.canManage(user, organization.id)
+          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can manage its bots." }, false)
+        end
+        let named = manageable(user, organization).find { |bot| bot.id == id }.map { |bot| bot.name }.or("the bot")
+        match App.Services.Bots.removed(user, organization.id, id) do
+          Ok(true) => return (Tab { ...refused, notice: "${named} was removed." }, true)
+          Ok(false) => return (Tab { ...refused, dialogProblem: "That is not one of your bots, or of this organization's." }, false)
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        end
+      end
+    end
+  end
+
+  # Whether a bot is this person's own.
+  ownBot : User -> String -> Bool
+  foul ownBot(user, id) = Users.operated(user.id).or([]).any? { |bot| bot.id == id }
+
+  # How much of a channel or group chat its bots may read. Only an
+  # administrator changes it.
+  botAccessSet : User -> Tab -> String -> (Tab, Bool)
+  foul botAccessSet(user, tab, access) do
+    let refused = Tab { ...settled(tab), retitling?: false }
+    return (tab, false) if !["none", "mentions", "all"].contains?(access)
+
+    match visible(user, tab) do
+      None => return (tab, false)
+      Just(conversation) => do
+        return (tab, false) if !conversation.channel? && !conversation.group?
+        if !App.Services.Authority.canAdminister(user, conversation)
+          return (Tab { ...refused, failure: "Only an administrator can change what bots read here." }, false)
+        end
+
+        match Conversations.botAccess(conversation.id, access) do
+          Ok(true) => return (Tab { ...refused, notice: "Bots here read ${access}." }, true)
+          Ok(false) => return (Tab { ...refused, failure: "That conversation is not there." }, false)
+          Error(reason) => return (Tab { ...refused, failure: reason }, false)
+        end
+      end
+    end
+  end
+
+  # Gives a person a role in the tab's organization. Only an administrator
+  # changes roles, only of someone in the organization, and the last
+  # administrator cannot be demoted.
+  roleGiven : User -> Tab -> String -> String -> (Tab, Bool)
+  foul roleGiven(user, tab, personId, role) do
+    let refused = Tab { ...settled(tab), profile: personId }
+    return (tab, false) if !["admin", "member", "read-only"].contains?(role)
+    return (tab, false) if personId == user.id
+
+    match home(user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        if !App.Services.Authority.canManage(user, organization.id)
+          return (Tab { ...refused, failure: "Only an administrator can change a member's role." }, false)
+        end
+        let was = App.Services.Authority.roleOf(personId, "organization", organization.id)
+        return (Tab { ...refused, failure: "They are not in ${organization.name}." }, false) if !was.set?
+        if role != "admin" && was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
+          return (Tab { ...refused, failure: "The last administrator cannot be demoted." }, false)
+        end
+
+        match Grants.granted(Grant { subjectType: "user", subjectId: personId, resourceType: "organization", resourceId: organization.id, role: role }) do
+          Ok(_) => return (Tab { ...refused, notice: "Their role is ${role} now." }, true)
+          Error(reason) => return (Tab { ...refused, failure: reason }, false)
+        end
+      end
+    end
+  end
+
+  # Takes a person out of the tab's organization. Only an administrator
+  # does it, and not to the last one.
+  roleTaken : User -> Tab -> String -> (Tab, Bool)
+  foul roleTaken(user, tab, personId) do
+    let refused = Tab { ...settled(tab), profile: "" }
+    match home(user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        if !App.Services.Authority.canManage(user, organization.id)
+          return (Tab { ...refused, failure: "Only an administrator can remove a member." }, false)
+        end
+        let was = App.Services.Authority.roleOf(personId, "organization", organization.id)
+        return (Tab { ...refused, failure: "They are not in ${organization.name}." }, false) if !was.set?
+        if was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
+          return (Tab { ...refused, failure: "The last administrator cannot be removed." }, false)
+        end
+
+        match Grants.revoked(Grants.key("user", personId, "organization", organization.id)) do
+          Ok(_) => return (Tab { ...refused, notice: "They are no longer in ${organization.name}." }, true)
+          Error(reason) => return (Tab { ...refused, failure: reason }, false)
+        end
       end
     end
   end
@@ -848,7 +1028,7 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        return (tab, false) if !Memberships.affiliated?(organization.id, id)
+        return (tab, false) if !affiliated?(organization.id, id)
         return (Tab { ...settled(tab), thread: "", profile: id, team: "" }, false)
       end
     end
@@ -880,32 +1060,36 @@ private do
   end
 
   # A reply goes into the thread the tab has open, and nowhere else.
-  replied : Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
-  foul replied(statuses, user, tab, body) do
+  replied : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
+  foul replied(events, statuses, user, tab, body) do
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
     return (tab, false) if !problems.empty?
 
     match visible(user, tab) do
       None => return (tab, false)
-      Just(conversation) => match rooted(conversation, tab.thread) do
-        None => return (tab, false)
-        Just(first) => do
-          # A command for a bot is used, not said.
-          if invoked(user, conversation, first.id, body)
-            statuses.lifted(conversation.id, user.id)
-            return (Tab { ...settled(tab), thread: first.id }, true)
+      Just(conversation) => do
+        return (tab, false) if !App.Services.Authority.canWrite(user, conversation)
+        match rooted(conversation, tab.thread) do
+          None => return (tab, false)
+          Just(first) => do
+            # A command for a bot is used, not said.
+            if invoked(events, user, conversation, first.id, body)
+              statuses.lifted(conversation.id, user.id)
+              return (Tab { ...settled(tab), thread: first.id }, true)
+            end
+            return repliedTo(events, statuses, user, tab, conversation, first, body)
           end
-          return repliedTo(statuses, user, tab, conversation, first, body)
         end
       end
     end
   end
 
   # A reply said in the thread `first` starts.
-  repliedTo : Server<Presence> -> User -> Tab -> Conversation -> Message -> String -> (Tab, Bool)
-  foul repliedTo(statuses, user, tab, conversation, first, body) do
+  repliedTo : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> Conversation -> Message -> String -> (Tab, Bool)
+  foul repliedTo(events, statuses, user, tab, conversation, first, body) do
     match Messages.said(conversation.id, user.id, body, first.id) do
       Ok(reply) => do
+        happened(events, conversation, "message", reply.id, first.id, reply.sentAt, "", body)
         statuses.lifted(conversation.id, user.id)
         # Who replies in a thread follows it, and has read it so far.
         Readings.reached(user.id, Reading {
@@ -942,7 +1126,7 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        return (tab, false) if !Memberships.affiliated?(organization.id, other)
+        return (tab, false) if !affiliated?(organization.id, other)
 
         match Conversations.between(organization.id, user.id, other) do
           Ok(conversation) => return (Tab { organization: organization.id, conversation: conversation.id }, false)
@@ -967,6 +1151,9 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
+        if !App.Services.Authority.canCreate(user, organization.id)
+          return (Tab { ...refused, dialogProblem: "You may not make a channel in ${organization.name}." }, false)
+        end
         let owner : Team? = match Teams.single(teamId) do
           Ok(found) => found
           Error(_) => None
@@ -991,7 +1178,7 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        let others = picked.uniq.filter { |id| id != user.id && Memberships.affiliated?(organization.id, id) }
+        let others = picked.uniq.filter { |id| id != user.id && affiliated?(organization.id, id) }
         return (Tab { ...refused, dialogProblem: "Pick at least one person." }, false) if others.empty?
         return whispered(user, settled(tab), others.first.or("")) if others.count == 1
 
@@ -1015,6 +1202,9 @@ private do
       None => return (tab, false)
       Just(conversation) => do
         return (settled(tab), false) if !conversation.group?
+        if !App.Services.Authority.canAdminister(user, conversation)
+          return (Tab { ...refused, dialogProblem: "Only an administrator can make this a channel." }, false)
+        end
 
         let kept = access == "public" then "public" else "private"
         match Conversations.promoted(conversation.id, title, kept) do
@@ -1033,9 +1223,12 @@ private do
       None => return (tab, false)
       Just(conversation) => do
         return (settled(tab), false) if !conversation.channel? || conversation.public?
+        if !App.Services.Authority.canAdminister(user, conversation)
+          return (Tab { ...refused, dialogProblem: "Only an administrator of this channel can add people." }, false)
+        end
 
         let newcomers = picked.uniq.filter { |id|
-          !conversation.admits?(id) && Memberships.affiliated?(conversation.organizationId, id)
+          !conversation.admits?(id) && affiliated?(conversation.organizationId, id)
         }
         return (Tab { ...refused, dialogProblem: "Pick at least one person who is not in it yet." }, false) if newcomers.empty?
 
@@ -1088,6 +1281,9 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
+        if !App.Services.Authority.canCreate(user, organization.id)
+          return (Tab { ...refused, dialogProblem: "You may not make a team in ${organization.name}." }, false)
+        end
         let team = Team {
           id: "",
           organizationId: organization.id,
@@ -1137,7 +1333,7 @@ private do
       Just(team) => do
         return (Tab { ...settled(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
 
-        let newcomers = picked.filter { |id| Memberships.affiliated?(team.organizationId, id) }
+        let newcomers = picked.filter { |id| affiliated?(team.organizationId, id) }
         match Teams.joinedAll(team.id, newcomers) do
           Ok(count) => return (settled(tab), count > 0)
           Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
@@ -1178,8 +1374,8 @@ private do
   # How many files can go with one message.
   let PENDING = 10
 
-  sent : Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
-  foul sent(statuses, user, tab, body) do
+  sent : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
+  foul sent(events, statuses, user, tab, body) do
     # A message needs words, unless files go with it.
     let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
     let unfit = tab.pending.empty? || body.chars.count > App.Models.Message.LONGEST
@@ -1188,21 +1384,22 @@ private do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => do
+        return (tab, false) if !App.Services.Authority.canWrite(user, conversation)
         # A command for a bot is used, not said; the files waiting stay.
-        if invoked(user, conversation, "", body)
+        if invoked(events, user, conversation, "", body)
           statuses.lifted(conversation.id, user.id)
           return (settled(tab), true)
         end
-        return postedTo(statuses, user, tab, conversation, body)
+        return postedTo(events, statuses, user, tab, conversation, body)
       end
     end
   end
 
   # A message said in the conversation, with the files waiting in its box.
-  postedTo : Server<Presence> -> User -> Tab -> Conversation -> String -> (Tab, Bool)
-  foul postedTo(statuses, user, tab, conversation, body) do
-    match posting(user, conversation, body, tab.pending) do
-      Ok(_) => do
+  postedTo : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> Conversation -> String -> (Tab, Bool)
+  foul postedTo(events, statuses, user, tab, conversation, body) do
+    match posting(events, user, conversation, body, tab.pending) do
+      Ok(message) => do
         # Whatever they were said to be doing, they have done.
         statuses.lifted(conversation.id, user.id)
         return (Tab { ...settled(tab), pending: [] }, true)
@@ -1214,8 +1411,8 @@ private do
   # A message, with what goes with it, all or nothing: whoever starts a
   # thread follows it, the files waiting in the box go with it, and the
   # draft it was is gone.
-  posting : User -> Conversation -> String -> [String] -> Result<Message, String>
-  foul posting(user, conversation, body, pending) do
+  posting : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> [String] -> Result<Message, String>
+  foul posting(events, user, conversation, body, pending) do
     let posted : Result<Message, String> = Harmat.Database.transaction do
       let message : Message = Messages.said(conversation.id, user.id, body, "").try
       Readings.reached(user.id, Reading {
@@ -1227,14 +1424,18 @@ private do
       Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" }).try
       Ok(message)
     end
+    match posted do
+      Ok(message) => happened(events, conversation, "message", message.id, "", message.sentAt, "", body)
+      Error(_) => ()
+    end
     return posted
   end
 
   # Answers a form a message asks. The answer is kept with that message —
   # it is not a message of its own — and replaces an earlier one this person
   # gave to the same form. The tab stays as it is.
-  answered : User -> Tab -> [(String, String?)] -> (Tab, Bool)
-  foul answered(user, tab, entries) do
+  answered : Server<App.Live.Events.Bus> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
+  foul answered(events, user, tab, entries) do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => match Messages.single(field(entries, "message")) do
@@ -1244,7 +1445,12 @@ private do
           match App.Helpers.RichText.answer(message.body, entries) do
             None => return (tab, false)
             Just((form, said)) => match Answers.recorded(conversation.organizationId, message, form, user.id, said) do
-              Ok(_) => return (tab, true)
+              Ok(given) => do
+                # Only the bot whose form it was is told, and it is told only
+                # where to look.
+                happened(events, conversation, "answer", message.id, message.parentId, given.answeredAt, message.userId, "")
+                return (tab, true)
+              end
               Error(reason) => return (Tab { ...tab, failure: "Not answered: ${reason}" }, false)
             end
           end

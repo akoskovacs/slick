@@ -20,6 +20,8 @@ record Conversation do
   access : String = "public"
   # The team that owns a channel; "" for none.
   teamId : String = ""
+  # How much of it its bots may read: "none", "mentions" or "all".
+  botAccess : String = "mentions"
   # Who may read a private channel or a group chat: its participants and,
   # for a channel a team owns, the team's members. The repository fills it
   # in; it is empty for the rest.
@@ -46,6 +48,12 @@ make Conversation do
 
   # Whether anyone in the organization may read it: a public channel.
   let public? -> Bool = @kind == "channel" && @access == "public"
+
+  # Whether bots may read nothing of it.
+  let botsForbidden? -> Bool = @botAccess == "none"
+
+  # Whether bots may read all of it, as a person may.
+  let botsAll? -> Bool = @botAccess == "all"
 
   # Whether this person may read and write here, given that they are in its
   # organization: anyone in a public channel, the two people of a private

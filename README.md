@@ -105,14 +105,13 @@ your own.
 | `tey seed` | migrate, then plant what the environment's database starts with |
 | `tey test` | the specs |
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
-| `tey dev` | the server, then the bots beside it — [muse](../muse-bot) and [opencode](../opencode-bot) — once it answers; Ctrl-C stops all of them |
+| `tey dev` | the server, then the bot beside it — [slick-ai-bot](../slick-ai-bot) — once it answers; Ctrl-C stops all of them |
 
-`tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and
-`BOT_OPERATORS`, the Slick ids of the people who may allow a bot's tools
-and choose opencode's model. Each bot uses its development token — `tey
-seed` plants muse and opencode with theirs, as it does claude — unless
-`MUSE_TOKEN` or `OPENCODE_TOKEN` says otherwise, and is skipped when its
-folder (`MUSE_BOT_DIR`, `OPENCODE_BOT_DIR`) is not there.
+ `tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and
+ `BOT_OPERATORS`, the Slick ids of the people who may allow the bot's tools
+ and choose what each conversation asks. The bot uses its development token
+ — `tey seed` plants one — unless `BOT_TOKEN` says otherwise, and is skipped
+ when its folder (`SLICK_BOT_DIR`) is not there.
 
 ## Settings
 
@@ -170,8 +169,9 @@ really chose in a form it really asked.
 ## Bots and the API
 
 A bot is made in the **Bots** dialog (the gear beside Bots in the sidebar):
-it belongs to the organization or to you, and its token is shown once.
-Every request carries it:
+it belongs to the organization or to you, and its token is shown once. The
+same dialog gives a bot a new token (the old one stops working) and removes
+it, which takes its access with it. Every request carries the token:
 
 ```sh
 curl -H "Authorization: Bearer slick_bot_…" http://127.0.0.1:4000/api/me
@@ -180,6 +180,7 @@ curl -H "Authorization: Bearer slick_bot_…" http://127.0.0.1:4000/api/me
 | | |
 | --- | --- |
 | `GET /api/me` | the bot, and the organizations it is in |
+| `GET /api/events?after=<cursor>` | a WebSocket: what the bot may see happening — a message, a form answered, a command used — told as it happens, each with a cursor; `?token=` carries the bot's token |
 | `GET /api/:organization/channels` | the organization's channels |
 | `GET /api/:organization/channels/:name/messages` | the newest messages, oldest first; `?limit=`, `?after=<sentAt>` |
 | `GET /api/:organization/channels/:name/messages?thread=<id>` | one thread: the message and its replies |
@@ -198,8 +199,9 @@ notes"}]}`. The whole of it is described at the top of
 `app/controllers/api.kex`.
 
 `tey seed` makes a development bot called `claude`, with token
-`slick_bot_development_claude`. The separate [claude-bot](../claude-bot)
-project answers when named in a channel or written to in private; see its
+`slick_bot_development_claude`. The separate [slick-ai-bot](../slick-ai-bot)
+project is the bot: it answers when named in a channel or written to in
+private, with Muse, OpenCode or Claude, chosen per conversation; see its
 README for setup.
 
 ## Database
@@ -242,8 +244,7 @@ docker compose -f docker-compose.image.yml down              # stop; the data st
 | `SLICK_IMAGE` | the image; `ghcr.io/akoskovacs/slick:latest` unless set. Name a version to stay on it |
 | `PORT` | the port Slick is reached on; 4000 unless set |
 
-While the package is private, sign in first: `docker login ghcr.io`, with a
-token that may read packages.
+The image is public: no sign-in needed to pull it.
 
 Against a database of your own, the image needs only where it is — an ODBC
 connection string. The PostgreSQL driver in the image is called
@@ -258,6 +259,18 @@ docker run --detach --publish 4000:4000 \
 Slick speaks plain HTTP on port 4000. Put it behind something that
 terminates TLS, and have that pass `X-Forwarded-Proto: https`, so that the
 session cookie is marked `Secure`.
+
+### On TrueNAS SCALE
+
+`docker-compose.truenas.yml` is the same pair as a Custom App (24.04 or
+newer), aimed at this NAS: the database lives in a Docker volume
+(the same setup as the other postgres apps here), uploads go to
+`/mnt/vault/Vault/Etc/Slick/storage`, the password goes in the file,
+the image is pinned to the `0.1` release, and Slick answers on 30900.
+Paste it
+into Apps → Discover Apps → ⋮ → Install via YAML, open
+`http://<nas>:30900`, register, and create an organization. To
+upgrade, change the tag and redeploy; the folders keep the data.
 
 ### Building it yourself
 

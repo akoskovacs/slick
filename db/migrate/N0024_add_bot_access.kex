@@ -1,0 +1,11 @@
+# How much of a channel or group chat its bots may read: "none" — nothing;
+# "mentions" — only what names a bot, and a bot's own private chats; "all" —
+# everything a bot could otherwise read. The default is the safe one.
+module DB.Migrate.N0024AddBotAccess
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [addColumn]
+
+let change = Migration.define :add_bot_access, follows: :retire_membership_tables do
+  addColumn(:conversations) { |t| t.text(:bot_access, default: "mentions", oneOf: ["none", "mentions", "all"]) }
+end

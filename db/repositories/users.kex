@@ -5,6 +5,7 @@ module DB.Repositories.Users
 
 using Harmat.Database, as: Database
 using App.Models.User, only: [User]
+using DB.Repositories.Grants, as: Grants
 
 # Stores a new user. Fails when the email is taken: the table's unique
 # index decides, so two registrations racing for one address cannot both win.
@@ -100,6 +101,17 @@ foul rekeyed(botId: String, owner: String, tokenDigest: String) -> Result<Bool, 
     .map { |changed| changed > 0 }
 end
 
+# Deletes a bot — this owner's own — and everything of it: what it could do,
+# what it was in, and the places it had been. Whether it was there to delete.
+foul removed(botId: String, owner: String) -> Result<Bool, String> do
+  return removing(botId, owner, "")
+end
+
+# The same, for an organization's bot.
+foul removedFor(botId: String, organizationId: String) -> Result<Bool, String> do
+  return removing(botId, "", organizationId)
+end
+
 # Sets what somebody says about themselves; "" and "" takes it back.
 foul restyled(id: String, emoji: String, saying: String) -> Result<Integer, String> do
   return Database.update(DB.Schema.Users)
@@ -149,7 +161,46 @@ foul everyone -> Result<[User], String> do
     .all(as: User, renamed: USER_COLUMNS)
 end
 
+# Every bot's id.
+foul botIds -> Result<[String], String> do
+  return Database.select().from(DB.Schema.Users)
+    .where(DB.Schema.Users.kind == "bot")
+    .pluck(:id)
+end
+
 private do
+  # Deletes a bot, when it is the caller's to delete: `owner` is its owner's
+  # id, or `organizationId` the organization it belongs to — never both. The
+  # bot goes first, so nothing of it is taken from a bot that was not this
+  # caller's; the rest is all or nothing, in the one transaction. What it
+  # said stays, as what anybody who is gone has said does ("Someone").
+  foul removing(botId: String, owner: String, organizationId: String) -> Result<Bool, String> do
+    let done : Result<Bool, String> = Harmat.Database.transaction do
+      let gone : Integer = (if owner.empty?
+        Database.delete(DB.Schema.Users)
+          .where(DB.Schema.Users.id == botId)
+          .where(DB.Schema.Users.kind == "bot")
+          .where(DB.Schema.Users.ownerOrganizationId == organizationId)
+      else
+        Database.delete(DB.Schema.Users)
+          .where(DB.Schema.Users.id == botId)
+          .where(DB.Schema.Users.kind == "bot")
+          .where(DB.Schema.Users.ownerId == owner)
+      end).run.try
+      if gone > 0
+        Database.delete(DB.Schema.Commands).where(DB.Schema.Commands.botId == botId).run.try
+        Database.delete(DB.Schema.Invocations).where(DB.Schema.Invocations.botId == botId).run.try
+        # Everything it was granted — its memberships, its roles — goes too.
+        Grants.revokedAll("user", botId).try
+        Database.delete(DB.Schema.Drafts).where(DB.Schema.Drafts.userId == botId).run.try
+        Database.delete(DB.Schema.Readings).where(DB.Schema.Readings.userId == botId).run.try
+        Database.delete(DB.Schema.Sessions).where(DB.Schema.Sessions.userId == botId).run.try
+      end
+      Ok(gone > 0)
+    end
+    return done
+  end
+
   # This field predates the model's name; the other columns follow snake case.
   let USER_COLUMNS = {"nicknameShown?": "show_nickname"}
 

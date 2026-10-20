@@ -10,7 +10,7 @@ package "slick" do
   sources(["app", "config", "db"])
 
   command("server", run: "tey run server", description: "Migrate, then serve on http://localhost:4000")
-  command("dev", run: "sh script/dev.sh", description: "Serve, with the muse and opencode bots beside it")
+  command("dev", run: "sh script/dev.sh", description: "Serve, with the slick-ai-bot beside it")
   command("migrate", run: "tey run migrate", description: "Run the migrations this database has not run")
   command("rollback", run: "tey run rollback", description: "Undo the newest migration (or the newest N)")
   command("seed", run: "tey run seed", description: "Migrate, then plant what a new database starts with")

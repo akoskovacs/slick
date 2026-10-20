@@ -1,5 +1,5 @@
 ---
-params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String, note: String, admitting?: Bool, promotable?: Bool]
+params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String, note: String, admitting?: Bool, promotable?: Bool, botAccess: String, canAdminister: Bool]
 ---
 <header class="heading">
   <div class="heading-row">
@@ -21,6 +21,18 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
     <p class="topic"><% if topic.empty? %>No topic yet<% else %><%= topic %><% end %>
       <button type="button" class="quiet" data-event="retitle">Edit topic</button>
     </p>
+  <% end %>
+  <% if canAdminister %>
+    <form class="bot-access" data-live="bot-access" data-live-quiet>
+      <label>Bots here
+        <select name="access" aria-label="What bots may read">
+          <option value="mentions"<% if botAccess == "mentions" %> selected<% end %>>Read only their mentions</option>
+          <option value="all"<% if botAccess == "all" %> selected<% end %>>Read everything</option>
+          <option value="none"<% if botAccess == "none" %> selected<% end %>>Read nothing</option>
+        </select>
+      </label>
+      <button type="submit" class="primary">Save</button>
+    </form>
   <% end %>
   <% if !note.empty? %>
     <p class="topic"><%= note %>

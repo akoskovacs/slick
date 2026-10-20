@@ -48,7 +48,7 @@ foul served(store: Server<DB.Store.Store>) -> Void do
   # Everything that serves is made in here, the routes included: this is
   # where the store becomes the database every query reaches.
   with Harmat.Connection = DB.Store.StoreConnection { store: store } do
-    let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}))
+    let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
     site.start(bindHost, port).try
   end
 end

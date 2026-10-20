@@ -119,6 +119,13 @@ record Card do
   timeZone : String = ""
   # Whether it is whoever is looking.
   own? : Bool
+  # Their role in the organization: "admin", "member" or "read-only"; ""
+  # for a bot, whose role nobody changes here.
+  role : String = ""
+  # The same, in words for a person to read.
+  roleShown : String = ""
+  # Whether whoever is looking may change their role.
+  manageable? : Bool = false
 end
 
 # One detail in the form that changes a profile.
@@ -298,7 +305,9 @@ let index(
   reactions: [Reaction],
   responses: [Answer],
   thread: [Message],
-  doing: [Note]
+  doing: [Note],
+  roles: {String: String},
+  administrator: Bool
 ) -> String do
   let shown = conversation.map { |open| open.id }.or("")
   let badges = organizations.map { |each|
@@ -385,7 +394,7 @@ let index(
   elif !tab.team.empty?
     teamPane(tab, user, people, teams, channels)
   else
-    profilePane(tab, user, organization, people, online)
+    profilePane(tab, user, organization, people, online, roles, administrator)
   end
   let place = conversation
     .map { |open| located(organization, open, user, thread) }
@@ -402,7 +411,8 @@ let index(
     cabinet,
     thread.empty? && tab.dialog.empty?,
     doing,
-    unsent("")
+    unsent(""),
+    administrator
   )
   frame(
     tab.failure,
@@ -452,9 +462,10 @@ private do
   end
 
   # The profile a tab has open, if it is of somebody in the organization.
-  # A bot's says whose it is: a person's, or the organization's.
-  profilePane : Tab -> User -> Organization -> [User] -> [String] -> String
-  let profilePane(tab, user, organization, people, online) do
+  # A bot's says whose it is: a person's, or the organization's. `roles` is
+  # each member's role, and `administrator` whether the viewer may change it.
+  profilePane : Tab -> User -> Organization -> [User] -> [String] -> {String: String} -> Bool -> String
+  let profilePane(tab, user, organization, people, online, roles, administrator) do
     match people.find { |person| person.id == tab.profile } do
       None => ""
       Just(person) => do
@@ -465,6 +476,9 @@ private do
         else
           organization.name
         end
+        let role = roles.get(person.id).or("member")
+        let roleShown = role == "admin" then "Administrator" else (role == "read-only" then "Read-only" else "Member")
+        let mayManage = administrator && !person.bot? && person.id != user.id
         profilePartial(Card {
           key: person.id,
           caption: person.shown,
@@ -479,6 +493,9 @@ private do
           keeper: keeper,
           keeperKey: owner.map { |each| each.id }.or(""),
           own?: person.id == user.id,
+          role: role,
+          roleShown: roleShown,
+          manageable?: mayManage,
           name: person.shown == person.name then "" else person.name,
           title: person.title,
           department: person.department,
@@ -911,7 +928,8 @@ private do
     cabinet: Cabinet,
     alone?: Bool,
     doing: [Note],
-    unsent: String
+    unsent: String,
+    administrator: Bool
   ) -> String do
     match conversation do
       None => return [
@@ -931,7 +949,9 @@ private do
           cabinet.stored.empty? then "" else "${cabinet.stored.count}",
           noted(open, room.teams),
           open.channel? && !open.public?,
-          open.group?
+          open.group?,
+          open.botAccess,
+          administrator && (open.channel? || open.group?)
         )
         let queued = cabinet.queued
           .map { |file| queuedPartial(enclosed(file, room.people, "")) }

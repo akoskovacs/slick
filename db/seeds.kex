@@ -30,8 +30,8 @@ let PASSWORD = "correct horse"
 
 # The API token of each seeded bot: `slick_bot_development_<its name>`.
 # Known to everyone who can read this file, which is why they are only ever
-# planted in development. muse and opencode are the bots script/dev.sh runs
-# beside the server (../muse-bot, ../opencode-bot).
+# planted in development. The `claude` bot is the one script/dev.sh runs
+# the slick-ai-bot as (../slick-ai-bot).
 let BOT_TOKEN = "slick_bot_development_claude"
 let BOTS = ["claude", "muse", "opencode"]
 
@@ -55,7 +55,7 @@ private do
     Memberships.enlisted(acme.id, bob.id).try
     Memberships.enlisted(acme.id, eve.id).try
 
-    let general = Conversations.founded(acme.id, App.Models.Conversation.GENERAL, ada.id).try
+    let general = Conversations.founded(acme.id, App.Models.Conversation.GENERAL, ada.id, botAccess: "all").try
     Conversations.retitled(general.id, "Company-wide announcements and chatter").try
     let welcome = Messages.said(general.id, ada.id, "Welcome to Acme :wave:", "").try
     Messages.said(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "").try
@@ -65,7 +65,7 @@ private do
     Reactions.flipped(welcome, bob.id, "👍").try
     Reactions.flipped(welcome, eve.id, "🎉").try
 
-    let random = Conversations.founded(acme.id, "random", bob.id).try
+    let random = Conversations.founded(acme.id, "random", bob.id, botAccess: "all").try
     Conversations.retitled(random.id, "Anything goes :tada:").try
     Messages.said(random.id, bob.id, "Lunch at one?", "").try
     Messages.said(random.id, eve.id, "`yes`", "").try

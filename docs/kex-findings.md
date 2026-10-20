@@ -79,7 +79,14 @@ Still needed or deliberately retained:
   siblings in `app/live/chat.kex` and `app/models/emoji.kex` — stay
   until it spreads there too. `do |…|` blocks behave the same, and
   `|(a, b)|` patterns were deliberately never added, so there is no
-  shorter spelling today. Found on `3111d30`; not filed.
+  shorter spelling today. Found on `3111d30`; filed as
+  `kexhq/kex#537`.
+- **A module whose name does not mirror its source path is silently
+  skipped.** `module App.Authority` in `app/services/authority.kex`
+  (should be `App.Services.Authority`) built cleanly — `tey build` exited
+  0 and produced no beam — and only later failed as "Unknown module" in a
+  spec and "Undefined function" at runtime. The name must match the path;
+  a mismatched module should be a build error, not a silent skip.
 - The manual file-size rounding and other names not migrated here remain;
   this check does not establish that every historical workaround can go.
 

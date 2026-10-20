@@ -10,6 +10,8 @@ module DB.Repositories.Conversations
 
 using Harmat.Database, as: Database
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Grant, only: [Grant]
+using DB.Repositories.Grants, as: Grants
 
 # Every channel of an organization, by name: the private ones too, which
 # not everyone may read.
@@ -50,7 +52,8 @@ foul founded(
   title: String,
   by: String,
   access: String = "public",
-  teamId: String = ""
+  teamId: String = "",
+  botAccess: String = "mentions"
 ) -> Result<Conversation, String> do
   let channel = Conversation {
     id: Metro.Id.generate(prefix: "c"),
@@ -59,7 +62,8 @@ foul founded(
     title: title,
     organizationId: organizationId,
     access: access,
-    teamId: teamId
+    teamId: teamId,
+    botAccess: botAccess
   }
   let row = {
     id: channel.id,
@@ -69,6 +73,7 @@ foul founded(
     organization_id: organizationId,
     access: access,
     team_id: teamId,
+    bot_access: botAccess,
     created_by: by,
     created_at: "${DateTime.utcNow()}"
   }
@@ -79,6 +84,10 @@ foul founded(
       .try
     let first = access == "private" then [by] else []
     admitted(channel.id, first).try
+    # The team that owns the channel administers it, and so do its members.
+    if teamId != ""
+      Grants.granted(Grant { subjectType: "team", subjectId: teamId, resourceType: "conversation", resourceId: channel.id, role: "admin" }).try
+    end
     Ok(Conversation { ...channel, participants: first })
   end
   return made
@@ -171,21 +180,12 @@ foul promoted(id: String, title: String, access: String) -> Result<Conversation,
 end
 
 # Lets people into a private channel or a group chat, leaving out whoever
-# is in it already.
+# is in it already. Each is granted membership of the conversation.
 foul admitted(conversationId: String, userIds: [String]) -> Result<Integer, String> do
   let present : [String] = (participantsOf([conversationId]).try).get(conversationId).or([])
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
-  # A `.try` inside a block given to `map` would leave only that block:
-  # what failed is collected instead.
   let failures = newcomers.flatMap { |userId|
-    let stored = Database.insert(DB.Schema.Participants)
-      .values({
-        id: "${conversationId}:${userId}",
-        conversation_id: conversationId,
-        user_id: userId,
-        joined_at: "${DateTime.utcNow()}"
-      })
-      .run
+    let stored = Grants.granted(Grant { subjectType: "user", subjectId: userId, resourceType: "conversation", resourceId: conversationId, role: "member" })
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
@@ -262,6 +262,15 @@ foul retitled(id: String, topic: String) -> Result<Bool, String> do
     .map { |changed| changed > 0 }
 end
 
+# How much of a conversation its bots may read: "none", "mentions" or "all".
+foul botAccess(id: String, access: String) -> Result<Bool, String> do
+  return Database.update(DB.Schema.Conversations)
+    .set({bot_access: access})
+    .where(DB.Schema.Conversations.id == id)
+    .run
+    .map { |changed| changed > 0 }
+end
+
 private do
   # A conversation found, or none, with who takes part in it.
   foul single(row: Conversation?) -> Result<Conversation?, String> do
@@ -275,40 +284,26 @@ private do
   end
 
   # Conversations with who takes part filled in where it matters — in
-  # private channels and group chats: their participants, and the members
-  # of the team that owns one.
+  # private channels and group chats: everyone who may read one, which is
+  # whoever holds a grant over it, a team's grant handing it to every
+  # member of that team.
   foul peopled(conversations: [Conversation]) -> Result<[Conversation], String> do
     let closed = conversations.filter { |conversation| conversation.access == "private" }
     return Ok(conversations) if closed.empty?
 
     let byConversation : {String: [String]} = participantsOf(closed.map { |each| each.id }).try
-    let owners = closed.map { |each| each.teamId }.reject { |id| id.empty? }.uniq
-    let byTeam : {String: [String]} = DB.Repositories.Teams.rosters(owners).try
     return Ok(conversations.map { |conversation|
-      let own = byConversation.get(conversation.id).or([])
-      let team = byTeam.get(conversation.teamId).or([])
-      Conversation { ...conversation, participants: (own + team).uniq }
+      Conversation { ...conversation, participants: byConversation.get(conversation.id).or([]) }
     })
   end
 
-  # The participants of some conversations, by conversation.
+  # Who takes part in some conversations, by conversation.
   foul participantsOf(ids: [String]) -> Result<{String: [String]}, String> do
-    return Ok({}) if ids.empty?
-    let rows = Database.select([:conversation_id, :user_id]).from(DB.Schema.Participants)
-      .where(DB.Schema.Participants.conversationId.in(ids))
-      .orderBy([:joined_at, :id])
-      .all
-      .try
-    return Ok(rows.reduce({}) { |found, row|
-      let place = row.get("conversation_id").or("")
-      found.put(place, found.get(place).or([]) + [row.get("user_id").or("")])
-    })
+    return Grants.readersOf("conversation", ids)
   end
 
   # The conversations a person takes part in, by id.
   foul taking(userId: String) -> Result<[String], String> do
-    return Database.select().from(DB.Schema.Participants)
-      .where(DB.Schema.Participants.userId == userId)
-      .pluck(:conversation_id)
+    return Grants.conversationsOf(userId)
   end
 end

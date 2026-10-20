@@ -1,0 +1,128 @@
+# Who may do what. One place: every check in Slick is a call here, over the
+# grants table — a user's role comes from their own grants and from the
+# grants of every team they are in (a team owning a channel hands its
+# members that channel). See docs/permissions.md for the matrix.
+#
+# A bot is a user; whether it may read a conversation is decided here, and
+# a channel's bot read-scope (none | mentions | all) is layered on top, at
+# the API and the events stream, not here.
+module App.Services.Authority
+
+using App.Models.User, only: [User]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Grant, only: [Grant]
+using DB.Repositories.Grants, as: Grants
+
+# Whether this person may make an organization of their own. A bot may not.
+canOrganize? : User -> Bool
+let canOrganize?(user) = !user.bot?
+
+# The strongest role the user holds — directly, or through a team they are
+# in — over a resource; `None` for none.
+foul role(user: User, resourceType: String, resourceId: String) -> String? do
+  return roleOf(user.id, resourceType, resourceId)
+end
+
+# The same, for a user known only by id.
+foul roleOf(userId: String, resourceType: String, resourceId: String) -> String? do
+  let teams : [String] = Grants.teamsOf(userId).or([])
+  let over : [Grant] = Grants.over(resourceType, resourceId).or([])
+  let roles = over.flatMap { |grant|
+    let held = grant.subjectType == "user" && grant.subjectId == userId
+    let viaTeam = grant.subjectType == "team" && teams.contains?(grant.subjectId)
+    held || viaTeam then [grant.role] else []
+  }
+  return strongest(roles)
+end
+
+# The administrators of an organization, by id.
+foul admins(organizationId: String) -> [String] do
+  return Grants.roleHolders("organization", organizationId, "admin").or([])
+end
+
+# Whether a message names this bot, the way the bot itself looks for it.
+mentions? : String -> String -> Bool
+let mentions?(body, name) = body.lowerCase.contains?("@${name.lowerCase}")
+
+# Whether a bot may read a conversation's thread — `root` "" for its newest
+# messages — given what the conversation lets its bots read. A person is
+# never gated here, and a private chat is the bot's own.
+foul botMayRead(bot: User, conversation: Conversation, root: String) -> Bool do
+  return true if !bot.bot?
+  return true if conversation.direct?
+  return false if conversation.botsForbidden?
+  return true if conversation.botsAll?
+  return false if root.empty?
+
+  match DB.Repositories.Messages.single(root) do
+    Ok(Just(message)) => do
+      return true if mentions?(message.body, bot.name)
+      return DB.Repositories.Messages.botAuthors(root, [bot.id]).or([]).count > 0
+    end
+    _ => return false
+  end
+end
+
+# Whether the user administers the whole server.
+foul serverAdmin?(user: User) -> Bool = role(user, "server", "") == Just("admin")
+
+# Whether the user may make a channel or a team in an organization.
+foul canCreate(user: User, organizationId: String) -> Bool do
+  return true if serverAdmin?(user)
+  let at = role(user, "organization", organizationId)
+  return at == Just("member") || at == Just("admin")
+end
+
+# Whether the user administers an organization: invites, bots, teams,
+# channels.
+foul canManage(user: User, organizationId: String) -> Bool do
+  return true if serverAdmin?(user)
+  return role(user, "organization", organizationId) == Just("admin")
+end
+
+# Whether the user may read a conversation.
+foul canRead(user: User, conversation: Conversation) -> Bool do
+  return true if serverAdmin?(user)
+  if conversation.direct?
+    return conversation.firstUser == user.id || conversation.secondUser == user.id
+  end
+  if conversation.public?
+    return role(user, "organization", conversation.organizationId).set?
+  end
+  return role(user, "conversation", conversation.id).set?
+end
+
+# Whether the user may say something in a conversation.
+foul canWrite(user: User, conversation: Conversation) -> Bool do
+  return true if serverAdmin?(user)
+  if conversation.direct?
+    return conversation.firstUser == user.id || conversation.secondUser == user.id
+  end
+  if conversation.public?
+    let inOrg = role(user, "organization", conversation.organizationId)
+    return inOrg == Just("member") || inOrg == Just("admin")
+  end
+  let inConversation = role(user, "conversation", conversation.id)
+  return inConversation == Just("member") || inConversation == Just("admin")
+end
+
+# Whether the user may manage a conversation — its topic, its members, its
+# bot access.
+foul canAdminister(user: User, conversation: Conversation) -> Bool do
+  return true if serverAdmin?(user)
+  if role(user, "organization", conversation.organizationId) == Just("admin")
+    return true
+  end
+  return role(user, "conversation", conversation.id) == Just("admin")
+end
+
+private do
+  # The strongest of some roles: admin, else member, else read-only.
+  strongest : [String] -> String?
+  let strongest(roles) do
+    return Just("admin") if roles.contains?("admin")
+    return Just("member") if roles.contains?("member")
+    return Just("read-only") if roles.contains?("read-only")
+    return None
+  end
+end

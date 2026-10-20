@@ -10,6 +10,7 @@ module App.Controllers.Application
 using Metro.WebRequest, only: [WebRequest, Plug, plug]
 using Metro.Live.Hub, only: [Hub]
 using Metro.Live.Presence, only: [Presence]
+using App.Live.Events, only: [Bus]
 using App.Models.User, only: [User]
 
 # The cookie a session's token travels in.
@@ -24,6 +25,14 @@ end
 statusesFor : WebRequest -> Server<Presence>
 foul statusesFor(request) do
   let found : Server<Presence> = request.assigned(:statuses).try
+  return found
+end
+
+# The bus of what happens, put on every request by the router's first
+# pipeline.
+eventsFor : WebRequest -> Server<Bus>
+foul eventsFor(request) do
+  let found : Server<Bus> = request.assigned(:events).try
   return found
 end
 
@@ -65,5 +74,20 @@ foul bearer() -> Plug = plug do |request|
   match App.Services.Bots.bearer(request.header("Authorization")) do
     Just(bot) => request.assign(:user, bot)
     None => request.json(401, {"error": "Send a bot's token as: Authorization: Bearer <token>"})
+  end
+end
+
+# The same, for a WebSocket: a client that cannot send a header — Kex's
+# among them — sends the token in the address instead, as ?token=<token>.
+foul socketBearer() -> Plug = plug do |request|
+  let fromHeader = App.Services.Bots.bearer(request.header("Authorization"))
+  let fromAddress = App.Services.Bots.bearer(Just("Bearer ${request.query("token").or("").trim}"))
+  let found = match fromHeader do
+    Just(bot) => Just(bot)
+    None => fromAddress
+  end
+  match found do
+    Just(bot) => request.assign(:user, bot)
+    None => request.json(401, {"error": "Send a bot's token as: Authorization: Bearer <token>, or /api/events?token=<token>"})
   end
 end

@@ -13,7 +13,6 @@ let Conversations = DB.Schema.Conversations.definition
 let Messages = DB.Schema.Messages.definition
 let Reactions = DB.Schema.Reactions.definition
 let Organizations = DB.Schema.Organizations.definition
-let Memberships = DB.Schema.Memberships.definition
 let Answers = DB.Schema.Answers.definition
 let Drafts = DB.Schema.Drafts.definition
 let Readings = DB.Schema.Readings.definition
@@ -21,8 +20,7 @@ let Files = DB.Schema.Files.definition
 let Commands = DB.Schema.Commands.definition
 let Invocations = DB.Schema.Invocations.definition
 let Teams = DB.Schema.Teams.definition
-let TeamMembers = DB.Schema.TeamMembers.definition
-let Participants = DB.Schema.Participants.definition
+let Grants = DB.Schema.Grants.definition
 
 tables : [Definition]
 let tables = [
@@ -32,7 +30,6 @@ let tables = [
   DB.Schema.Messages,
   DB.Schema.Reactions,
   DB.Schema.Organizations,
-  DB.Schema.Memberships,
   DB.Schema.Answers,
   DB.Schema.Drafts,
   DB.Schema.Readings,
@@ -40,6 +37,5 @@ let tables = [
   DB.Schema.Commands,
   DB.Schema.Invocations,
   DB.Schema.Teams,
-  DB.Schema.TeamMembers,
-  DB.Schema.Participants
+  DB.Schema.Grants
 ]

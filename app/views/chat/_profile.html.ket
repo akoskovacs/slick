@@ -19,6 +19,9 @@ params: [card: Card]
     <% if !card.title.empty? %>
       <p class="role"><%= card.title %></p>
     <% end %>
+    <% if !card.roleShown.empty? %>
+      <p class="membership"><%= card.roleShown %></p>
+    <% end %>
     <p class="presence<% if card.active? %> active<% end %>"><%= card.presence %></p>
     <% if !card.emblem.empty? || !card.statusText.empty? %>
       <p class="motto"><%= card.emblem %> <%= card.statusText %></p>
@@ -35,6 +38,19 @@ params: [card: Card]
         data-event="direct" data-user="<%= card.key %>">Message</button>
     <% end %>
     </div>
+    <% if card.manageable? %>
+      <form class="role-picker" data-live="role-set" data-live-quiet>
+        <input type="hidden" name="user" value="<%= card.key %>">
+        <label>In this organization</label>
+        <select name="role" aria-label="Role">
+          <option value="member"<% if card.role == "member" %> selected<% end %>>Member</option>
+          <option value="admin"<% if card.role == "admin" %> selected<% end %>>Administrator</option>
+          <option value="read-only"<% if card.role == "read-only" %> selected<% end %>>Read-only</option>
+        </select>
+        <button type="submit" class="primary">Change</button>
+      </form>
+      <button type="button" class="quiet" data-event="role-remove" data-user="<%= card.key %>">Remove from organization</button>
+    <% end %>
     <dl class="details">
     <% if !card.department.empty? %>
       <dt>Department</dt>

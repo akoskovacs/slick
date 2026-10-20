@@ -3,11 +3,14 @@
 #   DB.Repositories.Teams.ofOrganization(organization.id)
 #
 # A team a sync has (`managed?`) keeps its name and members as the sync
-# says: the conditions here leave it alone, whoever asks.
+# says: the conditions here leave it alone, whoever asks. A team's members
+# are the users holding a member grant over it (DB.Repositories.Grants).
 module DB.Repositories.Teams
 
 using Harmat.Database, as: Database
 using App.Models.Team, only: [Team]
+using App.Models.Grant, only: [Grant]
+using DB.Repositories.Grants, as: Grants
 
 # Creates a team, with its first members. Fails when the organization has a
 # team of that handle: the unique index decides.
@@ -69,21 +72,15 @@ foul revised(id: String, name: String, description: String) -> Result<Bool, Stri
     .map { |changed| changed > 0 }
 end
 
-# Puts people in a team, leaving out whoever is in it already.
+# Puts people in a team, leaving out whoever is in it already: each is
+# granted membership of the team.
 foul joinedAll(teamId: String, userIds: [String]) -> Result<Integer, String> do
   let present : [String] = members(teamId).try
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   # A `.try` inside a block given to `map` would leave only that block:
   # what failed is collected instead.
   let failures = newcomers.flatMap { |userId|
-    let stored = Database.insert(DB.Schema.TeamMembers)
-      .values({
-        id: "${teamId}:${userId}",
-        team_id: teamId,
-        user_id: userId,
-        joined_at: "${DateTime.utcNow()}"
-      })
-      .run
+    let stored = Grants.granted(Grant { subjectType: "user", subjectId: userId, resourceType: "team", resourceId: teamId, role: "member" })
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
@@ -92,11 +89,9 @@ foul joinedAll(teamId: String, userIds: [String]) -> Result<Integer, String> do
   return failures.empty? then Ok(newcomers.count) else Error(failures.first.or(""))
 end
 
-# Takes a person out of a team.
+# Takes a person out of a team, and their grant with them.
 foul left(teamId: String, userId: String) -> Result<Integer, String> do
-  return Database.delete(DB.Schema.TeamMembers)
-    .where(DB.Schema.TeamMembers.id == "${teamId}:${userId}")
-    .run
+  return Grants.revoked(Grants.key("user", userId, "team", teamId))
 end
 
 # Hands a team to a sync, as the group of this id — or, with "", takes it
@@ -110,24 +105,12 @@ end
 
 # The ids of the people in a team.
 foul members(teamId: String) -> Result<[String], String> do
-  return Database.select().from(DB.Schema.TeamMembers)
-    .where(DB.Schema.TeamMembers.teamId == teamId)
-    .orderBy([:joined_at, :id])
-    .pluck(:user_id)
+  return Grants.members("team", teamId)
 end
 
 # The ids of the people in any of some teams, by team.
 foul rosters(teamIds: [String]) -> Result<{String: [String]}, String> do
-  return Ok({}) if teamIds.empty?
-  let rows = Database.select([:team_id, :user_id]).from(DB.Schema.TeamMembers)
-    .where(DB.Schema.TeamMembers.teamId.in(teamIds))
-    .orderBy([:joined_at, :id])
-    .all
-    .try
-  return Ok(rows.reduce({}) { |found, row|
-    let team = row.get("team_id").or("")
-    found.put(team, found.get(team).or([]) + [row.get("user_id").or("")])
-  })
+  return Grants.membersOf("team", teamIds)
 end
 
 private do

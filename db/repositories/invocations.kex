@@ -7,23 +7,10 @@ using Harmat.Database, as: Database
 using App.Models.Invocation, only: [Invocation]
 
 # Keeps one, as it is.
-foul recorded(invocation: Invocation) -> Result<Invocation, String> do
-  let row = {
-    id: invocation.id,
-    organization_id: invocation.organizationId,
-    conversation_id: invocation.conversationId,
-    thread_id: invocation.threadId,
-    bot_id: invocation.botId,
-    user_id: invocation.userId,
-    command: invocation.command,
-    arguments: invocation.arguments,
-    invoked_at: invocation.invokedAt,
-    invoked_on: invocation.invokedOn
-  }
+foul recorded(invocation: Invocation) -> Result<Integer, String> do
   return Database.insert(DB.Schema.Invocations)
-    .values(row)
+    .record(invocation)
     .run
-    .map { |_| invocation }
 end
 
 # Every one used in a conversation, its threads included, oldest first.

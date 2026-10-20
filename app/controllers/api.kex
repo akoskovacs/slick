@@ -4,6 +4,9 @@
 #
 #   GET  /api/me
 #   PUT  /api/commands                                 {"commands": [{"name": "model", "description": "…"}]}
+#   GET  /api/events?after=<cursor>                    a WebSocket: what the
+#                                                      bot may see happening,
+#                                                      told as it happens
 #   GET  /api/:organization/channels
 #   GET  /api/:organization/channels/:name/messages?limit=50&after=<sentAt>
 #   GET  /api/:organization/channels/:name/messages?thread=<message id>
@@ -58,7 +61,7 @@
 module App.Controllers.Api
 
 using Metro.WebRequest, only: [WebRequest]
-using App.Controllers.Application, only: [hubFor, statusesFor, userFor]
+using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, userFor]
 using App.Live.Tab, only: [Tab]
 using App.Models.Command, only: [Command]
 using App.Models.Conversation, only: [Conversation]
@@ -134,7 +137,7 @@ foul channelList(request) do
   let bot = userFor(request)
   let found : [Conversation] = Conversations.channels(tab.organization).or([])
   let listed : [Any] = found
-    .filter { |channel| channel.admits?(bot.id) }
+    .filter { |channel| App.Services.Authority.canRead(bot, channel) }
     .map { |channel|
       let entry : {String: Any} = {
         "id": channel.id,
@@ -244,6 +247,9 @@ foul history(request) do
   match placed(request, thread) do
     Error(reply) => return reply
     Ok((tab, conversation)) => do
+      if !App.Services.Authority.botMayRead(userFor(request), conversation, tab.thread)
+        return request.json([])
+      end
       return request.json(unfolded(conversation, tab.thread)) if !thread.empty?
 
       let asked = request.query("limit").or("50").to(Integer).or(50)
@@ -266,8 +272,12 @@ foul posted(request) do
   match placed(request, thread) do
     Error(reply) => return reply
     Ok((tab, conversation)) => do
+      let bot = userFor(request)
+      if bot.bot? && conversation.botsForbidden?
+        return failed(request, 403, "Bots may not write in this conversation.")
+      end
       let event = thread.empty? then "send" else "reply"
-      let (_, changed) = App.Live.Chat.handled(statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
+      let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
       return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
       hubFor(request).changed("api", "everyone")
@@ -288,7 +298,7 @@ foul reacting(request) do
     Error(reply) => return reply
     Ok((tab, conversation)) => do
       let fields = [("event", Just("react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
-      let (_, changed) = App.Live.Chat.handled(statusesFor(request), userFor(request), tab, fields)
+      let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, fields)
       return failed(request, 422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
 
       hubFor(request).changed("api", "everyone")
@@ -305,13 +315,54 @@ foul statusSet(request) do
     Ok((tab, conversation)) => do
       let text = request.field("text").or("").trim.replace("\n", " ").take(STATUS_LONGEST)
       let asked = request.field("seconds").or("").to(Integer).or(STATUS_SECONDS)
-      let seconds = asked < 1 || asked > STATUS_MOST then STATUS_SECONDS else asked
+      let seconds = asked < 1 || asked > STATUS_SECONDS then STATUS_SECONDS else asked
       App.Live.Chat.noting(statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
       hubFor(request).changed("api", "everyone")
       let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
       return request.json(answer)
     end
   end
+end
+
+# A bot's socket: what it may see happening, told as it happens
+# (App.Live.Events), until it goes away.
+#
+# The bot says how far it has already seen — `?after=<cursor>`, the newest
+# cursor it was told — and is answered with what has happened since and then
+# everything as it happens, one JSON telling a message:
+#
+#   {"kind":"reset","cursor":41}                          start again: one
+#                                                         full look, then
+#                                                         carry on from 41
+#   {"kind":"message","cursor":42,"organization":"acme",
+#    "place":"channels/general","thread":"","message":"m7",
+#    "at":1729…}                                          a message said
+#   {"kind":"answer",…,"place":"dm/u1791","thread":"m7",
+#    "message":"m9",…}                                    a form answered
+#   {"kind":"command",…}                                  a command used
+#   {"kind":"ready","cursor":44}                          the catch-up ends
+#
+# A message, a form answered or a command used is fetched through the API as
+# ever (`history`, `answers`, `invocations`), each telling only where. The
+# token is the bot's own — in the Authorization header, or `?token=` for a
+# client that cannot send one (the `botsocket` pipeline).
+evented : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
+foul evented(request, socket) do
+  let bot = userFor(request)
+  let mine : [Organization] = App.Live.Chat.organizations(bot)
+  let ids : [String] = mine.map { |each| each.id }
+  let after = request.query("after").or("0").to(Integer).or(0)
+  let seat = "${Metro.Id.serial()}"
+  eventsFor(request).joined(seat, bot.id, bot.name, ids, after, socket)
+  loop do
+    match socket.receiveMessage do
+      Ok(CloseMessage(_, _)) => break
+      Ok(Text(_)) => Void
+      Ok(_) => Void
+      Error(_) => break
+    end
+  end
+  eventsFor(request).left(seat)
 end
 
 private do
