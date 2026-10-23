@@ -644,11 +644,7 @@ private do
   end
 
   summed : {String: Integer} -> Integer
-  let summed(counts) = counts.entries.reduce(0) do |sum, entry|
-    match entry do
-      (_, count) => sum + count
-    end
-  end
+  let summed(counts) = counts.values.reduce(0) { |sum, count| sum + count }
 
   # A tab with nothing open over the conversation: no form, no dialog, no
   # message left from the last thing tried.
@@ -988,18 +984,12 @@ private do
     let refused = Tab { ...settled(tab), dialog: "profile" }
     match Users.member(user.id) do
       Ok(Just(stored)) => do
-        let given = App.Models.User.DETAILS.map do |entry|
-          match entry do
-            (column, _, _) => do
-              let kept = stored.locked?(column)
-              (column, kept then stored.detail(column) else field(entries, column).trim)
-            end
-          end
+        let given = App.Models.User.DETAILS.map do |column, _label, _longest|
+          let kept = stored.locked?(column)
+          (column, kept then stored.detail(column) else field(entries, column).trim)
         end
-        let problems = App.Models.User.DETAILS.flatMap do |entry|
-          match entry do
-            (column, label, longest) => faults(column, label, longest, chosen(given, column))
-          end
+        let problems = App.Models.User.DETAILS.flatMap do |column, label, longest|
+          faults(column, label, longest, chosen(given, column))
         end
         return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
@@ -1026,11 +1016,7 @@ private do
   # What was given for one detail.
   chosen : [(String, String)] -> String -> String
   let chosen(pairs, column) = pairs
-    .flatMap do |pair|
-      match pair do
-        (key, value) => key == column then [value] else []
-      end
-    end
+    .flatMap { |key, value| key == column then [value] else [] }
     .first
     .or("")
 

@@ -354,7 +354,7 @@ private do
   # One named thing a form sent; "" when it did not.
   sent : [(String, String?)] -> String -> String
   let sent(entries, name) do
-    match entries.find { |entry| match entry do (key, _) => key == name end } do
+    match entries.find { |key, _| key == name } do
       Just((_, Just(value))) => value.trim
       _ => ""
     end

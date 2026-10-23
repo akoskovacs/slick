@@ -11,6 +11,64 @@ main for now — with Harmat v0.2.0 and Metro v0.1.0 (see [package.kex](../packa
 [tey.lock](../tey.lock)). The entries below are the history of getting
 there.
 
+## Migration check — 2026-10-23
+
+Checked against Kex main `c80e095`, built in a separate worktree: #556, #557
+(the fixes for the 2026-10-22 list), #564 and #566 on top of `6dbeda7`.
+Still 0.4.0-rc.3, still untagged.
+
+Adopted in Slick:
+
+- **`seeded`, not `sown`,** in `main.kex` (#557: the stdlib's
+  `Random.seeded/1` took the capability context away from it — #494).
+  `tey run seed` plants the seeds through it.
+- **Block parameters spread tuples** (#557, #537): every `match entry do
+  (a, b) => … end` over `STATUSES`, `KNOWN` and `DETAILS` is a `{ |a, b| … }`
+  block now, and a `reduce` destructures its entry with `let (a, b) = entry`.
+  `summed` adds up `counts.values`.
+- **File sizes** follow #564: `scaled.to(String, Number.format`#.#`)`,
+  which answers `String?`; `readable`, `places:` and `trim:` are gone.
+- **`page` is the layout template itself,** not a function calling a
+  `layout` value — see the first bug below.
+
+New in Kex main, met here and worked around:
+
+- **A top-level value holding a function loses to a prelude function of
+  the same name.** #564 added `NumberFormat.layout`; Slick's
+  `let layout = Template.html(…)` called as `layout(live)` then type-checks
+  as that (`declared to return String but body returns Result<(Integer,
+  Integer, Integer), (Integer, String)>`). A `let layout(body) = …` function
+  is unaffected. Reduced:
+
+  ```kex
+  let layout = { |body| "<main>${body}</main>" }
+
+  page : String -> String
+  let page(live) = layout(live)
+
+  main do
+    IO.printLine(page("x"))
+  end
+  ```
+
+- **Two `_` parameters break the BEAM build** — of a function, a lambda
+  or a block, spread from a tuple or not: `let seventh(_: Integer, _:
+  Integer) = 7`, `{ |_, _| 0 }` and `[1, 2].reduce(0) { |_, _| 7 }` all fail
+  with `duplicate variable '_'` from erlc. Already so on 0.4.0-rc.2; met
+  now because #557 lets blocks spread tuples. The walker runs them all, and
+  patterns are fine: `let (a, _, _)`, a `(a, _, _) =>` arm, `let [a, _, _]`
+  and `[_, _ | rest]` build. `described` uses `_label, _longest` until it
+  is fixed.
+
+Still open: `main` is reserved as a local and `slot` as a field (a
+decision, not a bug). #557 also fixed a capability beside a module of the
+same name, so Metro can make `Metro.Storage.Service` `Metro.Storage`
+again, and opencode-bot can name `failureOf` `failed`; neither is done
+here.
+
+Validation: Slick builds and passes all 13 specs; the compiled entrypoint
+seeds a temporary SQLite database and the server passes `script/smoke.sh`.
+
 ## Migration check — 2026-10-22
 
 Checked against local Kex main `6dbeda7` (0.4.0-rc.3, with kexhq/kex#555),
@@ -351,11 +409,12 @@ below.
 
 | Where | Now | Because | Rather |
 | --- | --- | --- | --- |
-| Metro | `Metro.Storage.Service` capability | #492 | `Metro.Storage` |
+| Metro | `Metro.Storage.Service` capability | #492; fixed by kexhq/kex#557 | `Metro.Storage` |
 | Metro | `Metro.Storage.folder()` | ENV is effectful in a constant | a `ROOT` constant, if config may be read once |
 | Harmat | `Harmat.Logger` (logger.kex) beside `Harmat.Log` (log.kex) | a capability is found by its file; and 1 | one `Harmat.Log` |
-| opencode-bot `local.kex` | `failureOf` | #494 | `failed` |
+| opencode-bot `local.kex` | `failureOf` | #494; fixed by kexhq/kex#557 | `failed` |
 | Harmat | `Database.ongoing`, `begun`, `ended` | 4 | private to Harmat, if the store's connection can be given the transaction another way |
 | Slick `app/views/chat.kex` | `Detail.key` | `slot` is a keyword | `slot` or `column` |
 | Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
 | Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |
+| Slick `app/live/chat.kex` | `\|column, _label, _longest\|` | two `_` parameters fail on BEAM | `\|column, _, _\|` |

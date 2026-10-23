@@ -31,9 +31,8 @@ end
 # is left as typed.
 let shown(body: String) -> String do
   KNOWN.reduce(body) do |text, entry|
-    match entry do 
-      (code, emoji) => text.replace(":${code}:", emoji)
-    end
+    let (code, emoji) = entry
+    text.replace(":${code}:", emoji)
   end
 end
 

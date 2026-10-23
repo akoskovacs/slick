@@ -242,7 +242,10 @@ record Chip do
   own? : Bool
 end
 
-let layout = Template.html(Kex.embed("layouts/application.html.ket"))
+# The document: head, who is signed in, the live region, and Metro's script.
+# The live region is all of it, the bar across the top included: the name
+# and status there change like everything else.
+let page = Template.html(Kex.embed("layouts/application.html.ket"))
 let frame = Template.html(Kex.embed("chat/index.html.ket"))
 let entryPartial = Template.html(Kex.embed("chat/_entry.html.ket"))
 let groupSettingsPartial = Template.html(Kex.embed("chat/_group_settings.html.ket"))
@@ -275,12 +278,6 @@ let composerPartial = Template.html(Kex.embed("chat/_composer.html.ket"))
 let attachmentPartial = Template.html(Kex.embed("chat/_attachment.html.ket"))
 let queuedPartial = Template.html(Kex.embed("chat/_queued.html.ket"))
 let filePartial = Template.html(Kex.embed("chat/_file.html.ket"))
-
-# The document: head, who is signed in, the live region, and Metro's script.
-# The live region is all of it, the bar across the top included: the name
-# and status there change like everything else.
-page : String -> String
-let page(live) = layout(live)
 
 # The live region for somebody who is in no organization yet.
 welcome : Tab -> User -> String
@@ -661,21 +658,9 @@ private do
   asking : Tab -> Organization -> [User] -> [User] -> {String: [String]} -> User -> [Team] -> Conversation? -> String
   let asking(tab, organization, people, bots, operators, me, teams, conversation) do
     if tab.dialog == "status"
-      let presets = App.Models.Emoji.STATUSES.map do |entry|
-        match entry do
-          (glyph, words) => preset(glyph, words)
-        end
-      end
-      let statusGlyphs = App.Models.Emoji.STATUSES.map do |entry|
-        match entry do
-          (glyph, _) => glyph
-        end
-      end
-      let knownGlyphs = App.Models.Emoji.KNOWN.map do |entry|
-        match entry do
-          (_, glyph) => glyph
-        end
-      end
+      let presets = App.Models.Emoji.STATUSES.map { |glyph, words| preset(glyph, words) }
+      let statusGlyphs = App.Models.Emoji.STATUSES.map { |glyph, _| glyph }
+      let knownGlyphs = App.Models.Emoji.KNOWN.map { |_, glyph| glyph }
       let options = ([""] + statusGlyphs + knownGlyphs).map do |glyph|
         choice(glyph, glyph == me.statusEmoji)
       end
@@ -683,18 +668,16 @@ private do
     end
 
     if tab.dialog == "profile"
-      let inputs = App.Models.User.DETAILS.map do |entry|
-        match entry do
-          (column, label, longest) => detailPartial(Detail {
-            key: column,
-            caption: label,
-            worth: me.detail(column),
-            longest: "${longest}",
-            hint: column == "time_zone" then "Europe/Budapest" else "",
-            long?: column == "bio",
-            locked?: me.locked?(column)
-          })
-        end
+      let inputs = App.Models.User.DETAILS.map do |column, label, longest|
+        detailPartial(Detail {
+          key: column,
+          caption: label,
+          worth: me.detail(column),
+          longest: "${longest}",
+          hint: column == "time_zone" then "Europe/Budapest" else "",
+          long?: column == "bio",
+          locked?: me.locked?(column)
+        })
       end
       return detailsPartial(
         inputs.join("\n"),
@@ -883,13 +866,11 @@ private do
   picked : String -> String
   let picked(target) do
     App.Models.Emoji.KNOWN
-      .map do |entry|
-        match entry do
-          (code, glyph) => [
-            "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\"",
-            " data-target=\"${target}\" title=\":${code}:\">${glyph}</button>"
-          ].join("")
-        end
+      .map do |code, glyph|
+        [
+          "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\"",
+          " data-target=\"${target}\" title=\":${code}:\">${glyph}</button>"
+        ].join("")
       end
       .join("")
   end
