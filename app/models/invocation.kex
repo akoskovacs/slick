@@ -15,6 +15,6 @@ record Invocation do
   command : String
   # What was written after it: "auto", or "".
   arguments : String = ""
+  # Milliseconds since 1970.
   invokedAt : Integer = 0
-  invokedOn : String = ""
 end

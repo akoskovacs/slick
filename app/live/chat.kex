@@ -94,6 +94,9 @@ foul markup(statuses, user, tab) do
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now)
         .map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
+      let operators : {String: [String]} = bots.reduce({}) { |found, bot|
+        found.put(bot.id, DB.Repositories.BotOperators.listed(bot.id).or([]))
+      }
       let roles = Grants.over("organization", organization.id).or([])
         .filter { |grant| grant.subjectType == "user" }
         .reduce({}) { |found, grant| found.put(grant.subjectId, grant.role) }
@@ -114,6 +117,7 @@ foul markup(statuses, user, tab) do
             people,
             online,
             bots,
+            operators,
             drafts,
             unread,
             App.Views.Chat.Cabinet {},
@@ -166,6 +170,7 @@ foul markup(statuses, user, tab) do
             people,
             online,
             bots,
+            operators,
             drafts,
             unread,
             cabinet,
@@ -223,6 +228,7 @@ foul handled(events, statuses, user, tab, entries) do
     "thread" => threaded(user, tab, field(entries, "message"))
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
     "profile" => profiled(user, tab, field(entries, "user"))
+    "bot-operators" => operatorsSet(user, tab, field(entries, "bot"), repeated(entries, "operator"))
     "bot-access" => botAccessSet(user, tab, field(entries, "access"))
     "settings" => (Tab { ...settled(tab), thread: "", profile: "", team: "", view: "settings" }, false)
     "settings-set" => settingsSet(user, tab, entries)
@@ -556,8 +562,7 @@ private do
       userId: user.id,
       command: command.name,
       arguments: rest.drop(1 + name.count).trim,
-      invokedAt: moment,
-      invokedOn: "${DateTime.now()}"
+      invokedAt: moment
     }
     let kept : Result<Integer, String> = Harmat.Database.transaction do
       DB.Repositories.Invocations.recorded(used).try
@@ -810,6 +815,28 @@ private do
         match App.Services.Bots.removed(user, organization.id, id) do
           Ok(true) => return (Tab { ...refused, notice: "${named} was removed." }, true)
           Ok(false) => return (Tab { ...refused, dialogProblem: "That is not one of your bots, or of this organization's." }, false)
+          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
+        end
+      end
+    end
+  end
+
+  foul operatorsSet(user: User, tab: Tab, botId: String, operators: [String]) -> (Tab, Bool) do
+    let refused = Tab { ...tab, dialog: "bots", dialogProblem: "" }
+    match currentOrganization(user, tab) do
+      None => return (tab, false)
+      Just(organization) => do
+        if !manageable(user, organization).any? { |bot| bot.id == botId }
+          return (Tab { ...refused, dialogProblem: "Only the bot owner or a workspace administrator can change its operators." }, false)
+        end
+        let roster : [String] = Memberships.roster(organization.id).or([])
+        let people = Users.everyone.or([])
+          .filter { |person| roster.contains?(person.id) && !person.bot? }
+        if operators.any? { |id| !people.any? { |person| person.id == id } }
+          return (Tab { ...refused, dialogProblem: "Choose people in this workspace." }, false)
+        end
+        match DB.Repositories.BotOperators.replaced(botId, operators) do
+          Ok(_) => return (Tab { ...refused, notice: "Bot operators saved." }, true)
           Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
         end
       end

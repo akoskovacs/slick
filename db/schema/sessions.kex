@@ -9,10 +9,10 @@ let definition = Table.define :sessions do |t|
   t.text(:token_digest, primaryKey: true)
   t.text(:user_id)
   t.bigint(:expires_at)
-  t.text(:created_at)
+  t.bigint(:created_at)
 end
 
 let tokenDigest = DB.Schema.Sessions.definition.textColumn(:token_digest)
 let userId = DB.Schema.Sessions.definition.textColumn(:user_id)
 let expiresAt = DB.Schema.Sessions.definition.wholeColumn(:expires_at)
-let createdAt = DB.Schema.Sessions.definition.textColumn(:created_at)
+let createdAt = DB.Schema.Sessions.definition.wholeColumn(:created_at)

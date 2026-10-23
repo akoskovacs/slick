@@ -3,7 +3,7 @@ params: [bubble: Bubble, chips: String, offers: String, attached: String]
 ---
 <article class="message<% if bubble.own? %> own<% end %><% if bubble.continued? %> continued<% end %>" id="<%= bubble.anchor %>">
 <% if bubble.continued? %>
-  <time class="gutter"><%= bubble.stamp %></time>
+  <time class="gutter" data-live-hook="Moment" data-at="<%= bubble.at %>" data-shows="clock"><%= bubble.stamp %></time>
 <% else %>
   <button type="button" class="avatar tint-<%= bubble.tint %>"
     tabindex="-1" aria-hidden="true"
@@ -19,7 +19,7 @@ params: [bubble: Bubble, chips: String, offers: String, attached: String]
     <% if !bubble.badged.empty? %>
       <span class="flag"><%= bubble.badged %></span>
     <% end %>
-    <time><%= bubble.stamp %></time></p>
+    <time data-live-hook="Moment" data-at="<%= bubble.at %>" data-shows="clock"><%= bubble.stamp %></time></p>
   <% end %>
   <div class="body"><%== bubble.content %></div>
   <% if !attached.empty? %>

@@ -75,7 +75,7 @@ foul founded(
     team_id: teamId,
     bot_access: botAccess,
     created_by: by,
-    created_at: "${DateTime.utcNow()}"
+    created_at: Metro.Clock.milliseconds()
   }
   let made : Result<Conversation, String> = Database.transaction do
     Database.insert(DB.Schema.Conversations)
@@ -121,7 +121,7 @@ foul among(organizationId: String, people: [String], by: String) -> Result<Conve
         organization_id: organizationId,
         access: "private",
         created_by: by,
-        created_at: "${DateTime.utcNow()}"
+        created_at: Metro.Clock.milliseconds()
       }
       let made : Result<Conversation, String> = Database.transaction do
         Database.insert(DB.Schema.Conversations)
@@ -223,7 +223,7 @@ foul between(organizationId: String, one: String, other: String) -> Result<Conve
         first_user: first,
         second_user: second,
         created_by: one,
-        created_at: "${DateTime.utcNow()}"
+        created_at: Metro.Clock.milliseconds()
       }
       return Database.insert(DB.Schema.Conversations)
         .values(row)

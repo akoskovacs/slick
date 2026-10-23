@@ -51,6 +51,17 @@ record Robot do
   spot : String
   # Whose it is, in words.
   belonging : String = ""
+  # The people who may be its operators, as the choices of them, and how
+  # many are now.
+  operators : String = ""
+  operated : Integer = 0
+end
+
+# Somebody who may be a bot's operator, in the bots dialog.
+record Operator do
+  key : String
+  caption : String
+  chosen? : Bool = false
 end
 
 # One organization in the rail.
@@ -79,6 +90,9 @@ record Bubble do
   # The author's id, to open their profile with.
   writer : String = ""
   stamp : String
+  # The moment it shows, in milliseconds since 1970: shown in the
+  # viewer's own time by the `Moment` hook, and `stamp` until then.
+  at : Integer = 0
   # The message as markup, already escaped: `App.Helpers.RichText.html`.
   content : String
   own? : Bool
@@ -154,6 +168,9 @@ record Enclosure do
   # Who sent it, and when.
   sender : String = ""
   stamp : String = ""
+  # The moment it shows, in milliseconds since 1970: shown in the
+  # viewer's own time by the `Moment` hook, and `stamp` until then.
+  at : Integer = 0
 end
 
 # The files of the conversation a tab shows: those sent into it, newest
@@ -173,6 +190,9 @@ record Usage do
   extra : String = ""
   addressee : String
   stamp : String
+  # The moment it shows, in milliseconds since 1970: shown in the
+  # viewer's own time by the `Moment` hook, and `stamp` until then.
+  at : Integer = 0
 end
 
 # What somebody is in the middle of, under the conversation.
@@ -231,6 +251,7 @@ let teamOptionPartial = Template.html(Kex.embed("chat/_team_option.html.ket"))
 let headingPartial = Template.html(Kex.embed("chat/_heading.html.ket"))
 let badgePartial = Template.html(Kex.embed("chat/_badge.html.ket"))
 let botPartial = Template.html(Kex.embed("chat/_bot.html.ket"))
+let operatorPartial = Template.html(Kex.embed("chat/_operator.html.ket"))
 let botsPartial = Template.html(Kex.embed("chat/_bots.html.ket"))
 let dialogPartial = Template.html(Kex.embed("chat/_dialog.html.ket"))
 let channelPartial = Template.html(Kex.embed("chat/_channel.html.ket"))
@@ -279,7 +300,8 @@ let welcome(tab, user) = welcomePartial(
 # replies — or empty.
 #
 # `bots` are the ones this person may look after here — the organization's
-# and their own — and only asked for while their dialog is open.
+# and their own — and only asked for while their dialog is open;
+# `operators` the ids of each one's operators, by its id.
 #
 # `drafts` are what this person has written and not sent, anywhere, and
 # `unread` how much they have not read; `cabinet` the conversation's files.
@@ -298,6 +320,7 @@ let index(
   people: [User],
   online: [String],
   bots: [User],
+  operators: {String: [String]},
   drafts: [Draft],
   unread: Unread,
   cabinet: Cabinet,
@@ -430,7 +453,7 @@ let index(
     teamLines.join("\n"),
     topbar(me, true),
     open + beside,
-    asking(tab, organization, people, bots, me, teams, conversation),
+    asking(tab, organization, people, bots, operators, me, teams, conversation),
     place,
     caption
   )
@@ -635,8 +658,8 @@ private do
     .or(otherwise)
 
   # The dialog a tab has open, if any.
-  asking : Tab -> Organization -> [User] -> [User] -> User -> [Team] -> Conversation? -> String
-  let asking(tab, organization, people, bots, me, teams, conversation) do
+  asking : Tab -> Organization -> [User] -> [User] -> {String: [String]} -> User -> [Team] -> Conversation? -> String
+  let asking(tab, organization, people, bots, operators, me, teams, conversation) do
     if tab.dialog == "status"
       let presets = App.Models.Emoji.STATUSES.map do |entry|
         match entry do
@@ -684,12 +707,24 @@ private do
     if tab.dialog == "bots"
       let rows = bots.map do |bot|
         let shared = !bot.ownerOrganizationId.empty?
+        let chosen = operators.get(bot.id).or([])
+        let choices = people
+          .filter { |person| !person.bot? }
+          .map do |person|
+            operatorPartial(Operator {
+              key: person.id,
+              caption: person.shown,
+              chosen?: chosen.contains?(person.id)
+            })
+          end
         botPartial(Robot {
           key: bot.id,
           caption: bot.shown,
           here?: shared || people.any? { |person| person.id == bot.id },
           spot: organization.name,
-          belonging: shared then "belongs to ${organization.name}" else "yours"
+          belonging: shared then "belongs to ${organization.name}" else "yours",
+          operators: choices.join("\n"),
+          operated: chosen.count
         })
       end
       return botsPartial(
@@ -1104,8 +1139,17 @@ private do
     picture?: file.picture?,
     glimpse: glimpse,
     sender: shownAs(people, file.userId, "Someone"),
-    stamp: file.uploadedOn.take(16).replace("T", " ")
+    stamp: dated(file.uploadedAt),
+    at: file.uploadedAt
   }
+
+  # A moment as the time of day, "14:51", and as a day and its time,
+  # "2026-10-21 14:51": in UTC, until the page shows it in the viewer's
+  # own time (`Moment`, in app.js).
+  clocked : Integer -> String
+  let clocked(at) = "${DateTime.fromEpochSeconds(at / 1000)}".drop(11).take(5)
+  dated : Integer -> String
+  let dated(at) = "${DateTime.fromEpochSeconds(at / 1000)}".take(16).replace("T", " ")
 
   # What somebody's chat with themselves is for, at the start of it.
   let soloIntro = Kex.embed("chat/_solo.html")
@@ -1166,7 +1210,8 @@ private do
     verb: used.command,
     extra: used.arguments,
     addressee: "@${shownAs(room.people, used.botId, "a bot")}",
-    stamp: used.invokedOn.drop(11).take(5)
+    stamp: clocked(used.invokedAt),
+    at: used.invokedAt
   })
 
   # `inThread?` is whether it is shown in the thread pane, where a message
@@ -1215,7 +1260,8 @@ private do
         initial: author.take(1).upperCase,
         writer: message.userId,
         tint: "${BEAM.erlang.phash2(message.userId, 8)}",
-        stamp: message.sentOn.drop(11).take(5),
+        stamp: clocked(message.sentAt),
+        at: message.sentAt,
         content: App.Helpers.RichText.mentioned(
           App.Helpers.RichText.shown(message.body, message.id, given),
           room.people.map { |person| person.shown } + room.teams.map { |team| team.handle },

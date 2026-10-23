@@ -19,7 +19,8 @@ record Grant do
   resourceId : String = ""
   # "admin", "member" or "read-only".
   role : String = "member"
-  grantedAt : String = ""
+  # Milliseconds since 1970.
+  grantedAt : Integer = 0
 end
 
 let ROLES = ["admin", "member", "read-only"]

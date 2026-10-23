@@ -15,7 +15,6 @@ let definition = Table.define :invocations do |t|
   t.text(:command)
   t.text(:arguments, default: "")
   t.bigint(:invoked_at)
-  t.text(:invoked_on)
 end
 
 let id = DB.Schema.Invocations.definition.textColumn(:id)

@@ -10,7 +10,7 @@ foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<In
     token_digest: tokenDigest,
     user_id: userId,
     expires_at: expiresAt,
-    created_at: "${DateTime.utcNow()}"
+    created_at: Metro.Clock.milliseconds()
   }
   return Database.insert(DB.Schema.Sessions)
     .values(row)

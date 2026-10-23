@@ -14,5 +14,5 @@ params: [file: Enclosure]
   <p class="about">
     <a href="<%= file.link %>" target="_blank" rel="noopener"><strong><%= file.caption %></strong></a>
   </p>
-  <p class="meta"><%= file.sender %> · <%= file.stamp %> · <%= file.weight %></p>
+  <p class="meta"><%= file.sender %> · <time data-live-hook="Moment" data-at="<%= file.at %>" data-shows="day"><%= file.stamp %></time> · <%= file.weight %></p>
 </li>

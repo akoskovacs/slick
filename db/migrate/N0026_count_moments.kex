@@ -1,0 +1,72 @@
+# Moments as milliseconds since 1970, and flags as booleans.
+#
+# `created_at` and `granted_at` were ISO text; they become `bigint`, as
+# `sent_at` always was: each value is made its number where it is, then
+# the column a number (DB.Migrate.Moments). `granted_at` loses its ""
+# default first: PostgreSQL makes no number of a text default, not even
+# "0", and it is given 0 once it is one.
+#
+# `sent_on`, `invoked_on` and `uploaded_on` said again, as text in this
+# server's time, the moment beside them in `sent_at`, `invoked_at` and
+# `uploaded_at`; they are taken away, and the time shown is worked out from
+# the number. A rollback writes them back from it, in UTC.
+#
+# `users.show_nickname` ("yes" or "") becomes the boolean `nickname_shown`,
+# the name the field always had. `teams.managed` said only whether the team
+# has an `external_id`, and goes.
+module DB.Migrate.N0026CountMoments
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [changeColumn, addColumn, removeColumn, execute]
+using Harmat.Sql, only: [sql]
+using DB.Migrate.Moments, only: [counted, written, writtenFrom]
+
+let change = Migration.define :count_moments, follows: :create_bot_operators do
+  execute(counted(:users, :created_at), undo: written(:users, :created_at))
+  changeColumn(:users,
+    from: { |t| t.text(:created_at) },
+    to: { |t| t.bigint(:created_at) })
+  execute(counted(:sessions, :created_at), undo: written(:sessions, :created_at))
+  changeColumn(:sessions,
+    from: { |t| t.text(:created_at) },
+    to: { |t| t.bigint(:created_at) })
+  execute(counted(:organizations, :created_at), undo: written(:organizations, :created_at))
+  changeColumn(:organizations,
+    from: { |t| t.text(:created_at) },
+    to: { |t| t.bigint(:created_at) })
+  execute(counted(:conversations, :created_at), undo: written(:conversations, :created_at))
+  changeColumn(:conversations,
+    from: { |t| t.text(:created_at) },
+    to: { |t| t.bigint(:created_at) })
+  execute(counted(:teams, :created_at), undo: written(:teams, :created_at))
+  changeColumn(:teams,
+    from: { |t| t.text(:created_at) },
+    to: { |t| t.bigint(:created_at) })
+
+  changeColumn(:grants,
+    from: { |t| t.text(:granted_at, default: "") },
+    to: { |t| t.text(:granted_at) })
+  execute(counted(:grants, :granted_at), undo: written(:grants, :granted_at))
+  changeColumn(:grants,
+    from: { |t| t.text(:granted_at) },
+    to: { |t| t.bigint(:granted_at, default: 0) })
+
+  execute(sql`UPDATE messages SET sent_on = sent_on WHERE 1 = 0`,
+    undo: writtenFrom(:messages, :sent_on, :sent_at))
+  removeColumn(:messages) { |t| t.text(:sent_on, default: "") }
+  execute(sql`UPDATE invocations SET invoked_on = invoked_on WHERE 1 = 0`,
+    undo: writtenFrom(:invocations, :invoked_on, :invoked_at))
+  removeColumn(:invocations) { |t| t.text(:invoked_on, default: "") }
+  execute(sql`UPDATE files SET uploaded_on = uploaded_on WHERE 1 = 0`,
+    undo: writtenFrom(:files, :uploaded_on, :uploaded_at))
+  removeColumn(:files) { |t| t.text(:uploaded_on, default: "") }
+
+  addColumn(:users) { |t| t.boolean(:nickname_shown, default: false) }
+  execute(sql`UPDATE users SET nickname_shown = TRUE WHERE show_nickname = 'yes'`,
+    undo: sql`UPDATE users SET show_nickname = 'yes' WHERE nickname_shown IN ('TRUE', '1')`)
+  removeColumn(:users) { |t| t.text(:show_nickname, default: "") }
+
+  execute(sql`UPDATE teams SET managed = managed WHERE 1 = 0`,
+    undo: sql`UPDATE teams SET managed = 'yes' WHERE external_id != ''`)
+  removeColumn(:teams) { |t| t.text(:managed, default: "") }
+end

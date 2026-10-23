@@ -1,0 +1,9 @@
+---
+params: [operator: Operator]
+---
+<li>
+  <label class="choice">
+    <input type="checkbox" name="operator" value="<%= operator.key %>"<% if operator.chosen? %> checked<% end %>>
+    <%= operator.caption %>
+  </label>
+</li>

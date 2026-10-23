@@ -68,7 +68,9 @@ Still needed or deliberately retained:
 - Inserts stay explicit maps: `record(model, extra)` hides which columns
   are written behind reflection, and the `managed`/`show_nickname`
   spellings it cannot keep had to be smuggled through `extra` anyway —
-  tried and backed out.
+  tried and backed out. (`show_nickname` is the boolean `nickname_shown`
+  since `count_moments`, the field's own name; `users.managed` is still
+  a list in text.)
 - **Block parameters do not spread tuples from module constants.**
   `pairs.map { |key, value| }` works in Kex's own `tuple_param_pattern`
   spec, over a literal — but over a module-level list

@@ -23,7 +23,7 @@ foul formed(team: Team, by: String) -> Result<Team, String> do
     name: made.name,
     description: made.description,
     created_by: by,
-    created_at: "${DateTime.utcNow()}"
+    created_at: Metro.Clock.milliseconds()
   }
   let stored : Result<Team, String> = Database.transaction do
     Database.insert(DB.Schema.Teams)
@@ -64,7 +64,7 @@ end
 # Renames a team and says again what it is for; whether there was such a
 # team that is not a sync's.
 foul revised(id: String, name: String, description: String) -> Result<Bool, String> do
-  return Database.within(DB.Schema.Teams.managed == "")
+  return Database.within(DB.Schema.Teams.externalId == "")
     .update(DB.Schema.Teams)
     .set({name: name, description: description})
     .where(DB.Schema.Teams.id == id)
@@ -98,7 +98,7 @@ end
 # back: from then on it is changed here again.
 foul managing(id: String, externalId: String) -> Result<Integer, String> do
   return Database.update(DB.Schema.Teams)
-    .set({external_id: externalId, managed: externalId.empty? then "" else "yes"})
+    .set({external_id: externalId})
     .where(DB.Schema.Teams.id == id)
     .run
 end
@@ -114,9 +114,15 @@ foul rosters(teamIds: [String]) -> Result<{String: [String]}, String> do
 end
 
 private do
-  # Teams with their members filled in.
+  # Teams with their members filled in, and whether a sync has each.
   foul membered(teams: [Team]) -> Result<[Team], String> do
     let byTeam : {String: [String]} = rosters(teams.map { |team| team.id }).try
-    return Ok(teams.map { |team| Team { ...team, members: byTeam.get(team.id).or([]) } })
+    return Ok(teams.map do |team|
+      Team {
+        ...team,
+        members: byTeam.get(team.id).or([]),
+        managed?: !team.externalId.empty?
+      }
+    end)
   end
 end

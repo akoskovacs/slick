@@ -1,0 +1,13 @@
+module DB.Migrate.N0025CreateBotOperators
+
+using Harmat.Migration, as: Migration
+using Harmat.Migration, only: [createTable, addIndex]
+
+let change = Migration.define :create_bot_operators, follows: :add_bot_access do
+  createTable(:bot_operators) do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:bot_id)
+    t.text(:user_id)
+  end
+  addIndex(:bot_operators, [:bot_id])
+end

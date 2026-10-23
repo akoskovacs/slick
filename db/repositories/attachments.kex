@@ -15,8 +15,7 @@ foul uploaded(userId: String, blob: Metro.Storage.Blob) -> Result<Attachment, St
     contentType: blob.contentType,
     byteSize: blob.byteSize,
     checksum: blob.checksum,
-    uploadedAt: Metro.Clock.milliseconds(),
-    uploadedOn: "${DateTime.now()}"
+    uploadedAt: Metro.Clock.milliseconds()
   }
   let row = {
     id: file.id,
@@ -25,8 +24,7 @@ foul uploaded(userId: String, blob: Metro.Storage.Blob) -> Result<Attachment, St
     content_type: file.contentType,
     byte_size: file.byteSize,
     checksum: file.checksum,
-    uploaded_at: file.uploadedAt,
-    uploaded_on: file.uploadedOn
+    uploaded_at: file.uploadedAt
   }
   return Database.insert(DB.Schema.Files)
     .values(row)

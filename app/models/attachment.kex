@@ -13,9 +13,8 @@ record Attachment do
   contentType : String
   byteSize : Integer
   checksum : String = ""
+  # Milliseconds since 1970.
   uploadedAt : Integer = 0
-  # When, in this server's time, as messages say it: "2026-10-15T10:11:…".
-  uploadedOn : String = ""
 end
 
 make Attachment do

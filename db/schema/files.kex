@@ -16,7 +16,6 @@ let definition = Table.define :files do |t|
   t.bigint(:byte_size)
   t.text(:checksum)
   t.bigint(:uploaded_at)
-  t.text(:uploaded_on)
 end
 
 let id = DB.Schema.Files.definition.textColumn(:id)

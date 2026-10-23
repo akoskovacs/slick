@@ -18,6 +18,7 @@ record Team do
   description : String = ""
   # The id of the group a sync brought it in from; "" for a team made here.
   externalId : String = ""
+  # Whether a sync has it: it has an `externalId`.
   managed? : Bool = false
   # The ids of the people in it.
   members : [String] = []

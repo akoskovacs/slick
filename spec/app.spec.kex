@@ -19,7 +19,7 @@ describe("Slick") do
   it("has one migration history that matches db/schema, all of it reversible") do
     Assert.equal(Harmat.Table.drift(DB.Schema.tables, DB.Migrations.all), [])
     Assert.equal(Harmat.Migration.irreversible(DB.Migrations.all), [])
-    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("add_bot_access"))
+    Assert.equal(Harmat.Migration.head(DB.Migrations.all), Ok("count_moments"))
   end
 
   it("turns shortcodes into emoji") do

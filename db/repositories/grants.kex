@@ -16,7 +16,7 @@ let key(subjectType, subjectId, resourceType, resourceId) = "${subjectType}:${su
 # same resource.
 foul granted(grant: Grant) -> Result<Grant, String> do
   let id = key(grant.subjectType, grant.subjectId, grant.resourceType, grant.resourceId)
-  let stored = Grant { ...grant, id: id, grantedAt: "${DateTime.utcNow()}" }
+  let stored = Grant { ...grant, id: id, grantedAt: Metro.Clock.milliseconds() }
   let made : Result<Grant, String> = Database.transaction do
     Database.delete(DB.Schema.Grants).where(DB.Schema.Grants.id == id).run.try
     Database.insert(DB.Schema.Grants)
@@ -174,7 +174,7 @@ foul whenGranted(subjectType: String, subjectId: String, resourceType: String, r
     .where(DB.Schema.Grants.resourceId == resourceId)
     .first
   match found do
-    Ok(Just(row)) => return DateTime.parse(row.get("granted_at").or("")).map { |moment| moment.epochSeconds * 1000 }.or(0)
+    Ok(Just(row)) => return row.get("granted_at").or("0").to(Integer).or(0)
     _ => return 0
   end
 end

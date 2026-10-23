@@ -12,7 +12,7 @@ let definition = Table.define :grants do |t|
   t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
   t.text(:resource_id, default: "")
   t.text(:role, oneOf: ["admin", "member", "read-only"])
-  t.text(:granted_at, default: "")
+  t.bigint(:granted_at, default: 0)
 end
 
 let id = DB.Schema.Grants.definition.textColumn(:id)

@@ -149,7 +149,8 @@ let heard?(event, bot, name, organizations) do
 end
 
 # An event as the bot told of it is shown it: where, as the API takes it,
-# and never more than that.
+# how much of it the bot may read there ("all" in a private chat), and
+# never more than that.
 told : Seat -> Event -> String
 let told(seat, event) do
   let fields : {String: Any} = {
@@ -159,7 +160,8 @@ let told(seat, event) do
     "place": placed(event, seat.bot),
     "thread": event.thread,
     "message": event.message,
-    "at": event.at
+    "at": event.at,
+    "access": event.first != "" then "all" else event.botAccess
   }
   JSON.stringify(fields)
 end

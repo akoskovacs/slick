@@ -71,7 +71,6 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     userId: userId,
     body: body,
     sentAt: moment,
-    sentOn: "${DateTime.now()}",
     parentId: parent
   }
   let row = {
@@ -80,7 +79,6 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     user_id: userId,
     body: body,
     sent_at: moment,
-    sent_on: message.sentOn,
     parent_id: parent
   }
   # A reply and its thread's count change together, or not at all.

@@ -1,0 +1,105 @@
+# Moments written as text — "2026-10-11T14:25:35.463857625Z" — turned into
+# milliseconds since 1970 by the database itself, and back, for a migration
+# that changes such a column into a whole number:
+#
+#   execute(DB.Migrate.Moments.counted(:users, :created_at),
+#     undo: DB.Migrate.Moments.written(:users, :created_at))
+#
+# SQLite and PostgreSQL share no function that reads a date, so the
+# calendar is worked out in plain arithmetic both of them do the same way —
+# SUBSTR, CAST, CASE and whole-number division — after Howard Hinnant's
+# `days_from_civil` and `civil_from_days`. A moment is read with its
+# offset, `Z` or `+02:00`, and to the millisecond; one with no fraction
+# is read too, and "" is 0. Written back, it is UTC, to the millisecond.
+#
+# The statements are built here rather than written as `sql` literals,
+# since each spells the same arithmetic out for one column.
+module DB.Migrate.Moments
+
+using Harmat.Sql, only: [Sql]
+using Harmat.Column, only: [named]
+
+# The column's text, each value made the whole number it says, still as
+# text: changing the column to a `bigint` afterwards keeps it.
+counted : Atom -> Atom -> Sql
+let counted(table, column) do
+  let name = named(column)
+  Sql { statement: "UPDATE ${named(table)} SET ${name} = CASE WHEN ${name} = '' THEN '0' ELSE CAST(${milliseconds(name)} AS TEXT) END" }
+end
+
+# The opposite: the column's whole numbers, as text, made moments again.
+written : Atom -> Atom -> Sql
+let written(table, column) do
+  let name = named(column)
+  Sql { statement: "UPDATE ${named(table)} SET ${name} = CASE WHEN ${name} = '0' THEN '' ELSE ${moment("CAST(${name} AS BIGINT)")} END" }
+end
+
+# The moment held in another whole-number column, as text: what a column
+# that is taken away held beside it, for a rollback to put back.
+writtenFrom : Atom -> Atom -> Atom -> Sql
+let writtenFrom(table, column, source) do
+  Sql { statement: "UPDATE ${named(table)} SET ${named(column)} = ${moment(named(source))}" }
+end
+
+private do
+  # A part of the text, as a number.
+  part : String -> Integer -> Integer -> String
+  let part(text, from, count) = "CAST(SUBSTR(${text}, ${from}, ${count}) AS BIGINT)"
+
+  # The milliseconds since 1970 a moment written as text says.
+  milliseconds : String -> String
+  let milliseconds(text) do
+    let year = part(text, 1, 4)
+    let month = part(text, 6, 2)
+    let day = part(text, 9, 2)
+    # The year counted from March, so that a leap day ends it.
+    let marchYear = "(${year} - CASE WHEN ${month} <= 2 THEN 1 ELSE 0 END)"
+    let era = "(${marchYear} / 400)"
+    let yearOfEra = "(${marchYear} - ${era} * 400)"
+    let dayOfYear = "((153 * ((${month} + 9) % 12) + 2) / 5 + ${day} - 1)"
+    let dayOfEra = "(${yearOfEra} * 365 + ${yearOfEra} / 4 - ${yearOfEra} / 100 + ${dayOfYear})"
+    let days = "(${era} * 146097 + ${dayOfEra} - 719468)"
+    let seconds = "(${days} * 86400 + ${part(text, 12, 2)} * 3600 + ${part(text, 15, 2)} * 60 + ${part(text, 18, 2)})"
+    # Three digits of it, made up with zeros: ".5Z" is 500.
+    let digits = "(REPLACE(${text}, 'Z', '') || '000')"
+    let fraction = "(CASE WHEN SUBSTR(${text}, 20, 1) = '.' THEN ${part(digits, 21, 3)} ELSE 0 END)"
+    let sign = "SUBSTR(${text}, LENGTH(${text}) - 5, 1)"
+    let hours = "CAST(SUBSTR(${text}, LENGTH(${text}) - 4, 2) AS BIGINT)"
+    let minutes = "CAST(SUBSTR(${text}, LENGTH(${text}) - 1, 2) AS BIGINT)"
+    # Read only where there is one: PostgreSQL refuses to make "5Z" a
+    # number, even one multiplied by 0.
+    let shift = "((${hours} * 60 + ${minutes}) * 60000)"
+    let offset = "(CASE WHEN ${sign} = '+' THEN ${shift} WHEN ${sign} = '-' THEN 0 - ${shift} ELSE 0 END)"
+    "(${seconds} * 1000 + ${fraction} - ${offset})"
+  end
+
+  # The moment some milliseconds since 1970 are, written as UTC text.
+  moment : String -> String
+  let moment(count) do
+    let z = "(${count} / 86400000 + 719468)"
+    let era = "(${z} / 146097)"
+    let dayOfEra = "(${z} - ${era} * 146097)"
+    let yearOfEra = "((${dayOfEra} - ${dayOfEra} / 1460 + ${dayOfEra} / 36524 - ${dayOfEra} / 146096) / 365)"
+    let dayOfYear = "(${dayOfEra} - (365 * ${yearOfEra} + ${yearOfEra} / 4 - ${yearOfEra} / 100))"
+    let marchMonth = "((5 * ${dayOfYear} + 2) / 153)"
+    let day = "(${dayOfYear} - (153 * ${marchMonth} + 2) / 5 + 1)"
+    let month = "(CASE WHEN ${marchMonth} < 10 THEN ${marchMonth} + 3 ELSE ${marchMonth} - 9 END)"
+    let year = "(${yearOfEra} + ${era} * 400 + CASE WHEN ${marchMonth} >= 10 THEN 1 ELSE 0 END)"
+    let ofDay = "(${count} % 86400000)"
+    let pieces = [
+      "CAST(${year} AS TEXT)", "'-'", padded(month, 2), "'-'", padded(day, 2),
+      "'T'", padded("(${ofDay} / 3600000)", 2),
+      "':'", padded("(${ofDay} / 60000 % 60)", 2),
+      "':'", padded("(${ofDay} / 1000 % 60)", 2),
+      "'.'", padded("(${ofDay} % 1000)", 3), "'Z'"
+    ]
+    "(${pieces.join(" || ")})"
+  end
+
+  # A number as text of at least `width` digits.
+  padded : String -> Integer -> String
+  let padded(number, 2) = "(CASE WHEN ${number} < 10 THEN '0' ELSE '' END || CAST(${number} AS TEXT))"
+  let padded(number, width) do
+    "(CASE WHEN ${number} < 10 THEN '00' WHEN ${number} < 100 THEN '0' ELSE '' END || CAST(${number} AS TEXT))"
+  end
+end

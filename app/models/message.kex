@@ -9,8 +9,6 @@ record Message do
   body : String
   # Milliseconds since 1970: the order of a conversation.
   sentAt : Integer = 0
-  # The same moment as ISO text, for showing.
-  sentOn : String = ""
   # The message this one replies to; "" when it is not a reply.
   parentId : String = ""
   # How many replies it has.

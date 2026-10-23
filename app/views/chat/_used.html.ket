@@ -6,5 +6,5 @@ params: [use: Usage]
   <strong><%= use.who %></strong> used
   <code>/<%= use.verb %><% if !use.extra.empty? %> <%= use.extra %><% end %></code>
   with <span class="mention"><%= use.addressee %></span>
-  <time><%= use.stamp %></time>
+  <time data-live-hook="Moment" data-at="<%= use.at %>" data-shows="clock"><%= use.stamp %></time>
 </p>

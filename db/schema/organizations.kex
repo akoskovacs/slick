@@ -9,7 +9,7 @@ let definition = Table.define :organizations do |t|
   t.text(:slug)
   t.text(:name)
   t.text(:created_by, default: "")
-  t.text(:created_at)
+  t.bigint(:created_at)
 end
 
 let id = DB.Schema.Organizations.definition.textColumn(:id)

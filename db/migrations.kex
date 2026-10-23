@@ -71,5 +71,7 @@ let all = [
   DB.Migrate.N0021AddGroups.change,
   DB.Migrate.N0022CreateGrants.change,
   DB.Migrate.N0023RetireMembershipTables.change,
-  DB.Migrate.N0024AddBotAccess.change
+  DB.Migrate.N0024AddBotAccess.change,
+  DB.Migrate.N0025CreateBotOperators.change,
+  DB.Migrate.N0026CountMoments.change
 ]

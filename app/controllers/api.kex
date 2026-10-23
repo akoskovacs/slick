@@ -87,7 +87,7 @@ foul whoami(request) do
   let bot = userFor(request)
   let mine : [Organization] = App.Live.Chat.organizations(bot)
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
-  let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed}
+  let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed, "operators": DB.Repositories.BotOperators.listed(bot.id).or([])}
   return request.json(answer)
 end
 
@@ -324,7 +324,10 @@ end
 #                                                         carry on from 41
 #   {"kind":"message","cursor":42,"organization":"acme",
 #    "place":"channels/general","thread":"","message":"m7",
-#    "at":1729…}                                          a message said
+#    "at":1729…,"access":"all"}                           a message said;
+#                                                         access is how much
+#                                                         of the place the
+#                                                         bot may read
 #   {"kind":"answer",…,"place":"dm/u1791","thread":"m7",
 #    "message":"m9",…}                                    a form answered
 #   {"kind":"command",…}                                  a command used
@@ -460,7 +463,7 @@ private do
     {
       "id": message.id, "user": message.userId, "author": author.map { |person| person.shown }.or("Someone"),
       "bot": author.map { |person| person.bot? }.or(false), "body": message.body, "blocks": App.Helpers.RichText.described(message.body), "sentAt": message.sentAt,
-      "sentOn": message.sentOn, "thread": message.parentId, "replies": message.replyCount
+      "sentOn": "${DateTime.fromEpochSeconds(message.sentAt / 1000)}", "thread": message.parentId, "replies": message.replyCount
     }
   end
 end

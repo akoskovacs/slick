@@ -185,4 +185,30 @@
       this.options = [];
     },
   };
+
+  // A moment, `data-at` milliseconds since 1970, shown in the viewer's own
+  // time: the time of day (`data-shows="clock"`, "14:51") or the day with
+  // it ("day", "2026-10-21 14:51"). The server writes it in UTC, which a
+  // patch may put back: it is shown again after every one.
+  Metro.hooks.Moment = {
+    mounted() {
+      this.show();
+    },
+
+    updated() {
+      this.show();
+    },
+
+    show() {
+      const at = Number(this.el.dataset.at);
+      if (!at) return;
+      const moment = new Date(at);
+      const two = (number) => String(number).padStart(2, "0");
+      const clock = `${two(moment.getHours())}:${two(moment.getMinutes())}`;
+      const day = `${moment.getFullYear()}-${two(moment.getMonth() + 1)}-${two(moment.getDate())}`;
+      const shown = this.el.dataset.shows === "day" ? `${day} ${clock}` : clock;
+      if (this.el.textContent !== shown) this.el.textContent = shown;
+      this.el.setAttribute("datetime", moment.toISOString());
+    },
+  };
 })();

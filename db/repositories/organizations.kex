@@ -19,7 +19,7 @@ foul chartered(name: String, slug: String, by: String) -> Result<Organization, S
     slug: slug,
     name: name,
     created_by: by,
-    created_at: "${DateTime.utcNow()}"
+    created_at: Metro.Clock.milliseconds()
   }
   return Database.insert(DB.Schema.Organizations)
     .values(row)

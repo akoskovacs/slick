@@ -1,0 +1,33 @@
+# The people whose word counts with a bot: who may allow its tools, and
+# use its commands that change how it answers.
+module DB.Repositories.BotOperators
+
+using Harmat.Database, as: Database
+
+# A bot's operators, by their id.
+foul listed(botId: String) -> Result<[String], String> do
+  return Database.select()
+    .from(DB.Schema.BotOperators)
+    .where(DB.Schema.BotOperators.botId == botId)
+    .orderBy([:user_id])
+    .pluck(:user_id)
+end
+
+# A bot's operators, all of them at once: the old ones and the new ones are
+# swapped in one transaction.
+foul replaced(botId: String, users: [String]) -> Result<Bool, String> do
+  let swapped : Result<Integer, String> = Database.transaction do
+    let cleared = Database.delete(DB.Schema.BotOperators)
+      .where(DB.Schema.BotOperators.botId == botId)
+      .run
+      .try
+    users.uniq.reduce(Ok(cleared)) { |sofar, userId|
+      sofar.flatMap { |_|
+        Database.insert(DB.Schema.BotOperators)
+          .values({id: "${botId}:${userId}", bot_id: botId, user_id: userId})
+          .run
+      }
+    }
+  end
+  return swapped.map { |_| true }
+end

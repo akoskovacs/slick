@@ -15,7 +15,7 @@ foul enroll(user: User, passwordHash: String) -> Result<User, String> do
     email: user.email,
     name: user.name,
     password_hash: passwordHash,
-    created_at: "${DateTime.utcNow()}"
+    created_at: Metro.Clock.milliseconds()
   }
   return Database.insert(DB.Schema.Users)
     .values(row)
@@ -31,7 +31,7 @@ foul credentials(email: String) -> Result<(User, String)?, String> do
     .flatMap do |row|
       match row do
         None => Ok(None)
-        Just(found) => Database.decoded(found, User, USER_COLUMNS)
+        Just(found) => Database.decoded(found, User, {})
           .map { |user| Just((user, found.get("password_hash").or(""))) }
       end
     end
@@ -44,7 +44,7 @@ foul automated(bot: User, tokenDigest: String) -> Result<User, String> do
     email: bot.email,
     name: bot.name,
     password_hash: "",
-    created_at: "${DateTime.utcNow()}",
+    created_at: Metro.Clock.milliseconds(),
     kind: "bot",
     owner_id: bot.ownerId,
     owner_organization_id: bot.ownerOrganizationId,
@@ -61,7 +61,7 @@ foul operated(owner: String) -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .where(DB.Schema.Users.ownerId == owner)
     .orderBy([:name, :id])
-    .all(as: User, renamed: USER_COLUMNS)
+    .all(as: User)
 end
 
 # An organization's bots, by name.
@@ -69,7 +69,7 @@ foul maintained(organizationId: String) -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .where(DB.Schema.Users.ownerOrganizationId == organizationId)
     .orderBy([:name, :id])
-    .all(as: User, renamed: USER_COLUMNS)
+    .all(as: User)
 end
 
 # Replaces the token of an organization's bot; whether it was that
@@ -88,7 +88,7 @@ foul bearing(tokenDigest: String) -> Result<User?, String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .where(DB.Schema.Users.apiTokenDigest == tokenDigest)
     .where(DB.Schema.Users.kind == "bot")
-    .first(as: User, renamed: USER_COLUMNS)
+    .first(as: User)
 end
 
 # Replaces a bot's token; whether it was this owner's bot to change.
@@ -131,7 +131,7 @@ foul described(user: User) -> Result<Integer, String> do
     time_zone: user.timeZone,
     bio: user.bio,
     nickname: user.nickname,
-    show_nickname: user.nicknameShown? then "yes" else ""
+    nickname_shown: user.nicknameShown?
   }
   return Database.update(DB.Schema.Users)
     .set(row)
@@ -151,14 +151,14 @@ end
 foul member(id: String) -> Result<User?, String> do
   return Database.select().from(DB.Schema.Users)
     .where(DB.Schema.Users.id == id)
-    .first(as: User, renamed: USER_COLUMNS)
+    .first(as: User)
 end
 
 # Everyone, by name: who can be written to, and whose name goes on a message.
 foul everyone -> Result<[User], String> do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .orderBy([:name, :email])
-    .all(as: User, renamed: USER_COLUMNS)
+    .all(as: User)
 end
 
 # Every bot's id.
@@ -201,9 +201,6 @@ private do
     return done
   end
 
-  # This field predates the model's name; the other columns follow snake case.
-  let USER_COLUMNS = {"nicknameShown?": "show_nickname"}
-
   # What is read of a user when nobody is signing in: everything but the
   # password line and the token digest.
   let SHOWN = [
@@ -221,7 +218,7 @@ private do
     :time_zone,
     :bio,
     :nickname,
-    :show_nickname,
+    :nickname_shown,
     :managed
   ]
 end
