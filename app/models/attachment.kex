@@ -32,14 +32,7 @@ make Attachment do
 
   # Its size in words, to a tenth: "512 B", "4.3 KB", "1.5 MB" — decimal
   # units, as a file manager shows them.
-  let sized -> String do
-    return "${@byteSize} B" if @byteSize < 1.kilobyte
-    let unit = @byteSize < 1.megabyte then KB else (@byteSize < 1.gigabyte then MB else GB)
-    @byteSize.byte
-      .convertTo(unit)
-      .map { |size| "${(size.value * 10.0).round / 10.0} ${size.unit.symbol}" }
-      .or("${@byteSize} B")
-  end
+  let sized -> String = @byteSize.byte.readable.to(String, places: 1, trim: true)
 
   # The blob `Metro.Storage.served` answers with.
   let blob -> Metro.Storage.Blob = Metro.Storage.Blob {

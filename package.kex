@@ -1,7 +1,7 @@
 package "slick" do
   version("0.1.0")
   description("Slick")
-  kex(">= 0.4.0-rc.2")
+  kex(">= 0.4.0-rc.3")
 
   # The application is laid out from its top: the entrypoint, and beside it
   # the folders its modules are in — App.* in app/, Config.* in config/,

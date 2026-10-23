@@ -242,7 +242,7 @@ foul handled(events, statuses, user, tab, entries) do
     "files" => (Tab { ...settled(tab), thread: "", view: "files" }, false)
     "messages" => (Tab { ...settled(tab), view: "" }, false)
     "profile-edit" => (Tab { ...settled(tab), dialog: "profile" }, false)
-    "profile-set" => redescribed(user, tab, entries)
+    "profile-set" => described(user, tab, entries)
     "reply" => replied(events, statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(user, field(entries, "path")), false)
     "organization" => switched(user, tab, field(entries, "id"))
@@ -983,8 +983,8 @@ private do
 
   # Changes somebody's own details. One a sync has taken over keeps what is
   # stored, whatever was sent for it: the form shows it, but only to read.
-  redescribed : User -> Tab -> [(String, String?)] -> (Tab, Bool)
-  foul redescribed(user, tab, entries) do
+  described : User -> Tab -> [(String, String?)] -> (Tab, Bool)
+  foul described(user, tab, entries) do
     let refused = Tab { ...settled(tab), dialog: "profile" }
     match Users.member(user.id) do
       Ok(Just(stored)) => do
@@ -998,20 +998,20 @@ private do
         end
         let problems = App.Models.User.DETAILS.flatMap do |entry|
           match entry do
-            (column, label, longest) => faults(column, label, longest, givenFor(given, column))
+            (column, label, longest) => faults(column, label, longest, chosen(given, column))
           end
         end
         return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
         let changed = User {
           ...stored,
-          name: givenFor(given, "name"),
-          title: givenFor(given, "title"),
-          department: givenFor(given, "department"),
-          phone: givenFor(given, "phone"),
-          timeZone: givenFor(given, "time_zone"),
-          bio: givenFor(given, "bio"),
-          nickname: givenFor(given, "nickname"),
+          name: chosen(given, "name"),
+          title: chosen(given, "title"),
+          department: chosen(given, "department"),
+          phone: chosen(given, "phone"),
+          timeZone: chosen(given, "time_zone"),
+          bio: chosen(given, "bio"),
+          nickname: chosen(given, "nickname"),
           nicknameShown?: field(entries, "show_nickname") == "yes"
         }
         match Users.described(changed) do
@@ -1024,8 +1024,8 @@ private do
   end
 
   # What was given for one detail.
-  givenFor : [(String, String)] -> String -> String
-  let givenFor(pairs, column) = pairs
+  chosen : [(String, String)] -> String -> String
+  let chosen(pairs, column) = pairs
     .flatMap do |pair|
       match pair do
         (key, value) => key == column then [value] else []

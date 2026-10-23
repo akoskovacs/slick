@@ -6,10 +6,37 @@ an entry says otherwise; rechecked again on `3111d30`, and each entry below
 carries its status there. At the end: names in the code that were chosen
 only to avoid these, to rename once they are fixed.
 
-Released state: Slick builds on Kex 0.4.0-rc.2 with Harmat v0.2.0 and
-Metro v0.1.0 (see [package.kex](../package.kex) and
+Released state: Slick builds on Kex 0.4.0-rc.3 — not yet tagged, so Kex
+main for now — with Harmat v0.2.0 and Metro v0.1.0 (see [package.kex](../package.kex) and
 [tey.lock](../tey.lock)). The entries below are the history of getting
 there.
+
+## Migration check — 2026-10-22
+
+Checked against local Kex main `6dbeda7` (0.4.0-rc.3, with kexhq/kex#555),
+rebuilt from that checkout. Specs and the compiled server ran on it.
+
+Adopted in Slick:
+
+- **The sessions record is `Session` again.** kexhq/kex#539 (filed as
+  kexhq/kex#451) makes `first(as: Session)` name the module's own record
+  even with `Net.HTTP.WebSocket`'s `Session` linked; the server signs
+  people in through it in `script/smoke.sh`.
+- **`Attachment.sized` is `readable.to(String, places: 1, trim: true)`**
+  (kexhq/kex#491), not rounding by hand. The same four sizes come out.
+- **`described` and `chosen`** in `app/live/chat.kex`, for `redescribed`
+  and `givenFor`. Both build and pass the profile specs.
+
+Still open, rechecked:
+
+- **#494:** `sown` renamed back to `seeded` still fails with `undefined
+  function seeded/1 in commanded/3`.
+- **#537:** `STATUSES.map { |glyph, words| … }` over a module constant
+  still gives each parameter the whole tuple.
+- `main` is still reserved as a local, and `slot` as a field.
+
+Validation: Slick builds and passes all 13 specs, and the compiled
+server, against a temporary SQLite database, passes `script/smoke.sh`.
 
 ## Migration check — 2026-10-19
 
@@ -318,7 +345,8 @@ Chosen to avoid the bugs above, or the limits; worth renaming once they are
 fixed, and simplifying where a workaround stayed. The 2026-10-19 migration
 changed back `atomically`, `store`/`fetch`/`discard`, `subjectOf`/`valuesOf`,
 the `Enclosure`/`Card`/`Crew` fields, top-level `Room`, `since:`, the
-two-line `changeColumn`, `prior`/`changed` and `open?`; what is left is
+two-line `changeColumn`, `prior`/`changed` and `open?`; the 2026-10-22 one
+`Lease`, `redescribed`/`givenFor` and the hand rounding. What is left is
 below.
 
 | Where | Now | Because | Rather |
@@ -328,9 +356,6 @@ below.
 | Harmat | `Harmat.Logger` (logger.kex) beside `Harmat.Log` (log.kex) | a capability is found by its file; and 1 | one `Harmat.Log` |
 | opencode-bot `local.kex` | `failureOf` | #494 | `failed` |
 | Harmat | `Database.ongoing`, `begun`, `ended` | 4 | private to Harmat, if the store's connection can be given the transaction another way |
-| Slick `db/repositories/sessions.kex` | `Lease` | kexhq/kex#451 (`Net.HTTP.WebSocket` has a `Session`) | `Session` |
 | Slick `app/views/chat.kex` | `Detail.key` | `slot` is a keyword | `slot` or `column` |
 | Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
-| Slick `app/live/chat.kex` | `redescribed`, `givenFor` | kexhq/kex#451; a local `chosen` | `described`, `chosen` |
 | Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |
-| Slick `app/models/attachment.kex` | rounding by hand | kexhq/kex#491 | `to(String, places: 1)` |

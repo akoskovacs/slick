@@ -21,7 +21,7 @@ end
 foul holder(tokenDigest: String) -> Result<(String, Integer)?, String> do
   return Database.select().from(DB.Schema.Sessions)
     .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
-    .first(as: Lease)
+    .first(as: Session)
     .map { |session| session.map { |held| (held.userId, held.expiresAt) } }
 end
 
@@ -34,10 +34,7 @@ end
 
 private do
   # Only the fields authentication needs; token digests stay in the query.
-  # (`Lease`, not `Session`: Net.HTTP.WebSocket also declares a `Session`,
-  # and once the HTTP stack is linked that one takes the name —
-  # kexhq/kex#451.)
-  record Lease do
+  record Session do
     userId : String
     expiresAt : Integer
   end
