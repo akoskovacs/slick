@@ -33,11 +33,37 @@ Fixed, and adopted:
 Validation: Harmat, Metro and Slick build and pass all their specs, Slick
 against the local Metro and Harmat.
 
-New: **`tey console`** (`Metro.Console`), on #569's `/with` and `-e`. It
-works — queries run and are logged — but it meets three things in Kex:
+New: **`tey console`** (`bin/console`), on #569's `/with` and `-e`: the
+application in Kex's REPL, queries logged. What it meets in Kex:
 
+- **A Tey command had no terminal.** On the BEAM, `Process.stream` ran its
+  child over a pipe and fed it stdin a line at a time, so a REPL run by Tey
+  echoed its input and had no completion, history or line editing (a port's
+  child has no controlling terminal either: `/dev/tty: Device not
+  configured`). Fixed in the local Kex checkout, not yet committed there:
+  `stream/2` opens its port with `nouse_stdio`, so the child inherits the
+  VM's stdin, stdout and stderr as the tree walker's forked child already
+  did; the relay (`feed_port`, `pump_port`, `emit`) is gone. With Tey
+  rebuilt (`make build-tey`), `tey console` completes, keeps history and
+  edits lines.
+- **Tey does not tell a program its source roots.** `bin/console` learns
+  them by standing in for Kex (`TEY_KEX`) while `tey run` starts: Tey hands
+  the stand-in its `--source-root`s, which it prints instead of compiling.
+  0.8 s, and Tey's own lookup. Wanted: a way to ask for them (`tey roots`).
+  The stand-in hands everything else to the Kex Tey would run (`TEY_KEX`, or
+  the selected toolchain); given an older one, rc.2 for a package needing
+  rc.3, Tey asked it for `--emit-ast` of package.kex thousands of times and
+  never finished, rather than saying the toolchain was too old.
+- **`tey run` compiles the whole application every time**: 24 s for Slick
+  even after `tey build`, 43 s with `--interpret`. The REPL alone boots the
+  application and its database in 2.7 s; the tree-walk REPL (`-i`) takes
+  31 s and then times out talking to the store.
+- **The REPL completes no qualified name from a `--source-root`**:
+  `/complete DB.Repositories.Users.ev` and `Metro.Environment.cu` find
+  nothing, while `"abc".upperC` completes, and `ever` does after `using
+  DB.Repositories.Users`.
 - **A REPL binding of a record type breaks every later input** when the
-  REPL has `--source-root`s. `let first = DB.Repositories.Users.maintained(id)`
+  REPL has `--source-root`s. `let users = DB.Repositories.Users.everyone`
   answers, and then any input — even `1 + 1` — fails with `this file is
   App.Models.User.User by its path, but declares App.Models.User`. An
   expression without `let` is fine, which is why the console boots its
@@ -59,17 +85,6 @@ works — queries run and are logged — but it meets three things in Kex:
   $ printf 'let c = Shop.Cart.empty\n1 + 1\n' | kex --source-root .
   shop/cart.kex:1:1: error: this file is `Shop.Cart.Cart` by its path, but declares `Shop.Cart`; …
   ```
-
-- **Tey does not tell a program its source roots.** A `command(...)`
-  program gets only its arguments, so `Metro.Console.sourceRoots` reads
-  tey.lock, package.local.kex and Tey's cache layout itself
-  (`~/.cache/tey/src/<sha256 of git>/<commit>`, `snapshots/<sha256>`).
-  Wanted: Tey hands them over (an environment variable, say), or starts a
-  REPL itself (`tey console`/`tey repl`).
-- **A Tey command's input is a pipe, not the terminal**
-  (`Process.stream` feeds stdin line by line), so the console has no
-  history, completion or line editing. When the piped session ends, a
-  `SIGTERM received - shutting down` report is printed.
 
 ## Migration check — 2026-10-23
 

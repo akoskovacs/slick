@@ -103,6 +103,7 @@ your own.
 | `tey migrate` | run the migrations this database has not run |
 | `tey rollback` | undo the newest migration; `tey rollback 3` undoes three |
 | `tey seed` | migrate, then plant what the environment's database starts with |
+| `tey console` | the application in Kex's REPL, its queries logged (`bin/console`) |
 | `tey test` | the specs |
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
 | `tey dev` | the server, then the bot beside it — [slick-ai-bot](../slick-ai-bot) — once it answers; Ctrl-C stops all of them |

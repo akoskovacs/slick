@@ -4,7 +4,7 @@
 #   tey migrate     run the migrations this database has not run
 #   tey rollback    undo the newest migration; `tey rollback 3` undoes three
 #   tey seed        migrate, then plant what a new database starts with
-#   tey console     the application in Kex's REPL, on this database
+#   tey console     the application in Kex's REPL (bin/console)
 #
 # METRO_ENV says where this is running, and PORT and HOST move the listener
 # (`Metro.Environment`); the environment and DATABASE_DSN choose the database
@@ -78,24 +78,9 @@ foul commanded(store: Server<DB.Store.Store>, args: [String]) -> Void do
   end
 end
 
-# What `tey console` boots with (Metro.Console): queries logged, and
-# answered by this environment's database, as where the application serves.
-let CONSOLE = [
-  "/with Harmat.Logger = Config.Logging.queries()",
-  "/with Harmat.Connection = DB.Store.StoreConnection { store: DB.Store.started(Config.Database.dsn.try).try }"
-]
-
-foul consoled -> Void do
-  match Metro.Console.opened(CONSOLE) do
-    Ok(status) => System.exit(status)
-    Error(reason) => failed(reason)
-  end
-end
-
 # Queries are logged as configured (config/logging.kex) everywhere: the
 # store is started inside, so what it runs in a transaction is logged too.
 main(args) do
-  return consoled() if args.first == Just("console")
   with Harmat.Logger = Config.Logging.queries() do
     match (Metro.Environment.current(), Config.Database.dsn) do
       (Error(reason), _) => failed(reason)
