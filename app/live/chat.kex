@@ -497,7 +497,7 @@ private do
     let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
     let glimpsed = tab.view == "files" then small else []
     let glimpses = glimpsed.reduce({}) do |found, file|
-      let content : Result<Binary, String> = Metro.Storage.Service.get(file.id)
+      let content : Result<Binary, String> = Metro.Storage.get(file.id)
       let text = content.map { |bytes| bytes.to(String).or("") }.or("")
       found.put(file.id, text.take(400))
     end
@@ -984,7 +984,7 @@ private do
     let refused = Tab { ...settled(tab), dialog: "profile" }
     match Users.member(user.id) do
       Ok(Just(stored)) => do
-        let given = App.Models.User.DETAILS.map do |column, _label, _longest|
+        let given = App.Models.User.DETAILS.map do |column, _, _|
           let kept = stored.locked?(column)
           (column, kept then stored.detail(column) else field(entries, column).trim)
         end

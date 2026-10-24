@@ -884,7 +884,7 @@ describe("Slick") do
       # Files: uploaded, waiting in the message box, sent with a message,
       # then listed in the files view and served only to who may read them.
       let files = "storage_spec_${Metro.Clock.milliseconds()}"
-      with Metro.Storage.Service = Metro.Storage.Disk { root: files } do
+      with Metro.Storage = Metro.Storage.Disk { root: files } do
         let upload = Metro.Wire.made(
           "POST",
           "/uploads",

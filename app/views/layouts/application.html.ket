@@ -1,5 +1,5 @@
 ---
-params: [live: String]
+params: [content: Block<String>]
 ---
 <!doctype html>
 <html lang="en">
@@ -10,7 +10,7 @@ params: [live: String]
     <link rel="stylesheet" href="/app.css">
   </head>
   <body class="chat">
-    <main id="app"><%== live %></main>
+    <main id="app"><%== content() %></main>
     <script src="/app.js"></script>
     <script src="/metro/live.js"></script>
   </body>

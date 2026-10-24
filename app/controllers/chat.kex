@@ -12,7 +12,8 @@ show : WebRequest -> WebRequest
 foul show(request) do
   let user = userFor(request)
   let tab = App.Live.Chat.arrived(user, request.target)
-  return page(request, 200, App.Views.Chat.page(App.Live.Chat.markup(statusesFor(request), user, tab)))
+  let live = App.Live.Chat.markup(statusesFor(request), user, tab)
+  return page(request, 200, App.Views.Chat.page { live })
 end
 
 # A tab's socket: events in, markup out, until it closes.

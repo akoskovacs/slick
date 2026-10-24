@@ -17,7 +17,7 @@ module Config.Routes
 using Metro.Live.Hub, only: [Hub]
 using Metro.Plugs, only: [providing]
 using App.Live.Events, only: [Bus]
-# Every router call stays qualified: Metro.Storage.Service still shadows
+# Every router call stays qualified: Metro.Storage still shadows
 # bare imports of get and put.
 using Metro.Router, as: Router
 # Actions are named bare, and so imported by name: a reference through the

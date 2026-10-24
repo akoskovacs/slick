@@ -11,6 +11,66 @@ main for now — with Harmat v0.2.0 and Metro v0.1.0 (see [package.kex](../packa
 [tey.lock](../tey.lock)). The entries below are the history of getting
 there.
 
+## Migration check — 2026-10-24
+
+Checked against Kex main `e4beb8c`: #567, #568 and #569 on top of
+`c80e095`. Still 0.4.0-rc.3, still untagged.
+
+Fixed, and adopted:
+
+- **A top-level value holding a function** no longer loses to a prelude
+  function of the same name (#569, `value_binding_shadows_import`): the
+  reduction under 2026-10-23 prints `<main>x</main>`. The layouts take
+  their content as a `Block<String>` — `page { live }`, `frame("Sign in")
+  { … }`. Metro's app generator has the same shape, so it should build
+  as it is (not generated and built here).
+- **Two `_` parameters** build on BEAM (#567, `wildcard_parameters`):
+  `described` spreads `|column, _, _|`.
+- **`Metro.Storage` is the capability again,** beside the module of the
+  same name (#557, #569): `with Metro.Storage = Metro.Storage.Disk { … }`
+  and `Metro.Storage.get(key)`; `Metro.Storage.Service` is gone.
+
+Validation: Harmat, Metro and Slick build and pass all their specs, Slick
+against the local Metro and Harmat.
+
+New: **`tey console`** (`Metro.Console`), on #569's `/with` and `-e`. It
+works — queries run and are logged — but it meets three things in Kex:
+
+- **A REPL binding of a record type breaks every later input** when the
+  REPL has `--source-root`s. `let first = DB.Repositories.Users.maintained(id)`
+  answers, and then any input — even `1 + 1` — fails with `this file is
+  App.Models.User.User by its path, but declares App.Models.User`. An
+  expression without `let` is fine, which is why the console boots its
+  connection in one `/with` line rather than `let store = …` first.
+  Reduced (`shop/cart.kex` beside the session):
+
+  ```kex
+  module Shop.Cart
+
+  record Cart do
+    items : Integer
+  end
+
+  empty : Cart
+  let empty = Cart { items: 0 }
+  ```
+
+  ```
+  $ printf 'let c = Shop.Cart.empty\n1 + 1\n' | kex --source-root .
+  shop/cart.kex:1:1: error: this file is `Shop.Cart.Cart` by its path, but declares `Shop.Cart`; …
+  ```
+
+- **Tey does not tell a program its source roots.** A `command(...)`
+  program gets only its arguments, so `Metro.Console.sourceRoots` reads
+  tey.lock, package.local.kex and Tey's cache layout itself
+  (`~/.cache/tey/src/<sha256 of git>/<commit>`, `snapshots/<sha256>`).
+  Wanted: Tey hands them over (an environment variable, say), or starts a
+  REPL itself (`tey console`/`tey repl`).
+- **A Tey command's input is a pipe, not the terminal**
+  (`Process.stream` feeds stdin line by line), so the console has no
+  history, completion or line editing. When the piped session ends, a
+  `SIGTERM received - shutting down` report is printed.
+
 ## Migration check — 2026-10-23
 
 Checked against Kex main `c80e095`, built in a separate worktree: #556, #557
@@ -59,6 +119,24 @@ New in Kex main, met here and worked around:
   patterns are fine: `let (a, _, _)`, a `(a, _, _) =>` arm, `let [a, _, _]`
   and `[_, _ | rest]` build. `described` uses `_label, _longest` until it
   is fixed.
+
+- **Metro's app generator meets the `layout` bug too.**
+  `generators/app/app/views/home.kex.ket` declares `let layout =
+  Template.html(…)` and calls `layout(email, live)`, the shape reduced
+  above, so a newly generated app should not build on Kex main until it is
+  fixed (not built here; the reduction fails the same way in a module).
+
+Wanted, deferred: **a Rails-like `render(request, "chat/index", …)` in
+Metro, resolved at compile time.** It cannot be written yet. `Kex.embed`
+and #544's by-name clauses resolve against the file that writes them —
+Metro's, not the app's views — and the clauses share one signature, while
+every `.ket` declares its own `params:` (`partial("tally")(3, "files")` is
+typed by the first clause: `expects 1 argument(s), got 2`). Two Kex pieces
+would do it: a clause chosen by a literal name keeps its template's own
+signature, and a compile-time anchor for the app's root
+(`${Package.root}`, inlined the way `ENV.get` is). Not reflection at run
+time. (A call-site-expansion version of this was sent to the Kex session
+on 2026-10-23 and is superseded by this one.)
 
 Still open: `main` is reserved as a local and `slot` as a field (a
 decision, not a bug). #557 also fixed a capability beside a module of the
@@ -404,12 +482,11 @@ fixed, and simplifying where a workaround stayed. The 2026-10-19 migration
 changed back `atomically`, `store`/`fetch`/`discard`, `subjectOf`/`valuesOf`,
 the `Enclosure`/`Card`/`Crew` fields, top-level `Room`, `since:`, the
 two-line `changeColumn`, `prior`/`changed` and `open?`; the 2026-10-22 one
-`Lease`, `redescribed`/`givenFor` and the hand rounding. What is left is
-below.
+`Lease`, `redescribed`/`givenFor` and the hand rounding; the 2026-10-24
+one `Metro.Storage.Service` and `_label, _longest`. What is left is below.
 
 | Where | Now | Because | Rather |
 | --- | --- | --- | --- |
-| Metro | `Metro.Storage.Service` capability | #492; fixed by kexhq/kex#557 | `Metro.Storage` |
 | Metro | `Metro.Storage.folder()` | ENV is effectful in a constant | a `ROOT` constant, if config may be read once |
 | Harmat | `Harmat.Logger` (logger.kex) beside `Harmat.Log` (log.kex) | a capability is found by its file; and 1 | one `Harmat.Log` |
 | opencode-bot `local.kex` | `failureOf` | #494; fixed by kexhq/kex#557 | `failed` |
@@ -417,4 +494,3 @@ below.
 | Slick `app/views/chat.kex` | `Detail.key` | `slot` is a keyword | `slot` or `column` |
 | Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
 | Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |
-| Slick `app/live/chat.kex` | `\|column, _label, _longest\|` | two `_` parameters fail on BEAM | `\|column, _, _\|` |

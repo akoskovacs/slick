@@ -1,5 +1,5 @@
 ---
-params: [heading: String, body: String]
+params: [heading: String, content: Block<String>]
 ---
 <!doctype html>
 <html lang="en">
@@ -13,7 +13,7 @@ params: [heading: String, body: String]
     <main class="auth">
       <span class="brand">Slick</span>
       <h1><%= heading %></h1>
-      <%== body %>
+      <%== content() %>
     </main>
   </body>
 </html>
