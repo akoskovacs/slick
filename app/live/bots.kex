@@ -5,8 +5,10 @@
 module App.Live.Bots
 
 using Metro.Validation, only: [rules, validates, present, sized]
-using App.Live.Outcome, only: [Outcome, unchanged, changed, refused, failed]
+using Metro.Live.Socket, only: [unchanged, changed]
+using App.Live.Outcome, only: [Outcome, refused, failed]
 using App.Live.Places, only: [home, visible]
+using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
@@ -152,6 +154,17 @@ foul setAccess(user, tab, access) do
     end
   end
 end
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("bot-create", event) = create(event.user, event.tab, typed(event, "name"), given(event, "owner"))
+foul on("bot-rotate", event) = rotateToken(event.user, event.tab, given(event, "id"))
+foul on("bot-add", event) = add(event.user, event.tab, given(event, "id"))
+foul on("bot-remove", event) = remove(event.user, event.tab, given(event, "id"))
+foul on("bot-operators-set", event) = setOperators(event.user, event.tab, given(event, "bot"), picked(event, "operator"))
+foul on("bot-access-set", event) = setAccess(event.user, event.tab, given(event, "access"))
+foul on(_, event) = unchanged(event.tab)
 
 private do
   # Whether a bot is this person's own.

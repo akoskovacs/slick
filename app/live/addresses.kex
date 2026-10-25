@@ -1,0 +1,64 @@
+# Addresses: the tab a path stands for, when somebody goes to one — typed
+# in, followed from a link, or gone back to in the browser's history.
+module App.Live.Addresses
+
+using Metro.Live.Socket, only: [unchanged]
+using App.Live.Event, only: [Event, given]
+using App.Live.Outcome, only: [Outcome]
+using App.Live.Places, only: [visible, memberOrganization]
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using DB.Repositories.Conversations, as: Conversations
+
+# The tab for an address (App.Paths): a channel, a private chat or a group
+# chat of an organization, any with `?thread=<message>`. Anything else, or a
+# place this person may not be, is the tab everyone starts with. A private
+# chat is started by going to it.
+tabFor : User -> String -> Tab
+foul tabFor(user, location) do
+  let thread = Metro.Path.query(location, "thread").or("")
+  match App.Paths.channelPath.captured(location) do
+    Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
+      None => return Tab {}
+      Just(organization) => match Conversations.channelCalled(organization.id, parts.get("name").or("")) do
+        Ok(Just(channel)) => return Tab { organization: organization.id, conversation: channel.id, thread: thread }
+        _ => return Tab { organization: organization.id }
+      end
+    end
+    None => match App.Paths.directPath.captured(location) do
+      None => return groupTab(user, location, thread)
+      Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
+        None => return Tab {}
+        Just(organization) => do
+          let (chat, _) = App.Live.Conversations.openDirect(user, Tab { organization: organization.id }, parts.get("person").or(""))
+          return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
+        end
+      end
+    end
+  end
+end
+
+# Going to an address the browser was at: `visit`, from Metro's live.js.
+on : String -> Event -> Outcome
+foul on("visit", event) = unchanged(tabFor(event.user, given(event, "path")))
+foul on(_, event) = unchanged(event.tab)
+
+private do
+  # The tab for the address of a group chat: only one this person is in.
+  groupTab : User -> String -> String -> Tab
+  foul groupTab(user, location, thread) do
+    match App.Paths.groupPath.captured(location) do
+      None => return Tab {}
+      Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
+        None => return Tab {}
+        Just(organization) => do
+          let tab = Tab { organization: organization.id, conversation: parts.get("group").or(""), thread: thread }
+          match visible(user, tab) do
+            Just(conversation) => return conversation.group? then tab else Tab { organization: organization.id }
+            None => return Tab { organization: organization.id }
+          end
+        end
+      end
+    end
+  end
+end

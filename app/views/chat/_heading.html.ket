@@ -19,20 +19,20 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
   <% if !note.empty? %>
     <p class="topic"><%= note %>
     <% if admitting? %>
-      <button type="button" class="quiet" data-event="admit">Add people</button>
+      <button type="button" class="quiet" data-event="dialog-open" data-dialog="admit">Add people</button>
     <% end %>
     <% if promotable? %>
-      <button type="button" class="quiet" data-event="promote">Make it a channel</button>
+      <button type="button" class="quiet" data-event="dialog-open" data-dialog="promote">Make it a channel</button>
     <% end %>
     </p>
   <% end %>
     <nav class="views" aria-label="Show">
       <button type="button" class="view<% if !filing? && !setting? %> current<% end %>"
-        aria-pressed="<%= !filing? && !setting? %>" data-event="messages">Messages</button>
+        aria-pressed="<%= !filing? && !setting? %>" data-event="view-messages">Messages</button>
       <button type="button" class="view<% if filing? %> current<% end %>"
-        aria-pressed="<%= filing? %>" data-event="files">Files<% if !filed.empty? %> <span class="tally"><%= filed %></span><% end %></button>
+        aria-pressed="<%= filing? %>" data-event="view-files">Files<% if !filed.empty? %> <span class="tally"><%= filed %></span><% end %></button>
       <% if canAdminister %>
-        <button type="button" class="view<% if setting? %> current<% end %>" aria-pressed="<%= setting? %>" data-event="settings" title="Conversation settings">Settings</button>
+        <button type="button" class="view<% if setting? %> current<% end %>" aria-pressed="<%= setting? %>" data-event="view-settings" title="Conversation settings">Settings</button>
       <% end %>
     </nav>
 </header>

@@ -4,10 +4,11 @@
 module App.Live.Messages
 
 using Metro.Live.Presence, only: [Presence]
-using Metro.Live.Socket, only: [field]
+using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, present, sized]
-using App.Live.Outcome, only: [Outcome, unchanged, changed, failed]
+using App.Live.Outcome, only: [Outcome, failed]
 using App.Live.Places, only: [visible]
+using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
@@ -187,6 +188,19 @@ let detach(tab, id) = unchanged(Tab {
   ...tab,
   pending: tab.pending.reject { |each| each == id }
 })
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("message-send", event) = send(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
+foul on("message-reply", event) = reply(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
+foul on("message-react", event) = react(event.user, event.tab, given(event, "message"), given(event, "emoji"))
+foul on("message-answer", event) = answer(event.bus, event.user, event.tab, event.entries)
+foul on("draft-save", event) = saveDraft(event.user, event.tab, given(event, "place"), given(event, "body"))
+foul on("file-attach", event) = attach(event.user, event.tab, given(event, "file"))
+foul on("file-attach-failed", event) = refuseUpload(event.tab, given(event, "filename"), given(event, "reason"))
+foul on("file-detach", event) = detach(event.tab, given(event, "file"))
+foul on(_, event) = unchanged(event.tab)
 
 private do
   # A reply said in the thread `first` starts.

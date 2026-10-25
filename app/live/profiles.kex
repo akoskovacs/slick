@@ -2,10 +2,11 @@
 # changing one's own — details, and a status.
 module App.Live.Profiles
 
-using Metro.Live.Socket, only: [field]
+using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, sized]
-using App.Live.Outcome, only: [Outcome, unchanged, changed, refused]
+using App.Live.Outcome, only: [Outcome, refused]
 using App.Live.Places, only: [home, member?]
+using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.User, only: [User]
 using DB.Repositories.Users, as: Users
@@ -75,6 +76,16 @@ foul setStatus(user, tab, emoji, saying) do
     Error(reason) => return refused(tab, "status", reason)
   end
 end
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("profile-open", event) = open(event.user, event.tab, given(event, "user"))
+foul on("profile-close", event) = unchanged(Tab { ...closed(event.tab), profile: "" })
+foul on("profile-update", event) = update(event.user, event.tab, event.entries)
+foul on("status-set", event) = setStatus(event.user, event.tab, typed(event, "emoji"), typed(event, "text"))
+foul on("status-clear", event) = setStatus(event.user, event.tab, "", "")
+foul on(_, event) = unchanged(event.tab)
 
 private do
   # What was given for one detail.

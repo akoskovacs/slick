@@ -55,7 +55,7 @@
 # something there, or until it sends an empty "text".
 #
 # A bot is a member like any other, and what it does goes through the same
-# two functions a browser tab's events do (`App.Live.Chat.arrived` and
+# two functions a browser tab's events do (`App.Live.Addresses.tabFor` and
 # `handled`), so it can read and write exactly what a person in its place
 # could, and tabs that are open see what it writes at once.
 module App.Controllers.Api
@@ -269,7 +269,7 @@ foul posted(request) do
   if bot.bot? && conversation.botsForbidden?
     return failed(request, 403, "Bots may not write in this conversation.")
   end
-  let event = thread.empty? then "send" else "reply"
+  let event = thread.empty? then "message-send" else "message-reply"
   let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
   return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
@@ -288,7 +288,7 @@ end
 reacting : WebRequest -> WebRequest
 foul reacting(request) do
   let (tab, _) = placed(request, "").try
-  let fields = [("event", Just("react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
+  let fields = [("event", Just("message-react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
   let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, fields)
   return failed(request, 422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
 
@@ -427,7 +427,7 @@ private do
   organizationFor : WebRequest -> Result<String, WebRequest>
   foul organizationFor(request) do
     let slug = request.param("organization").or("")
-    let tab = App.Live.Chat.arrived(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+    let tab = App.Live.Addresses.tabFor(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
     return Error(failed(request, 404, "There is no such organization, or this bot is not in it.")) if tab.organization.empty?
     return Ok(tab.organization)
   end
@@ -449,7 +449,7 @@ private do
     else
       channel
     end
-    let tab = App.Live.Chat.arrived(bot, App.Paths.threaded(address, thread))
+    let tab = App.Live.Addresses.tabFor(bot, App.Paths.threaded(address, thread))
     return Error(failed(request, 404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
 
     match App.Live.Places.visible(bot, tab) do

@@ -1,8 +1,10 @@
 # Threads: the replies to a message, opened beside the conversation.
 module App.Live.Threads
 
-using App.Live.Outcome, only: [Outcome, unchanged]
+using Metro.Live.Socket, only: [unchanged]
+using App.Live.Outcome, only: [Outcome]
 using App.Live.Places, only: [visible]
+using App.Live.Event, only: [Event, given]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message]
@@ -54,3 +56,10 @@ foul open(user, tab, id) do
     end
   end
 end
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("thread-open", event) = open(event.user, event.tab, given(event, "message"))
+foul on("thread-close", event) = unchanged(Tab { organization: event.tab.organization, conversation: event.tab.conversation })
+foul on(_, event) = unchanged(event.tab)

@@ -69,10 +69,10 @@ describe("App.Live.Bots, making one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let (_, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
-      let (_, sent) = stepped(world, bot, Tab {}, [("event", "send"), ("body", "deployed :rocket:")])
+      let (_, sent) = stepped(world, bot, Tab {}, [("event", "message-send"), ("body", "deployed :rocket:")])
       Assert.truthy(sent)
       Assert.truthy(shown(world, world.ada, Tab {}).contains?("deployed 🚀"))
-      Assert.equal(App.Live.Chat.arrived(bot, "/other/channels/general"), Tab {})
+      Assert.equal(App.Live.Addresses.tabFor(bot, "/other/channels/general"), Tab {})
       let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
       Assert.equal(App.Live.Places.visible(bot, chat), None)
     end

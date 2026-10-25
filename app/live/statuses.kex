@@ -3,9 +3,11 @@
 # says it is busy with.
 module App.Live.Statuses
 
+using Metro.Live.Socket, only: [unchanged]
 using Metro.Live.Presence, only: [Presence]
 using App.Live.Outcome, only: [Outcome]
 using App.Live.Places, only: [visible]
+using App.Live.Event, only: [Event]
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
 
@@ -51,3 +53,9 @@ end
 # Somebody is typing: said for a few seconds, to everyone else there.
 markTyping : Server<Presence> -> User -> Tab -> Outcome
 foul markTyping(statuses, user, tab) = (tab, say(statuses, user, tab, "", TYPING_FOR))
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("typing", event) = markTyping(event.statuses, event.user, event.tab)
+foul on(_, event) = unchanged(event.tab)

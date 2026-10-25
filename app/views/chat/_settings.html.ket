@@ -29,7 +29,7 @@ params: [organization: String, public?: Bool, botAccess: String, teams: String]
       </select>
     </section>
     <div class="actions settings-actions">
-      <button type="button" data-event="messages">Cancel</button>
+      <button type="button" data-event="view-messages">Cancel</button>
       <button type="submit" class="primary">Save changes</button>
     </div>
   </form>

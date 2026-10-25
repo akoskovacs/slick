@@ -4,8 +4,10 @@
 module App.Live.Teams
 
 using Metro.Validation, only: [rules, validates, present, sized]
-using App.Live.Outcome, only: [Outcome, unchanged, changed, refused, failed]
+using Metro.Live.Socket, only: [unchanged, changed]
+using App.Live.Outcome, only: [Outcome, refused, failed]
 using App.Live.Places, only: [home, member?]
+using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
@@ -112,6 +114,19 @@ foul removeMember(user, tab, id) do
     end
   end
 end
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("team-open", event) = open(event.user, event.tab, given(event, "id"))
+foul on("team-close", event) = unchanged(Tab { ...closed(event.tab), team: "" })
+foul on("team-create", event) = create(event.user, event.tab, typed(event, "name"), typed(event, "description"), typed(event, "handle").lowerCase)
+foul on("team-update", event) = update(event.user, event.tab, typed(event, "name"), typed(event, "description"))
+foul on("team-join", event) = addMembers(event.user, event.tab, [event.user.id])
+foul on("team-add", event) = addMembers(event.user, event.tab, picked(event, "person"))
+foul on("team-leave", event) = removeMember(event.user, event.tab, event.user.id)
+foul on("team-remove", event) = removeMember(event.user, event.tab, given(event, "user"))
+foul on(_, event) = unchanged(event.tab)
 
 private do
   # The team the tab has open, if it is one of the tab's organization.

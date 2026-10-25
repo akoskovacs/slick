@@ -4,8 +4,10 @@
 module App.Live.Conversations
 
 using Metro.Validation, only: [rules, validates, present, sized, passing]
-using App.Live.Outcome, only: [Outcome, unchanged, changed, refused, failed]
+using Metro.Live.Socket, only: [unchanged, changed]
+using App.Live.Outcome, only: [Outcome, refused, failed]
 using App.Live.Places, only: [home, visible, member?]
+using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
@@ -208,6 +210,20 @@ foul configure(user, tab, access, teamId, botAccess) do
     end
   end
 end
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("conversation-open", event) = open(event.user, event.tab, given(event, "id"))
+foul on("direct-open", event) = openDirect(event.user, event.tab, given(event, "user"))
+foul on("channel-create", event) = createChannel(event.user, event.tab, typed(event, "title").lowerCase, given(event, "access"), given(event, "team"))
+foul on("channel-add", event) = addPeople(event.user, event.tab, picked(event, "person"))
+foul on("channel-configure", event) = configure(event.user, event.tab, given(event, "access"), given(event, "team"), given(event, "bot-access"))
+foul on("group-create", event) = createGroup(event.user, event.tab, picked(event, "person"))
+foul on("group-promote", event) = makeChannel(event.user, event.tab, typed(event, "title").lowerCase, given(event, "access"))
+foul on("topic-edit", event) = unchanged(Tab { ...closed(event.tab), retitling?: true })
+foul on("topic-set", event) = setTopic(event.user, event.tab, typed(event, "topic"))
+foul on(_, event) = unchanged(event.tab)
 
 private do
   # A tab showing a conversation, and nothing else.

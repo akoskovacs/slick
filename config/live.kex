@@ -1,0 +1,37 @@
+# Which part of Slick answers an event from a tab, by the first word of its
+# name: "bot-create" is the bots'. Each part answers its own events by
+# their whole names (`on`), and does nothing with any other.
+module Config.Live
+
+using App.Live.Event, only: [Event]
+
+routed : App.Live.Event.Event -> (App.Live.Tab.Tab, Bool)
+foul routed(event) = to(Metro.Live.Socket.resource(event.name), event)
+
+to : String -> App.Live.Event.Event -> (App.Live.Tab.Tab, Bool)
+foul to("conversation", event) = App.Live.Conversations.on(event.name, event)
+foul to("direct", event) = App.Live.Conversations.on(event.name, event)
+foul to("channel", event) = App.Live.Conversations.on(event.name, event)
+foul to("group", event) = App.Live.Conversations.on(event.name, event)
+foul to("topic", event) = App.Live.Conversations.on(event.name, event)
+foul to("message", event) = App.Live.Messages.on(event.name, event)
+foul to("draft", event) = App.Live.Messages.on(event.name, event)
+foul to("file", event) = App.Live.Messages.on(event.name, event)
+foul to("thread", event) = App.Live.Threads.on(event.name, event)
+foul to("typing", event) = App.Live.Statuses.on(event.name, event)
+foul to("team", event) = App.Live.Teams.on(event.name, event)
+foul to("organization", event) = App.Live.Organizations.on(event.name, event)
+foul to("invite", event) = App.Live.Organizations.on(event.name, event)
+foul to("role", event) = App.Live.Organizations.on(event.name, event)
+foul to("member", event) = App.Live.Organizations.on(event.name, event)
+foul to("profile", event) = App.Live.Profiles.on(event.name, event)
+foul to("status", event) = App.Live.Profiles.on(event.name, event)
+foul to("bot", event) = App.Live.Bots.on(event.name, event)
+foul to("dialog", event) = App.Live.Navigation.on(event.name, event)
+foul to("cancel", event) = App.Live.Navigation.on(event.name, event)
+foul to("view", event) = App.Live.Navigation.on(event.name, event)
+foul to("attention", event) = App.Live.Navigation.on(event.name, event)
+foul to("visit", event) = App.Live.Addresses.on(event.name, event)
+# Anything else, `refresh` from Metro's live.js among it, leaves the tab as
+# it is, to be shown again as things are stored now.
+foul to(_, event) = (event.tab, false)

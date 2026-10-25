@@ -61,7 +61,7 @@ describe("App.Live.Teams, who is in one") do
       let design = createDesign(world)
       let (_, added) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
       Assert.truthy(added)
-      stepped(world, world.eve, Tab {}, [("event", "send"), ("body", "ping @design-crew")])
+      stepped(world, world.eve, Tab {}, [("event", "message-send"), ("body", "ping @design-crew")])
       Assert.truthy(shown(world, world.bob, Tab {}).contains?("<span class=\"mention you\">@design-crew</span>"))
       let evesView = shown(world, world.eve, Tab {})
       Assert.truthy(evesView.contains?("<span class=\"mention\">@design-crew</span>"))

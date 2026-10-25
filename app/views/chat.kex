@@ -603,7 +603,7 @@ private do
     .join(", ")
 
   # Where a conversation is, as an address: the one the address bar shows
-  # and `App.Live.Chat.arrived` reads back.
+  # and `App.Live.Addresses.tabFor` reads back.
   located : Organization -> Conversation -> User -> [Message] -> String
   let located(organization, conversation, user, thread) do
     let channel = App.Paths.channelPath.filled({
@@ -927,7 +927,7 @@ private do
     let followups = woven(room, thread.drop(1), uses, "", 0, true)
     let summary = followups.empty? then "No replies yet" else tallied(followups.count)
     let composer = composerPartial(
-      "reply",
+      "message-reply",
       "reply-box",
       "Reply…",
       picked("#reply-box"),
@@ -984,7 +984,7 @@ private do
           .map { |file| queuedPartial(enclosed(file, room.people, "")) }
           .join("")
         let composer = composerPartial(
-          "send",
+          "message-send",
           "message-box",
           open.solo? then "Jot something down…" else "Message ${title}",
           picked("#message-box"),

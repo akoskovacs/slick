@@ -11,31 +11,31 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
 <div class="workspace" data-live-path="<%= place %>" data-live-title="<%= caption %>">
   <nav class="rail" aria-label="Organizations">
     <%== rail %>
-    <button type="button" class="badge add" data-event="organization-new" title="Create an organization">+</button>
+    <button type="button" class="badge add" data-event="dialog-open" data-dialog="organization" title="Create an organization">+</button>
   </nav>
   <nav class="sidebar">
     <div class="organization">
       <strong><%= organization %></strong>
-      <button type="button" class="quiet" data-event="invite">Add people</button>
+      <button type="button" class="quiet" data-event="dialog-open" data-dialog="invite">Add people</button>
     </div>
     <div class="sidebar-head">
       <h2>Channels</h2>
-      <button type="button" class="quiet" data-event="channel-new" title="New channel">+</button>
+      <button type="button" class="quiet" data-event="dialog-open" data-dialog="channel" title="New channel">+</button>
     </div>
     <ul class="entries"><%== channels %></ul>
     <div class="sidebar-head">
       <h2>Direct messages</h2>
-      <button type="button" class="quiet" data-event="group-new" title="New group chat">+</button>
+      <button type="button" class="quiet" data-event="dialog-open" data-dialog="group" title="New group chat">+</button>
     </div>
     <ul class="entries people"><%== people %></ul>
     <div class="sidebar-head">
       <h2>Teams</h2>
-      <button type="button" class="quiet" data-event="team-new" title="New team">+</button>
+      <button type="button" class="quiet" data-event="dialog-open" data-dialog="team" title="New team">+</button>
     </div>
     <ul class="entries"><%== teams %></ul>
     <div class="sidebar-head">
       <h2>Bots</h2>
-      <button type="button" class="quiet" data-event="bots" title="Add a bot, or give one a new API token">⚙</button>
+      <button type="button" class="quiet" data-event="dialog-open" data-dialog="bots" title="Add a bot, or give one a new API token">⚙</button>
     </div>
     <ul class="entries people"><%== robots %></ul>
   </nav>

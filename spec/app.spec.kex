@@ -78,7 +78,7 @@ describe("Slick") do
     # A form: one choice is buttons, anything more is fields and Send.
     let poll = App.Helpers.RichText.shown("[?] Deploy to: staging | production", "m1", [])
     Assert.truthy(poll.contains?("<p class=\"asked\">Deploy to</p>"))
-    Assert.truthy(poll.contains?("data-event=\"answer\" data-form=\"0\" data-label=\"Deploy to\" data-message=\"m1\" data-value=\"staging\""))
+    Assert.truthy(poll.contains?("data-event=\"message-answer\" data-form=\"0\" data-label=\"Deploy to\" data-message=\"m1\" data-value=\"staging\""))
     let form = "Please say:\n[?] Where: here | there\n[?] Notes"
     let asked = App.Helpers.RichText.shown(form, "m2", [])
     Assert.truthy(asked.contains?("<p>Please say:</p><form class=\"asking-form\" data-live=\"answer\""))
@@ -245,7 +245,7 @@ describe("Slick") do
 
       # Using one is not a message: it is a line in the conversation, and
       # what the bot is told. A command nobody declared is a message.
-      let (_, used) = stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "@claude /model fast")])
+      let (_, used) = stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "@claude /model fast")])
       Assert.truthy(used)
       let withUse = App.Live.Chat.markup(statuses, ada, Tab {})
       Assert.truthy(withUse.contains?("class=\"used\""))
@@ -255,15 +255,15 @@ describe("Slick") do
       Assert.truthy(told.contains?("\"command\":\"model\""))
       Assert.truthy(told.contains?("\"arguments\":\"fast\""))
       Assert.truthy(told.contains?("\"channel\":\"general\""))
-      stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "/unknown thing")])
+      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "/unknown thing")])
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("/unknown thing"))
 
       let question = site.call(Metro.WebRequest.asked("POST", "/api/acme/channels/general/messages", asBotJson, "{\"body\":\"[?] Ship it: yes | no\"}"))
       Assert.equal(question.code, 201)
       let questionId = question.payload.to(String).or("").split("\"id\":\"").second.or("").split("\"").first.or("")
-      let inGeneral = App.Live.Chat.arrived(ada, "/acme/channels/general")
-      stepped(statuses, ada, inGeneral, [("event", "answer"), ("message", questionId), ("form", "0"), ("label", "Ship it"), ("value", "yes")])
-      stepped(statuses, ada, inGeneral, [("event", "send"), ("body", "[?] Ship it: yes | no")])
+      let inGeneral = App.Live.Addresses.tabFor(ada, "/acme/channels/general")
+      stepped(statuses, ada, inGeneral, [("event", "message-answer"), ("message", questionId), ("form", "0"), ("label", "Ship it"), ("value", "yes")])
+      stepped(statuses, ada, inGeneral, [("event", "message-send"), ("body", "[?] Ship it: yes | no")])
       let answers = site.call(Metro.WebRequest.asked("GET", "/api/acme/answers", asBot, "")).payload.to(String).or("")
       Assert.truthy(answers.contains?("\"answer\":\"Ship it: yes\"") && answers.contains?("\"channel\":\"general\""))
       Assert.truthy(answers.contains?("\"user\":\"${ada.id}\"") && answers.contains?("\"message\":\"${questionId}\""))
@@ -300,7 +300,7 @@ describe("Slick") do
       let groupMessages = "/api/acme/groups/${huddle.conversation}/messages"
       Assert.equal(site.call(Metro.WebRequest.asked("POST", groupMessages, asBotJson, "{\"body\":\"hello, both\"}")).code, 201)
       Assert.truthy(App.Live.Chat.markup(statuses, bob, huddle).contains?("hello, both"))
-      stepped(statuses, ada, huddle, [("event", "send"), ("body", "@claude /mode quick")])
+      stepped(statuses, ada, huddle, [("event", "message-send"), ("body", "@claude /mode quick")])
       let huddled = site.call(Metro.WebRequest.asked("GET", "/api/acme/invocations?after=0", asBot, "")).payload.to(String).or("")
       Assert.truthy(huddled.contains?("\"group\":\"${huddle.conversation}\""))
       let (aside, _) = stepped(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", eve.id)])
@@ -349,21 +349,21 @@ describe("Slick") do
       Assert.truthy(first.contains?("Bob"))
 
       # A message, with an emoji, seen by somebody else.
-      let (afterSend, sendChanged) = stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "hello <b>world</b> :wave:")])
+      let (afterSend, sendChanged) = stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "hello <b>world</b> :wave:")])
       Assert.truthy(sendChanged)
       let bobSees = App.Live.Chat.markup(statuses, bob, Tab {})
       Assert.truthy(bobSees.contains?("hello &lt;b&gt;world&lt;/b&gt; 👋"))
       Assert.truthy(bobSees.contains?("<strong>Ada</strong>"))
-      let (_, emptyChanged) = stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "   ")])
+      let (_, emptyChanged) = stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "   ")])
       Assert.falsy(emptyChanged)
 
       # Consecutive messages of one person are one block: the name is there once.
-      stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "and one more thing")])
+      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "and one more thing")])
       let block = App.Live.Chat.markup(statuses, bob, Tab {})
       Assert.equal(block.split("<strong>Ada</strong>").count, 2)
       Assert.truthy(block.contains?("class=\"message continued\""))
-      stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "bob cuts in")])
-      stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "ada again")])
+      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "bob cuts in")])
+      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "ada again")])
       Assert.equal(App.Live.Chat.markup(statuses, eve, Tab {}).split("<strong>Ada</strong>").count, 3)
 
       # Typing is shown to the others there, not to the one typing, and is
@@ -372,7 +372,7 @@ describe("Slick") do
       Assert.truthy(typingHeard)
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("<strong>Ada</strong> is typing…"))
       Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("is typing…"))
-      stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "typed and sent")])
+      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "typed and sent")])
       Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("is typing…"))
       Assert.truthy(App.Live.Statuses.say(statuses, eve, Tab {}, "Deploying <now>", 30000))
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("<strong>Eve</strong> Deploying &lt;now&gt;…"))
@@ -411,11 +411,11 @@ describe("Slick") do
       # A form in a message is answered by using it. The answer is kept with
       # the message and shown under its form: it is not a message, and
       # typing what an answer says is not an answer.
-      stepped(statuses, bob, inRandom, [("event", "send"), ("body", "[?] Lunch: pizza | soup")])
+      stepped(statuses, bob, inRandom, [("event", "message-send"), ("body", "[?] Lunch: pizza | soup")])
       let asking = App.Live.Chat.markup(statuses, ada, inRandom)
       Assert.truthy(asking.contains?("data-label=\"Lunch\"") && asking.contains?("data-value=\"soup\""))
       let lunchId = asking.split("data-label=\"Lunch\" data-message=\"").drop(1).first.or("").split("\"").first.or("")
-      let lunch = [("event", "answer"), ("message", lunchId), ("form", "0"), ("label", "Lunch")]
+      let lunch = [("event", "message-answer"), ("message", lunchId), ("form", "0"), ("label", "Lunch")]
       let (afterAnswer, answerGiven) = stepped(statuses, ada, inRandom, lunch + [("value", "soup")])
       Assert.truthy(answerGiven)
       Assert.equal(afterAnswer.conversation, inRandom.conversation)
@@ -433,37 +433,37 @@ describe("Slick") do
       let (_, answeredElsewhere) = stepped(statuses, ada, Tab {}, lunch + [("value", "soup")])
       Assert.falsy(answeredElsewhere)
       # Saying it is only saying it.
-      stepped(statuses, eve, inRandom, [("event", "send"), ("body", "Lunch: soup")])
+      stepped(statuses, eve, inRandom, [("event", "message-send"), ("body", "Lunch: soup")])
       Assert.falsy(App.Live.Chat.markup(statuses, bob, inRandom).contains?("<strong>Eve</strong> <span>soup</span>"))
 
       stepped(statuses, bob, inRandom, [("event", "topic-set"), ("topic", "Anything goes :tada:")])
 
       # A private chat between Ada and Bob.
       let (adaPrivate, _) = stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", bob.id)])
-      stepped(statuses, ada, adaPrivate, [("event", "send"), ("body", "between us")])
+      stepped(statuses, ada, adaPrivate, [("event", "message-send"), ("body", "between us")])
 
       # Reactions: on, counted, off again; not from outside the conversation.
       let general = App.Live.Chat.markup(statuses, bob, Tab {})
       let messageId = general.split("id=\"message-").drop(1).first.or("").split("\"").first.or("")
       Assert.truthy(!messageId.empty?)
-      let (_, reacted) = stepped(statuses, bob, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+      let (_, reacted) = stepped(statuses, bob, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
       Assert.truthy(reacted)
-      stepped(statuses, ada, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+      stepped(statuses, ada, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("🎉 <span>2</span>"))
-      stepped(statuses, bob, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+      stepped(statuses, bob, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("🎉 <span>1</span>"))
-      let (_, wrongEmoji) = stepped(statuses, bob, Tab {}, [("event", "react"), ("message", messageId), ("emoji", "<script>")])
+      let (_, wrongEmoji) = stepped(statuses, bob, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "<script>")])
       Assert.falsy(wrongEmoji)
-      let (_, wrongPlace) = stepped(statuses, bob, inRandom, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+      let (_, wrongPlace) = stepped(statuses, bob, inRandom, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
       Assert.falsy(wrongPlace)
 
       # Threads: replies stay out of the conversation, which counts them.
       let (bobThread, _) = stepped(statuses, bob, Tab {}, [("event", "thread-open"), ("message", messageId)])
       Assert.equal(bobThread.thread, messageId)
       Assert.truthy(App.Live.Chat.markup(statuses, bob, bobThread).contains?("No replies yet"))
-      let (_, replySent) = stepped(statuses, bob, bobThread, [("event", "reply"), ("body", "a reply in the thread")])
+      let (_, replySent) = stepped(statuses, bob, bobThread, [("event", "message-reply"), ("body", "a reply in the thread")])
       Assert.truthy(replySent)
-      stepped(statuses, ada, bobThread, [("event", "reply"), ("body", "and another")])
+      stepped(statuses, ada, bobThread, [("event", "message-reply"), ("body", "and another")])
       let outside = App.Live.Chat.markup(statuses, eve, Tab {})
       Assert.falsy(outside.contains?("a reply in the thread"))
       Assert.truthy(outside.contains?("2 replies"))
@@ -474,26 +474,26 @@ describe("Slick") do
       Assert.truthy(inside.contains?("data-live-path=\"/acmecorp/channels/general?thread=${messageId}\""))
       # A reply with no thread open goes nowhere; a thread from another
       # conversation does not open here.
-      let (_, stray) = stepped(statuses, bob, Tab {}, [("event", "reply"), ("body", "lost")])
+      let (_, stray) = stepped(statuses, bob, Tab {}, [("event", "message-reply"), ("body", "lost")])
       Assert.falsy(stray)
       let (elsewhere, _) = stepped(statuses, bob, inRandom, [("event", "thread-open"), ("message", messageId)])
       Assert.equal(elsewhere.thread, "")
       # Sending in the conversation leaves the thread open beside it.
-      let (stillOpen, _) = stepped(statuses, bob, bobThread, [("event", "send"), ("body", "back in the channel")])
+      let (stillOpen, _) = stepped(statuses, bob, bobThread, [("event", "message-send"), ("body", "back in the channel")])
       Assert.equal(stillOpen.thread, messageId)
 
       # Addresses: an organization, then a channel by name, a private chat by
       # person, a thread.
-      Assert.equal(App.Live.Chat.arrived(eve, "/acmecorp/channels/random").conversation, inRandom.conversation)
-      Assert.equal(App.Live.Chat.arrived(eve, "/acmecorp/channels/general?thread=${messageId}").thread, messageId)
-      Assert.equal(App.Live.Chat.arrived(ada, "/acmecorp/dm/${bob.id}").conversation, adaPrivate.conversation)
-      Assert.equal(App.Live.Chat.arrived(eve, "/acmecorp/channels/nowhere").conversation, "")
-      Assert.equal(App.Live.Chat.arrived(eve, "/acmecorp/dm/nobody").conversation, "")
-      Assert.equal(App.Live.Chat.arrived(eve, "/nowhere/channels/general").organization, "")
+      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/channels/random").conversation, inRandom.conversation)
+      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/channels/general?thread=${messageId}").thread, messageId)
+      Assert.equal(App.Live.Addresses.tabFor(ada, "/acmecorp/dm/${bob.id}").conversation, adaPrivate.conversation)
+      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/channels/nowhere").conversation, "")
+      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/dm/nobody").conversation, "")
+      Assert.equal(App.Live.Addresses.tabFor(eve, "/nowhere/channels/general").organization, "")
       Assert.truthy(App.Live.Chat.markup(statuses, ada, adaPrivate).contains?("data-live-path=\"/acmecorp/dm/${bob.id}\""))
       Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("# random · Acme Corp\">"))
       # Eve going to her own chat with Bob gets hers, not Ada's.
-      Assert.truthy(App.Live.Chat.arrived(eve, "/acmecorp/dm/${bob.id}").conversation != adaPrivate.conversation)
+      Assert.truthy(App.Live.Addresses.tabFor(eve, "/acmecorp/dm/${bob.id}").conversation != adaPrivate.conversation)
 
       # Organizations are apart. Mallory, not in Acme, gets none of it: not by
       # address, not by naming the organization or a channel's id, not by
@@ -504,14 +504,14 @@ describe("Slick") do
       Assert.falsy(malSees.contains?("# random"))
       Assert.falsy(malSees.contains?("Ada"))
       Assert.falsy(malSees.contains?("hello"))
-      Assert.equal(App.Live.Chat.arrived(mal, "/acmecorp/channels/random"), Tab {})
+      Assert.equal(App.Live.Addresses.tabFor(mal, "/acmecorp/channels/random"), Tab {})
       let (malSwitched, _) = stepped(statuses, mal, Tab {}, [("event", "organization-switch"), ("id", inAcme.organization)])
       Assert.equal(malSwitched.organization, "")
       let malForged = Tab { organization: inAcme.organization, conversation: inRandom.conversation }
       Assert.equal(App.Live.Places.visible(mal, malForged), None)
-      let (_, malSent) = stepped(statuses, mal, malForged, [("event", "send"), ("body", "mallory was here")])
+      let (_, malSent) = stepped(statuses, mal, malForged, [("event", "message-send"), ("body", "mallory was here")])
       Assert.falsy(malSent)
-      let (_, malReacted) = stepped(statuses, mal, malForged, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
+      let (_, malReacted) = stepped(statuses, mal, malForged, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
       Assert.falsy(malReacted)
       Assert.falsy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("mallory was here"))
 
@@ -522,19 +522,19 @@ describe("Slick") do
       # below include; spec/bots.spec.kex has the rest.
       let (botTab, _) = stepped(statuses, bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot"), ("owner", "me")])
       let deployBot : User = App.Services.Bots.bearer(Just("Bearer ${botTab.secret}")).try
-      stepped(statuses, deployBot, Tab {}, [("event", "send"), ("body", "deployed :rocket:")])
+      stepped(statuses, deployBot, Tab {}, [("event", "message-send"), ("body", "deployed :rocket:")])
 
       # A note Ada keeps for herself.
       let (adaAlone, _) = stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", ada.id)])
-      stepped(statuses, ada, adaAlone, [("event", "send"), ("body", "a note to self")])
+      stepped(statuses, ada, adaAlone, [("event", "message-send"), ("body", "a note to self")])
 
       # Unread: what came since somebody last looked is counted beside the
       # place, in the title, and in the rail for another organization; looking
       # reads it.
       App.Live.Chat.markup(statuses, eve, Tab {})
       Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
-      stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "one for later")])
-      stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "and another")])
+      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "one for later")])
+      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "and another")])
       let eveAway = App.Live.Chat.markup(statuses, eve, inRandom)
       Assert.truthy(eveAway.contains?("# general\n      <span class=\"count\" aria-label=\"2 unread\">2</span>"))
       Assert.truthy(eveAway.contains?("data-live-title=\"(2) # random"))
@@ -542,21 +542,21 @@ describe("Slick") do
       App.Live.Chat.markup(statuses, eve, Tab {})
       Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
       # Replies are read in their thread, and do not count.
-      stepped(statuses, bob, bobThread, [("event", "reply"), ("body", "a quiet reply")])
+      stepped(statuses, bob, bobThread, [("event", "message-reply"), ("body", "a quiet reply")])
       Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
       # A conversation open in a tab nobody is looking at is not read: what
       # arrives counts, in the title, until they look again.
       let eveAway = Tab { attentive?: false }
       let (eveBack, _) = stepped(statuses, eve, eveAway, [("event", "attention"), ("on", "true")])
       Assert.truthy(eveBack.attentive?)
-      stepped(statuses, bob, Tab {}, [("event", "send"), ("body", "while eve is away")])
+      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "while eve is away")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1) # general"))
       App.Live.Chat.markup(statuses, eve, eveBack)
       Assert.falsy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1)"))
       # Replying in a thread follows it: other people's replies there count
       # on its channel until the thread is read.
-      stepped(statuses, eve, bobThread, [("event", "reply"), ("body", "count me in")])
-      stepped(statuses, bob, bobThread, [("event", "reply"), ("body", "eve, look")])
+      stepped(statuses, eve, bobThread, [("event", "message-reply"), ("body", "count me in")])
+      stepped(statuses, bob, bobThread, [("event", "message-reply"), ("body", "eve, look")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\" aria-label=\"1 unread\">1</span>"))
       # Reading the channel is not reading the thread.
       Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("data-live-title=\"(1) # general"))
@@ -564,7 +564,7 @@ describe("Slick") do
       Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
       # A private chat is counted by the person it is with.
       let (bobToEve, _) = stepped(statuses, bob, Tab {}, [("event", "direct-open"), ("user", eve.id)])
-      stepped(statuses, bob, bobToEve, [("event", "send"), ("body", "psst, eve")])
+      stepped(statuses, bob, bobToEve, [("event", "message-send"), ("body", "psst, eve")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"count\""))
 
       # Transactions go through the store as one: an Error answered from
@@ -597,14 +597,14 @@ describe("Slick") do
       let bothBoxes = App.Live.Chat.markup(statuses, ada, adaThread)
       Assert.truthy(bothBoxes.contains?(">a reply, later</textarea>"))
       Assert.truthy(bothBoxes.contains?(">half a thought</textarea>"))
-      stepped(statuses, ada, adaThread, [("event", "reply"), ("body", "a reply, now")])
+      stepped(statuses, ada, adaThread, [("event", "message-reply"), ("body", "a reply, now")])
       Assert.falsy(App.Live.Chat.markup(statuses, ada, adaThread).contains?("a reply, later"))
       # A private chat is marked by the person it is with.
       stepped(statuses, ada, adaPrivate, [("event", "draft-save"), ("place", "send"), ("body", "psst")])
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"drafted\""))
       stepped(statuses, ada, adaPrivate, [("event", "draft-save"), ("place", "send"), ("body", "  ")])
       # Sending takes it away; nobody keeps a draft where they cannot write.
-      stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "half a thought, finished")])
+      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "half a thought, finished")])
       Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]), [])
       stepped(statuses, mal, malForged, [("event", "draft-save"), ("place", "send"), ("body", "sneaky")])
       Assert.equal(DB.Repositories.Drafts.pending(mal.id).or([]), [])
@@ -651,7 +651,7 @@ describe("Slick") do
         Assert.equal(asking(bob).code, 404)
         Assert.equal(asking(ada).code, 200)
         # A file goes without words.
-        let (afterFile, fileSent) = stepped(statuses, ada, adaShares, [("event", "send"), ("body", "")])
+        let (afterFile, fileSent) = stepped(statuses, ada, adaShares, [("event", "message-send"), ("body", "")])
         Assert.truthy(fileSent)
         Assert.equal(afterFile.pending, [])
         Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("href=\"/files/${fileId}\""))

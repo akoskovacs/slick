@@ -294,7 +294,7 @@ private do
   # One option of a choice, as the button that answers with it.
   offered : String -> Integer -> String -> String -> Html.Node
   let offered(key, index, label, option) do
-    let atts = {"type": "button", "class": "option", "data-event": "answer", "data-message": key, "data-form": "${index}", "data-label": label, "data-value": option}
+    let atts = {"type": "button", "class": "option", "data-event": "message-answer", "data-message": key, "data-form": "${index}", "data-label": label, "data-value": option}
     Html.button(key.empty? then atts.put("disabled", "") else atts) do
       ...inline(option)
     end

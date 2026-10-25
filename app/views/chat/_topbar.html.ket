@@ -13,7 +13,7 @@ params: [who: String, emblem: String, saying: String, set?: Bool, mine: String]
         <% if !mine.empty? %>
           <button type="button" data-event="profile-open" data-user="<%= mine %>">Profile</button>
         <% end %>
-        <button type="button" data-event="status"><% if set? %>Change your status…<% else %>Set a status…<% end %></button>
+        <button type="button" data-event="dialog-open" data-dialog="status"><% if set? %>Change your status…<% else %>Set a status…<% end %></button>
         <% if set? %>
           <button type="button" data-event="status-clear">Clear status</button>
         <% end %>

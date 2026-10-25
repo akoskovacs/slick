@@ -31,8 +31,8 @@ params: [card: Card]
     <% end %>
     <div class="actions">
     <% if card.own? %>
-      <button type="button" data-event="profile-edit">Edit profile</button>
-      <button type="button" data-event="status">Set a status…</button>
+      <button type="button" data-event="dialog-open" data-dialog="profile">Edit profile</button>
+      <button type="button" data-event="dialog-open" data-dialog="status">Set a status…</button>
     <% else %>
       <button type="button" class="primary"
         data-event="direct-open" data-user="<%= card.key %>">Message</button>

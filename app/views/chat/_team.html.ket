@@ -21,7 +21,7 @@ params: [crew: Crew, mates: String, rooms: String, candidates: String]
         <% else %>
           <button type="button" class="primary" data-event="team-join">Join</button>
         <% end %>
-        <button type="button" data-event="team-edit">Edit team</button>
+        <button type="button" data-event="dialog-open" data-dialog="team-edit">Edit team</button>
       </div>
     <% end %>
     <h3>Members</h3>

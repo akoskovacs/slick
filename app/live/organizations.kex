@@ -3,8 +3,10 @@
 module App.Live.Organizations
 
 using Metro.Validation, only: [rules, validates, present, sized]
-using App.Live.Outcome, only: [Outcome, unchanged, changed, refused]
+using Metro.Live.Socket, only: [unchanged, changed]
+using App.Live.Outcome, only: [Outcome, refused]
 using App.Live.Places, only: [home, member?]
+using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Grant, only: [Grant]
 using App.Models.User, only: [User]
@@ -125,3 +127,13 @@ foul removeMember(user, tab, personId) do
     end
   end
 end
+
+# What this part answers, of the events config/live.kex routes to it, by
+# their whole names; any other does nothing.
+on : String -> Event -> Outcome
+foul on("organization-switch", event) = switch(event.user, event.tab, given(event, "id"))
+foul on("organization-create", event) = create(event.user, event.tab, typed(event, "name"))
+foul on("invite-send", event) = invite(event.user, event.tab, typed(event, "email").lowerCase)
+foul on("role-set", event) = setRole(event.user, event.tab, given(event, "user"), given(event, "role"))
+foul on("member-remove", event) = removeMember(event.user, event.tab, given(event, "user"))
+foul on(_, event) = unchanged(event.tab)

@@ -11,7 +11,7 @@ using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, userFo
 show : WebRequest -> WebRequest
 foul show(request) do
   let user = userFor(request)
-  let tab = App.Live.Chat.arrived(user, request.target)
+  let tab = App.Live.Addresses.tabFor(user, request.target)
   let live = App.Live.Chat.markup(statusesFor(request), user, tab)
   return page(request, 200, App.Views.Chat.page { live })
 end
@@ -35,7 +35,7 @@ foul joined(request, socket) do
   App.Live.Statuses.arrive(statuses, user, seat)
   hub.changed(seat, "everyone")
   Metro.Live.Socket.attached(
-    socket, hub, "everyone", App.Live.Chat.arrived(user, request.query("at").or("/")),
+    socket, hub, "everyone", App.Live.Addresses.tabFor(user, request.query("at").or("/")),
     { |tab, event| App.Live.Chat.handled(events, statuses, user, tab, event) },
     { |tab| App.Live.Chat.markup(statuses, user, tab) }
   )

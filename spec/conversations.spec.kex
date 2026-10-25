@@ -31,7 +31,7 @@ describe("App.Live.Conversations, channels") do
   it("refuses a malformed or taken name, with the dialog left open") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let (asking, _) = stepped(world, world.ada, Tab {}, [("event", "channel-new")])
+      let (asking, _) = stepped(world, world.ada, Tab {}, [("event", "dialog-open"), ("dialog", "channel")])
       Assert.truthy(shown(world, world.ada, asking).contains?("aria-label=\"Create a channel\""))
       let (malformed, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "Bad Name!")])
       Assert.equal(malformed.dialog, "channel")
@@ -54,7 +54,7 @@ describe("App.Live.Conversations, channels") do
       Assert.equal(App.Live.Places.visible(world.bob, secret), None)
       let (bobOpens, _) = stepped(world, world.bob, Tab {}, [("event", "conversation-open"), ("id", secret.conversation)])
       Assert.truthy(bobOpens.conversation != secret.conversation)
-      let (_, bobSent) = stepped(world, world.bob, secret, [("event", "send"), ("body", "let me in")])
+      let (_, bobSent) = stepped(world, world.bob, secret, [("event", "message-send"), ("body", "let me in")])
       Assert.falsy(bobSent)
     end
   end
@@ -99,7 +99,7 @@ describe("App.Live.Conversations, private chats") do
       let (bobs, _) = stepped(world, world.bob, Tab {}, [("event", "direct-open"), ("user", world.ada.id)])
       Assert.truthy(!adas.conversation.empty?)
       Assert.equal(adas.conversation, bobs.conversation)
-      stepped(world, world.ada, adas, [("event", "send"), ("body", "between us")])
+      stepped(world, world.ada, adas, [("event", "message-send"), ("body", "between us")])
       Assert.truthy(shown(world, world.bob, bobs).contains?("between us"))
       Assert.truthy(shown(world, world.ada, adas).contains?("only the two of you"))
     end
@@ -109,13 +109,13 @@ describe("App.Live.Conversations, private chats") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let (adas, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
-      stepped(world, world.ada, adas, [("event", "send"), ("body", "between us")])
+      stepped(world, world.ada, adas, [("event", "message-send"), ("body", "between us")])
       let eveTries = Tab { conversation: adas.conversation }
       Assert.equal(App.Live.Places.visible(world.eve, eveTries), None)
       Assert.falsy(shown(world, world.eve, eveTries).contains?("between us"))
       let (eveOpened, _) = stepped(world, world.eve, Tab {}, [("event", "conversation-open"), ("id", adas.conversation)])
       Assert.equal(eveOpened.conversation, "")
-      let (_, eveSent) = stepped(world, world.eve, eveTries, [("event", "send"), ("body", "let me in")])
+      let (_, eveSent) = stepped(world, world.eve, eveTries, [("event", "message-send"), ("body", "let me in")])
       Assert.falsy(eveSent)
       Assert.falsy(shown(world, world.ada, adas).contains?("let me in"))
     end
@@ -126,14 +126,14 @@ describe("App.Live.Conversations, private chats") do
       let world = populated()
       let (alone, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.ada.id)])
       Assert.truthy(!alone.conversation.empty?)
-      let (_, sent) = stepped(world, world.ada, alone, [("event", "send"), ("body", "a note to self")])
+      let (_, sent) = stepped(world, world.ada, alone, [("event", "message-send"), ("body", "a note to self")])
       Assert.truthy(sent)
       let own = shown(world, world.ada, alone)
       Assert.truthy(own.contains?("This is your space"))
       Assert.truthy(own.contains?("a note to self"))
       Assert.truthy(own.contains?("Ada (you)"))
       Assert.truthy(own.contains?("data-live-path=\"/acmecorp/dm/${world.ada.id}\""))
-      Assert.equal(App.Live.Chat.arrived(world.ada, "/acmecorp/dm/${world.ada.id}").conversation, alone.conversation)
+      Assert.equal(App.Live.Addresses.tabFor(world.ada, "/acmecorp/dm/${world.ada.id}").conversation, alone.conversation)
       Assert.equal(App.Live.Places.visible(world.bob, alone), None)
       Assert.falsy(shown(world, world.ada, Tab {}).contains?("This is your space"))
     end
@@ -175,7 +175,7 @@ describe("App.Live.Conversations, group chats") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let trio = createTrio(world)
-      stepped(world, world.bob, trio, [("event", "send"), ("body", "the three of us")])
+      stepped(world, world.bob, trio, [("event", "message-send"), ("body", "the three of us")])
       Assert.truthy(shown(world, world.ada, Tab {}).contains?(">Bob, Eve"))
       let evesSidebar = shown(world, world.eve, Tab {})
       Assert.truthy(evesSidebar.contains?(">Ada, Bob"))
@@ -185,8 +185,8 @@ describe("App.Live.Conversations, group chats") do
       Assert.truthy(evesView.contains?("Private: only the 3 of you can read this."))
       let address = "/acmecorp/groups/${trio.conversation}"
       Assert.truthy(evesView.contains?("data-live-path=\"${address}\""))
-      Assert.equal(App.Live.Chat.arrived(world.eve, address).conversation, trio.conversation)
-      Assert.equal(App.Live.Chat.arrived(world.mal, address).conversation, "")
+      Assert.equal(App.Live.Addresses.tabFor(world.eve, address).conversation, trio.conversation)
+      Assert.equal(App.Live.Addresses.tabFor(world.mal, address).conversation, "")
     end
   end
 
@@ -195,7 +195,7 @@ describe("App.Live.Conversations, group chats") do
       let world = populated()
       createChannel(world, "secret", "private")
       let trio = createTrio(world)
-      stepped(world, world.bob, trio, [("event", "send"), ("body", "the three of us")])
+      stepped(world, world.bob, trio, [("event", "message-send"), ("body", "the three of us")])
       let (_, malformed) = stepped(world, world.ada, trio, [("event", "group-promote"), ("title", "Bad Name!")])
       Assert.falsy(malformed)
       let (_, taken) = stepped(world, world.ada, trio, [("event", "group-promote"), ("title", "secret"), ("access", "private")])

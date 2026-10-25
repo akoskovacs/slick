@@ -1,0 +1,41 @@
+# What a tab shows, apart from what is stored: the dialog open over the
+# conversation, which of its views is shown, and whether anybody is looking.
+module App.Live.Navigation
+
+using Metro.Live.Socket, only: [unchanged]
+using App.Live.Event, only: [Event, given]
+using App.Live.Outcome, only: [Outcome]
+using App.Live.Tab, only: [Tab, closed]
+
+# The dialogs a tab opens by name (`dialog-open` with `dialog`).
+let DIALOGS = [
+  "channel",
+  "group",
+  "promote",
+  "admit",
+  "team",
+  "team-edit",
+  "organization",
+  "invite",
+  "status",
+  "profile",
+  "bots"
+]
+
+on : String -> Event -> Outcome
+foul on("dialog-open", event) = unchanged(opened(event.tab, given(event, "dialog")))
+# Closing whatever is open over the conversation: `cancel`, from a button,
+# or from Metro's live.js on Escape or a click beside a dialog.
+foul on("cancel", event) = unchanged(closed(event.tab))
+foul on("view-messages", event) = unchanged(Tab { ...closed(event.tab), view: "" })
+foul on("view-files", event) = unchanged(Tab { ...closed(event.tab), thread: "", view: "files" })
+foul on("view-settings", event) = unchanged(Tab { ...closed(event.tab), thread: "", profile: "", team: "", view: "settings" })
+# Whether somebody is looking at the tab: `attention`, from Metro's live.js.
+foul on("attention", event) = unchanged(Tab { ...event.tab, attentive?: given(event, "on") != "false" })
+foul on(_, event) = unchanged(event.tab)
+
+private do
+  # The tab with a dialog open over the conversation, if it is one a tab has.
+  opened : Tab -> String -> Tab
+  let opened(tab, dialog) = DIALOGS.contains?(dialog) then Tab { ...closed(tab), dialog: dialog } else tab
+end

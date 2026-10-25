@@ -1,6 +1,6 @@
 ---
 params: [chip: Chip]
 ---
-<button type="button" class="chip<% if chip.own? %> own<% end %>" data-event="react" data-message="<%= chip.key %>" data-emoji="<%= chip.glyph %>">
+<button type="button" class="chip<% if chip.own? %> own<% end %>" data-event="message-react" data-message="<%= chip.key %>" data-emoji="<%= chip.glyph %>">
   <%= chip.glyph %><% if !chip.tally.empty? %> <span><%= chip.tally %></span><% end %>
 </button>

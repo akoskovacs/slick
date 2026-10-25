@@ -15,6 +15,7 @@ module App.Live.Chat
 using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field, repeated]
 using App.Live.Places, only: [home, visible, organizations, memberOrganization]
+using App.Live.Event, only: [Event]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
@@ -139,169 +140,14 @@ end
 
 # Applies one event: the tab's next state, and whether something other tabs
 # show was changed — in which case they are told to refresh. What changed in
-# what a bot could see is noted to the events bus on the way (`bus`).
+# what a bot could see is noted to the events bus on the way (`bus`). Which
+# part of Slick answers it is config/live.kex's to say.
 handled : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
-foul handled(bus, statuses, user, tab, entries) = on(field(entries, "event"), Event {
+foul handled(bus, statuses, user, tab, entries) = Config.Live.routed(Event {
+  name: Metro.Live.Socket.named(entries),
   bus: bus,
   statuses: statuses,
   user: user,
   tab: tab,
   entries: entries
 })
-
-# One event from a tab, and whose tab it is.
-record Event do
-  bus : Server<App.Live.Events.Bus>
-  statuses : Server<Presence>
-  user : User
-  tab : Tab
-  # What the browser sent with it.
-  entries : [(String, String?)]
-end
-
-# The dialogs a tab opens by name, with nothing else open over the
-# conversation: the event that opens each, and the dialog.
-let DIALOGS = {
-  "channel-new": "channel",
-  "group-new": "group",
-  "promote": "promote",
-  "admit": "admit",
-  "team-new": "team",
-  "team-edit": "team-edit",
-  "organization-new": "organization",
-  "invite": "invite",
-  "status": "status",
-  "profile-edit": "profile",
-  "bots": "bots"
-}
-
-private do
-  # What came with an event: as sent, trimmed, and every value sent for it.
-  given : Event -> String -> String
-  let given(event, key) = field(event.entries, key)
-
-  typed : Event -> String -> String
-  let typed(event, key) = field(event.entries, key).trim
-
-  picked : Event -> String -> [String]
-  let picked(event, key) = repeated(event.entries, key)
-
-  # What each event does, by its name.
-  on : String -> Event -> (Tab, Bool)
-
-  # Conversations.
-  foul on("conversation-open", event) = App.Live.Conversations.open(event.user, event.tab, given(event, "id"))
-  foul on("direct-open", event) = App.Live.Conversations.openDirect(event.user, event.tab, given(event, "user"))
-  foul on("channel-create", event) = App.Live.Conversations.createChannel(event.user, event.tab, typed(event, "title").lowerCase, given(event, "access"), given(event, "team"))
-  foul on("channel-add", event) = App.Live.Conversations.addPeople(event.user, event.tab, picked(event, "person"))
-  foul on("channel-configure", event) = App.Live.Conversations.configure(event.user, event.tab, given(event, "access"), given(event, "team"), given(event, "bot-access"))
-  foul on("group-create", event) = App.Live.Conversations.createGroup(event.user, event.tab, picked(event, "person"))
-  foul on("group-promote", event) = App.Live.Conversations.makeChannel(event.user, event.tab, typed(event, "title").lowerCase, given(event, "access"))
-  foul on("topic-edit", event) = (Tab { ...closed(event.tab), retitling?: true }, false)
-  foul on("topic-set", event) = App.Live.Conversations.setTopic(event.user, event.tab, typed(event, "topic"))
-  foul on("settings", event) = (Tab { ...closed(event.tab), thread: "", profile: "", team: "", view: "settings" }, false)
-  foul on("files", event) = (Tab { ...closed(event.tab), thread: "", view: "files" }, false)
-  foul on("messages", event) = (Tab { ...closed(event.tab), view: "" }, false)
-
-  # Messages and threads.
-  foul on("send", event) = App.Live.Messages.send(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
-  foul on("reply", event) = App.Live.Messages.reply(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
-  foul on("draft-save", event) = App.Live.Messages.saveDraft(event.user, event.tab, given(event, "place"), given(event, "body"))
-  foul on("react", event) = App.Live.Messages.react(event.user, event.tab, given(event, "message"), given(event, "emoji"))
-  foul on("answer", event) = App.Live.Messages.answer(event.bus, event.user, event.tab, event.entries)
-  foul on("file-attach", event) = App.Live.Messages.attach(event.user, event.tab, given(event, "file"))
-  foul on("file-attach-failed", event) = App.Live.Messages.refuseUpload(event.tab, given(event, "filename"), given(event, "reason"))
-  foul on("file-detach", event) = App.Live.Messages.detach(event.tab, given(event, "file"))
-  foul on("thread-open", event) = App.Live.Threads.open(event.user, event.tab, given(event, "message"))
-  foul on("thread-close", event) = (Tab { organization: event.tab.organization, conversation: event.tab.conversation }, false)
-  foul on("typing", event) = App.Live.Statuses.markTyping(event.statuses, event.user, event.tab)
-
-  # Teams.
-  foul on("team-open", event) = App.Live.Teams.open(event.user, event.tab, given(event, "id"))
-  foul on("team-close", event) = (Tab { ...closed(event.tab), team: "" }, false)
-  foul on("team-create", event) = App.Live.Teams.create(event.user, event.tab, typed(event, "name"), typed(event, "description"), typed(event, "handle").lowerCase)
-  foul on("team-update", event) = App.Live.Teams.update(event.user, event.tab, typed(event, "name"), typed(event, "description"))
-  foul on("team-join", event) = App.Live.Teams.addMembers(event.user, event.tab, [event.user.id])
-  foul on("team-add", event) = App.Live.Teams.addMembers(event.user, event.tab, picked(event, "person"))
-  foul on("team-leave", event) = App.Live.Teams.removeMember(event.user, event.tab, event.user.id)
-  foul on("team-remove", event) = App.Live.Teams.removeMember(event.user, event.tab, given(event, "user"))
-
-  # Organizations, and who is in them.
-  foul on("organization-switch", event) = App.Live.Organizations.switch(event.user, event.tab, given(event, "id"))
-  foul on("organization-create", event) = App.Live.Organizations.create(event.user, event.tab, typed(event, "name"))
-  foul on("invite-send", event) = App.Live.Organizations.invite(event.user, event.tab, typed(event, "email").lowerCase)
-  foul on("role-set", event) = App.Live.Organizations.setRole(event.user, event.tab, given(event, "user"), given(event, "role"))
-  foul on("member-remove", event) = App.Live.Organizations.removeMember(event.user, event.tab, given(event, "user"))
-
-  # Profiles.
-  foul on("profile-open", event) = App.Live.Profiles.open(event.user, event.tab, given(event, "user"))
-  foul on("profile-close", event) = (Tab { ...closed(event.tab), profile: "" }, false)
-  foul on("profile-update", event) = App.Live.Profiles.update(event.user, event.tab, event.entries)
-  foul on("status-set", event) = App.Live.Profiles.setStatus(event.user, event.tab, typed(event, "emoji"), typed(event, "text"))
-  foul on("status-clear", event) = App.Live.Profiles.setStatus(event.user, event.tab, "", "")
-
-  # Bots.
-  foul on("bot-create", event) = App.Live.Bots.create(event.user, event.tab, typed(event, "name"), given(event, "owner"))
-  foul on("bot-rotate", event) = App.Live.Bots.rotateToken(event.user, event.tab, given(event, "id"))
-  foul on("bot-add", event) = App.Live.Bots.add(event.user, event.tab, given(event, "id"))
-  foul on("bot-remove", event) = App.Live.Bots.remove(event.user, event.tab, given(event, "id"))
-  foul on("bot-operators-set", event) = App.Live.Bots.setOperators(event.user, event.tab, given(event, "bot"), picked(event, "operator"))
-  foul on("bot-access-set", event) = App.Live.Bots.setAccess(event.user, event.tab, given(event, "access"))
-
-  # The tab itself: what its person is looking at, and where it is.
-  foul on("cancel", event) = (closed(event.tab), false)
-  foul on("attention", event) = (Tab { ...event.tab, attentive?: given(event, "on") != "false" }, false)
-  foul on("visit", event) = (arrived(event.user, given(event, "path")), false)
-
-  # A dialog, by the event that opens it; any other event does nothing.
-  foul on(name, event) = DIALOGS
-    .get(name)
-    .map { |dialog| (Tab { ...closed(event.tab), dialog: dialog }, false) }
-    .or((event.tab, false))
-end
-
-# The tab for an address (App.Paths): a channel, a private chat or a group
-# chat of an organization, any with `?thread=<message>`. Anything else, or a
-# place this person may not be, is the tab everyone starts with. A private
-# chat is started by going to it.
-arrived : User -> String -> Tab
-foul arrived(user, location) do
-  let thread = Metro.Path.query(location, "thread").or("")
-  match App.Paths.channelPath.captured(location) do
-    Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
-      None => return Tab {}
-      Just(organization) => match Conversations.channelCalled(organization.id, parts.get("name").or("")) do
-        Ok(Just(channel)) => return Tab { organization: organization.id, conversation: channel.id, thread: thread }
-        _ => return Tab { organization: organization.id }
-      end
-    end
-    None => match App.Paths.directPath.captured(location) do
-      None => return grouped(user, location, thread)
-      Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
-        None => return Tab {}
-        Just(organization) => do
-          let (chat, _) = App.Live.Conversations.openDirect(user, Tab { organization: organization.id }, parts.get("person").or(""))
-          return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
-        end
-      end
-    end
-  end
-end
-
-# The tab for the address of a group chat: only one this person is in.
-grouped : User -> String -> String -> Tab
-foul grouped(user, location, thread) do
-  match App.Paths.groupPath.captured(location) do
-    None => return Tab {}
-    Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
-      None => return Tab {}
-      Just(organization) => do
-        let tab = Tab { organization: organization.id, conversation: parts.get("group").or(""), thread: thread }
-        match visible(user, tab) do
-          Just(conversation) => return conversation.group? then tab else Tab { organization: organization.id }
-          None => return Tab { organization: organization.id }
-        end
-      end
-    end
-  end
-end

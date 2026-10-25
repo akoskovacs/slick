@@ -1,0 +1,77 @@
+using App.Live.Tab, only: [Tab]
+using Spec.Support, only: [World, stepped, shown, fresh, populated]
+
+# What a tab shows apart from what is stored, and where an address takes
+# it. Each example starts from a world of its own (Spec.Support).
+
+describe("App.Live.Navigation") do
+  it("opens a dialog a tab has by name, and no other") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (bots, changed) = stepped(world, world.ada, Tab {}, [("event", "dialog-open"), ("dialog", "bots")])
+      Assert.falsy(changed)
+      Assert.equal(bots.dialog, "bots")
+      let (odd, _) = stepped(world, world.ada, Tab {}, [("event", "dialog-open"), ("dialog", "anything")])
+      Assert.equal(odd, Tab {})
+    end
+  end
+
+  it("closes what is open over the conversation, and keeps the rest") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let open = Tab { team: "t1", dialog: "bots", dialogProblem: "x", notice: "y" }
+      let (cancelled, _) = stepped(world, world.ada, open, [("event", "cancel")])
+      Assert.equal(cancelled, Tab { team: "t1" })
+    end
+  end
+
+  it("shows a conversation's files, its settings, and its messages again") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (files, _) = stepped(world, world.ada, Tab { thread: "m1" }, [("event", "view-files")])
+      Assert.equal(files.view, "files")
+      Assert.equal(files.thread, "")
+      let (settings, _) = stepped(world, world.ada, Tab { profile: "u1", team: "t1" }, [("event", "view-settings")])
+      Assert.equal(settings, Tab { view: "settings" })
+      let (messages, _) = stepped(world, world.ada, files, [("event", "view-messages")])
+      Assert.equal(messages.view, "")
+    end
+  end
+
+  it("knows whether somebody is looking at the tab") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (away, _) = stepped(world, world.ada, Tab {}, [("event", "attention"), ("on", "false")])
+      Assert.falsy(away.attentive?)
+      let (back, _) = stepped(world, world.ada, away, [("event", "attention"), ("on", "true")])
+      Assert.truthy(back.attentive?)
+    end
+  end
+end
+
+describe("Config.Live") do
+  it("leaves the tab as it is for an event nobody answers") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let tab = Tab { dialog: "bots" }
+      Assert.equal(stepped(world, world.ada, tab, [("event", "refresh")]), (tab, false))
+      Assert.equal(stepped(world, world.ada, tab, [("event", "bot-explode")]), (tab, false))
+      Assert.equal(stepped(world, world.ada, tab, [("event", "")]), (tab, false))
+    end
+  end
+end
+
+describe("App.Live.Addresses") do
+  it("takes a tab to the address the browser goes back to") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let (there, _) = stepped(world, world.bob, Tab {}, [("event", "visit"), ("path", "/acmecorp/channels/random?thread=m1")])
+      Assert.truthy(!there.conversation.empty?)
+      Assert.equal(there.thread, "m1")
+      Assert.truthy(shown(world, world.bob, there).contains?("# random"))
+      let (nowhere, _) = stepped(world, world.mal, Tab {}, [("event", "visit"), ("path", "/acmecorp/channels/random")])
+      Assert.equal(nowhere, Tab {})
+    end
+  end
+end
