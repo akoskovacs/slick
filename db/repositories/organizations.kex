@@ -40,3 +40,9 @@ foul identified(id: String) -> Result<Organization?, String> do
     .where(DB.Schema.Organizations.id == id)
     .first(as: Organization)
 end
+
+foul all() -> [Organization] or! String do
+  return Database.select().from(DB.Schema.Organizations)
+    .orderBy([:name, :id])
+    .all(as: Organization)
+end

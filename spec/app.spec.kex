@@ -334,7 +334,7 @@ describe("Slick") do
       Assert.truthy(made)
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("🔒 secret"))
       Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("secret"))
-      Assert.equal(App.Live.Chat.visible(bob, secret), None)
+      Assert.equal(App.Live.Places.visible(bob, secret), None)
       let (bobOpens, _) = stepped(statuses, bob, Tab {}, [("event", "open"), ("id", secret.conversation)])
       Assert.truthy(bobOpens.conversation != secret.conversation)
       let (_, bobSent) = stepped(statuses, bob, secret, [("event", "send"), ("body", "let me in")])
@@ -345,10 +345,10 @@ describe("Slick") do
       Assert.falsy(admitting.contains?("value=\"${ada.id}\""))
       let (_, bobAdded) = stepped(statuses, ada, secret, [("event", "admit-set"), ("person", bob.id), ("person", mal.id)])
       Assert.truthy(bobAdded)
-      Assert.truthy(App.Live.Chat.visible(bob, secret).set?)
+      Assert.truthy(App.Live.Places.visible(bob, secret).set?)
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("🔒 secret"))
-      Assert.equal(App.Live.Chat.visible(mal, Tab { conversation: secret.conversation }), None)
-      Assert.equal(App.Live.Chat.visible(eve, secret), None)
+      Assert.equal(App.Live.Places.visible(mal, Tab { conversation: secret.conversation }), None)
+      Assert.equal(App.Live.Places.visible(eve, secret), None)
       # A public channel has nobody to add: everyone is in it.
       let (_, publicAdded) = stepped(statuses, ada, Tab {}, [("event", "admit-set"), ("person", eve.id)])
       Assert.falsy(publicAdded)
@@ -362,7 +362,7 @@ describe("Slick") do
       let (again, _) = stepped(statuses, bob, Tab {}, [("event", "gather"), ("person", eve.id), ("person", ada.id)])
       Assert.equal(again.conversation, trio.conversation)
       let (pair, _) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id)])
-      Assert.truthy(App.Live.Chat.visible(ada, pair).map { |chat| chat.direct? }.or(false))
+      Assert.truthy(App.Live.Places.visible(ada, pair).map { |chat| chat.direct? }.or(false))
       stepped(statuses, bob, trio, [("event", "send"), ("body", "the three of us")])
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?(">Bob, Eve"))
       let eveSees = App.Live.Chat.markup(statuses, eve, Tab {})
@@ -370,7 +370,7 @@ describe("Slick") do
       Assert.truthy(eveSees.contains?("aria-label=\"1 unread\""))
       Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("the three of us"))
       Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("Private: only the 3 of you can read this."))
-      Assert.equal(App.Live.Chat.visible(mal, Tab { conversation: trio.conversation }), None)
+      Assert.equal(App.Live.Places.visible(mal, Tab { conversation: trio.conversation }), None)
       # It has an address, of its own organization, for the people in it.
       let address = "/acme/groups/${trio.conversation}"
       Assert.equal(App.Live.Chat.arrived(eve, address).conversation, trio.conversation)
@@ -418,13 +418,13 @@ describe("Slick") do
       let (_, notMine) = stepped(statuses, eve, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", designId)])
       Assert.falsy(notMine)
       let (crewOnly, _) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", designId)])
-      Assert.truthy(App.Live.Chat.visible(bob, crewOnly).set?)
-      Assert.equal(App.Live.Chat.visible(eve, crewOnly), None)
+      Assert.truthy(App.Live.Places.visible(bob, crewOnly).set?)
+      Assert.equal(App.Live.Places.visible(eve, crewOnly), None)
       Assert.truthy(!App.Live.Chat.markup(statuses, ada, crewOnly).contains?("Belongs to @design-crew."))
       stepped(statuses, eve, Tab { team: designId }, [("event", "team-join")])
-      Assert.truthy(App.Live.Chat.visible(eve, crewOnly).set?)
+      Assert.truthy(App.Live.Places.visible(eve, crewOnly).set?)
       stepped(statuses, eve, Tab { team: designId }, [("event", "team-leave")])
-      Assert.equal(App.Live.Chat.visible(eve, crewOnly), None)
+      Assert.equal(App.Live.Places.visible(eve, crewOnly), None)
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab { team: designId }).contains?("🔒 crew-only"))
 
       # Renamed and explained again; its handle stays.
@@ -649,7 +649,7 @@ describe("Slick") do
       Assert.falsy(App.Live.Chat.markup(statuses, ada, adaPrivate).contains?("let me in"))
       let (_, eveTopic) = stepped(statuses, eve, eveTries, [("event", "topic"), ("topic", "mine now")])
       Assert.falsy(eveTopic)
-      Assert.equal(App.Live.Chat.visible(eve, eveTries), None)
+      Assert.equal(App.Live.Places.visible(eve, eveTries), None)
 
       # A private chat has no topic to set, even for its own people.
       let (_, privateTopic) = stepped(statuses, ada, adaPrivate, [("event", "topic"), ("topic", "x")])
@@ -721,7 +721,7 @@ describe("Slick") do
       let (malSwitched, _) = stepped(statuses, mal, Tab {}, [("event", "organization"), ("id", inAcme.organization)])
       Assert.equal(malSwitched.organization, "")
       let malForged = Tab { organization: inAcme.organization, conversation: inRandom.conversation }
-      Assert.equal(App.Live.Chat.visible(mal, malForged), None)
+      Assert.equal(App.Live.Places.visible(mal, malForged), None)
       Assert.falsy(App.Live.Chat.markup(statuses, mal, malForged).contains?("Anything goes"))
       let (_, malSent) = stepped(statuses, mal, malForged, [("event", "send"), ("body", "mallory was here")])
       Assert.falsy(malSent)
@@ -750,39 +750,11 @@ describe("Slick") do
       Assert.truthy(otherMade)
       Assert.truthy(otherRandom.conversation != inRandom.conversation)
 
-      # Bots: a person's own, members like anyone, known by a token that is
-      # stored only as a digest.
-      let (botTab, botMade) = stepped(statuses, bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot"), ("owner", "me")])
-      Assert.truthy(botMade)
-      Assert.truthy(botTab.secret.contains?("slick_bot_"))
-      let botsDialog = App.Live.Chat.markup(statuses, bob, botTab)
-      Assert.truthy(botsDialog.contains?(botTab.secret))
-      Assert.truthy(botsDialog.contains?("deploy-bot"))
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?(botTab.secret))
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("class=\"flag\">BOT"))
+      # A bot of Bob's, for his profile below, and its message in #general,
+      # which the unread counts below include; spec/bots.spec.kex has the rest.
+      let (botTab, _) = stepped(statuses, bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot"), ("owner", "me")])
       let deployBot : User = App.Services.Bots.bearer(Just("Bearer ${botTab.secret}")).try
-      # A person's own bots are listed under Bots, for them; for everyone else
-      # the bot is among the people.
-      let bobsSidebar = App.Live.Chat.markup(statuses, bob, Tab {}).split("<h2>Bots</h2>")
-      Assert.falsy(bobsSidebar.first.or("").contains?(">deploy-bot"))
-      Assert.truthy(bobsSidebar.drop(1).first.or("").contains?(">deploy-bot"))
-      let adasSidebar = App.Live.Chat.markup(statuses, ada, Tab {}).split("<h2>Bots</h2>")
-      Assert.truthy(adasSidebar.first.or("").contains?(">deploy-bot"))
-      Assert.falsy(adasSidebar.drop(1).first.or("").contains?(">deploy-bot"))
-      Assert.truthy(deployBot.bot?)
-      Assert.equal(deployBot.ownerId, bob.id)
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_wrong")), None)
-      Assert.equal(App.Services.Bots.bearer(None), None)
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer ")), None)
-      # It cannot sign in the way a person does.
-      Assert.truthy(App.Services.Authentication.signIn(deployBot.email, "").error?)
-      Assert.truthy(App.Services.Authentication.signIn(deployBot.email, botTab.secret).error?)
-      # It writes where its organization lets a member write, and nowhere else.
-      let (_, botSent) = stepped(statuses, deployBot, Tab {}, [("event", "send"), ("body", "deployed :rocket:")])
-      Assert.truthy(botSent)
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("deployed 🚀"))
-      Assert.equal(App.Live.Chat.arrived(deployBot, "/other/channels/general"), Tab {})
-      Assert.equal(App.Live.Chat.visible(deployBot, adaPrivate), None)
+      stepped(statuses, deployBot, Tab {}, [("event", "send"), ("body", "deployed :rocket:")])
 
       # Somebody can write to themselves, to try things out; nobody else
       # can read it, and it is explained to them.
@@ -796,7 +768,7 @@ describe("Slick") do
       Assert.truthy(ownSpace.contains?("Ada (you)"))
       Assert.truthy(ownSpace.contains?("data-live-path=\"/acmecorp/dm/${ada.id}\""))
       Assert.equal(App.Live.Chat.arrived(ada, "/acmecorp/dm/${ada.id}").conversation, adaAlone.conversation)
-      Assert.equal(App.Live.Chat.visible(bob, adaAlone), None)
+      Assert.equal(App.Live.Places.visible(bob, adaAlone), None)
       Assert.falsy(App.Live.Chat.markup(statuses, bob, adaAlone).contains?("a note to self"))
       Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("This is your space"))
 
@@ -1026,70 +998,6 @@ describe("Slick") do
       let (malProfile, _) = stepped(statuses, mal, Tab {}, [("event", "profile"), ("user", eve.id)])
       Assert.equal(malProfile.profile, "")
       Assert.falsy(App.Live.Chat.markup(statuses, mal, Tab { profile: eve.id }).contains?("Profile of Eve"))
-      # Only its owner gives it a new token, and the old one stops working.
-      let (adaTries, _) = stepped(statuses, ada, Tab {}, [("event", "bot-rekey"), ("id", deployBot.id)])
-      Assert.equal(adaTries.secret, "")
-      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${botTab.secret}")).set?)
-      let (renewed, _) = stepped(statuses, bob, Tab {}, [("event", "bot-rekey"), ("id", deployBot.id)])
-      Assert.truthy(renewed.secret != botTab.secret)
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${botTab.secret}")), None)
-      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${renewed.secret}")).set?)
-      # Nor can somebody else bring it into their organization.
-      let (malBrings, malBrought) = stepped(statuses, mal, Tab {}, [("event", "bot-enlist"), ("id", deployBot.id)])
-      Assert.falsy(malBrought)
-
-      # A bot belongs to a person or to an organization. An organization's is
-      # looked after by its administrators — and by nobody else.
-      let (sharedTab, _) = stepped(statuses, ada, Tab {}, [("event", "bot-create"), ("name", "acme-bot"), ("owner", "organization")])
-      let acmeBot : User = App.Services.Bots.bearer(Just("Bearer ${sharedTab.secret}")).try
-      Assert.equal(acmeBot.ownerId, "")
-      Assert.equal(acmeBot.ownerOrganizationId, inAcme.organization)
-      Assert.equal(deployBot.ownerOrganizationId, "")
-      # A member sees only their own bots; an administrator the organization's too.
-      Assert.falsy(App.Live.Chat.markup(statuses, eve, Tab { dialog: "bots" }).split("<h2>Bots</h2>").drop(1).first.or("").contains?(">acme-bot"))
-      let adasDialog = App.Live.Chat.markup(statuses, ada, Tab { dialog: "bots" })
-      Assert.truthy(adasDialog.contains?("acme-bot"))
-      Assert.truthy(adasDialog.contains?("belongs to Acme Corp"))
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab { dialog: "bots" }).contains?("<span class=\"hint\">yours</span>"))
-      # A member cannot rekey it; an administrator can, and the old token stops
-      # working.
-      let (eveRenews, _) = stepped(statuses, eve, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
-      Assert.equal(eveRenews.secret, "")
-      let (adaRenews, _) = stepped(statuses, ada, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
-      Assert.truthy(adaRenews.secret.contains?("slick_bot_"))
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${sharedTab.secret}")), None)
-      let (malRenews, _) = stepped(statuses, mal, Tab {}, [("event", "bot-rekey"), ("id", acmeBot.id)])
-      Assert.equal(malRenews.secret, "")
-      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${adaRenews.secret}")).set?)
-      # Ada is in both organizations, but in Other she cannot touch Acme's bot
-      # or bring it over.
-      let (adaElsewhere, _) = stepped(statuses, ada, adaInOther, [("event", "bot-rekey"), ("id", acmeBot.id)])
-      Assert.equal(adaElsewhere.secret, "")
-      let (_, adaBrought) = stepped(statuses, ada, adaInOther, [("event", "bot-enlist"), ("id", acmeBot.id)])
-      Assert.falsy(adaBrought)
-      Assert.falsy(App.Live.Chat.markup(statuses, mal, Tab {}).contains?("acme-bot"))
-
-      # A bot is removed by its owner, or by an administrator of the
-      # organization it belongs to — and by nobody else. Removing it takes its
-      # access with it: its token is gone, it is out of the organization, and
-      # what it could do (its commands) is gone too.
-      let (malRemoves, malRemoved) = stepped(statuses, mal, Tab {}, [("event", "bot-remove"), ("id", acmeBot.id)])
-      Assert.falsy(malRemoved)
-      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${adaRenews.secret}")).set?)
-      let (adaRemoves, _) = stepped(statuses, ada, Tab {}, [("event", "bot-remove"), ("id", acmeBot.id)])
-      Assert.truthy(adaRemoves.notice.contains?("acme-bot"))
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${adaRenews.secret}")), None)
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab { dialog: "bots" }).contains?(">acme-bot"))
-
-      # One's own bot goes the same way, and only its owner removes it.
-      let (adaRemovesOwn, adaRemovedOwn) = stepped(statuses, ada, Tab {}, [("event", "bot-remove"), ("id", deployBot.id)])
-      Assert.falsy(adaRemovedOwn)
-      let (_, bobRemoved) = stepped(statuses, bob, Tab {}, [("event", "bot-remove"), ("id", deployBot.id)])
-      Assert.truthy(bobRemoved)
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${renewed.secret}")), None)
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab { dialog: "bots" }).contains?(">deploy-bot"))
-      Assert.falsy(App.Services.Authentication.current(Just(botTab.secret)).set?)
-
       App.Services.Authentication.signOut(Just(adaToken))
       Assert.equal(App.Services.Authentication.current(Just(adaToken)), None)
     end

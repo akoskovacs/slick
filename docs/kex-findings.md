@@ -11,6 +11,50 @@ main for now — with Harmat v0.2.0 and Metro v0.1.0 (see [package.kex](../packa
 [tey.lock](../tey.lock)). The entries below are the history of getting
 there.
 
+## Migration check — 2026-10-25
+
+Checked against Kex main `4262288`: #571 and #572 on top of `e4beb8c`.
+Still 0.4.0-rc.3, still untagged.
+
+- **#571: only a call's own imports bring a method into reach.**
+  `evented` in `app/controllers/api.kex` calls `socket.receiveMessage` on a
+  `Net.HTTP.WebSocket.Connection` without importing that module, and no
+  longer checks (`Undefined method receiveMessage for Connection`). Naming
+  the type in a signature is not enough, and neither is importing other
+  names from the module: `only: [Text, CloseMessage]` still fails, `only:
+  [Connection, Text, CloseMessage]` checks. `chat.kex` makes the same call
+  inside a `rescue` block and checks either way, so `rescue` seems not to be
+  held to #571 yet; it imports `Connection` too.
+- **#572: a Tey command runs on the terminal,** so `tey console` (bin/console)
+  has completion, history and line editing.
+- **A record bound in one console input has no fields in the next.**
+  [#575](https://github.com/kexhq/kex/issues/575). `let Just(org) =
+  orgs.first` answers, and then `org.id` fails at run time: `Undefined
+  method: id for App.Models.Organization.Organization`. The same read
+  within one input works (`orgs.first.map { |o| o.id }`), and so does
+  `using App.Models.Organization` first, which looks like #571 reaching
+  the REPL. A one-field record named after its module's last segment
+  gets the whole tuple instead (`c.items => [:"Shop.Cart.Cart", 1] :
+  Integer`).
+- **A block keeps the capabilities of where it is written.** A spec helper
+  `within(example: Block<World, Void>)` that opens `with Harmat.Connection
+  = … do example(world) end` runs the example against another database:
+  writes made in the helper are not seen by it. `spec/bots.spec.kex`
+  therefore opens the connection in each example (`with Harmat.Connection
+  = fresh() do … end`) and calls a plain function (`populated`) for the
+  rest. Worth a spec fixture in Tey that does this for us.
+- **An undefined function in `app/live/chat.kex` passed the checker.**
+  `operatorsSet` (from `4e01023`) called `currentOrganization`, defined
+  nowhere, and the whole application checked and built; the bot-operators
+  form failed only when used. The same call in a lone file is caught
+  (`Undefined function`). Not reduced yet; the call is gone (it is
+  `App.Live.Bots.setOperators`, calling `home`).
+- **The REPL binding that breaks every later input** (under 2026-10-24) is
+  now [#574](https://github.com/kexhq/kex/issues/574). `using` the
+  record's module before the `let` avoids it as well.
+
+Validation: Harmat, Metro and Slick build and pass all their specs.
+
 ## Migration check — 2026-10-24
 
 Checked against Kex main `e4beb8c`: #567, #568 and #569 on top of

@@ -1,0 +1,73 @@
+# Where a tab is, and whether its person may be there: the organization and
+# the conversation it names, checked against who is asking. A tab names
+# both by id, and an id is not a permission, so every event asks here
+# before anything is read or written.
+module App.Live.Places
+
+using App.Live.Tab, only: [Tab]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Organization, only: [Organization]
+using App.Models.User, only: [User]
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Grants, as: Grants
+using DB.Repositories.Organizations, as: Organizations
+
+# The organization at an address, if this person is in it.
+memberOrganization : User -> String -> Organization?
+foul memberOrganization(user, slug) do
+  match Organizations.addressed(slug) do
+    Ok(Just(organization)) => return member?(organization.id, user.id) then Just(organization) else None
+    _ => return None
+  end
+end
+
+# The organization a tab is in: the one it names, if its person is in it,
+# and otherwise the first one they are in. `None` is somebody in none.
+home : User -> Tab -> Organization?
+foul home(user, tab) do
+  let mine : [String] = Grants.organizationsOf(user.id).or([])
+  let chosen = mine.contains?(tab.organization) then tab.organization else mine.first.or("")
+  return None if chosen.empty?
+
+  match Organizations.identified(chosen) do
+    Ok(Just(organization)) => return Just(organization)
+    _ => return None
+  end
+end
+
+# The conversation a tab is showing, if its person may read it: it has to be
+# in the tab's organization, and theirs to read there.
+visible : User -> Tab -> Conversation?
+foul visible(user, tab) do
+  match home(user, tab) do
+    None => return None
+    Just(organization) => do
+      let found = tab.conversation.empty? then Conversations.channelCalled(organization.id, App.Models.Conversation.GENERAL) else Conversations.lookup(tab.conversation)
+      match found do
+        Ok(Just(conversation)) => do
+          return None if conversation.organizationId != organization.id || !App.Services.Authority.canRead(user, conversation)
+          return Just(conversation)
+        end
+        _ => return None
+      end
+    end
+  end
+end
+
+# The organizations a person is in, oldest membership first.
+organizations : User -> [Organization]
+foul organizations(user) do
+  let mine : [String] = Grants.organizationsOf(user.id).or([])
+  return mine.flatMap do |id|
+    match Organizations.identified(id) do
+      Ok(Just(organization)) => [organization]
+      _ => []
+    end
+  end
+end
+
+# Whether a user is in an organization, by their grants.
+member? : String -> String -> Bool
+foul member?(organizationId, userId) = Grants.organizationsOf(userId)
+  .or([])
+  .contains?(organizationId)

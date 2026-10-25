@@ -2,7 +2,7 @@
 params: [botAccess: String]
 ---
 <div class="settings-scroll">
-  <form class="settings" data-live="bot-access" data-live-quiet>
+  <form class="settings" data-live="bot-access-set" data-live-quiet>
     <div class="settings-intro"><h2>Conversation settings</h2></div>
     <section class="settings-section">
       <h3><label for="group-bot-access">Bot access</label></h3>

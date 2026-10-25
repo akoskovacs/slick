@@ -3,7 +3,7 @@ module App.Controllers.Chat
 
 using Metro.WebRequest, only: [WebRequest]
 using Metro.Environment, only: [Development]
-using Net.HTTP.WebSocket, only: [Text, CloseMessage]
+using Net.HTTP.WebSocket, only: [Connection, Text, CloseMessage]
 using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, userFor, page]
 
 # The page, opened at the conversation its address names. The live view

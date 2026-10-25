@@ -61,6 +61,7 @@
 module App.Controllers.Api
 
 using Metro.WebRequest, only: [WebRequest]
+using Net.HTTP.WebSocket, only: [Connection, Text, CloseMessage]
 using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, userFor]
 using App.Live.Tab, only: [Tab]
 using App.Models.Command, only: [Command]
@@ -85,7 +86,7 @@ let STATUS_LONGEST = 80
 whoami : WebRequest -> WebRequest
 foul whoami(request) do
   let bot = userFor(request)
-  let mine : [Organization] = App.Live.Chat.organizations(bot)
+  let mine : [Organization] = App.Live.Places.organizations(bot)
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
   let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed, "operators": DB.Repositories.BotOperators.listed(bot.id).or([])}
   return request.json(answer)
@@ -340,7 +341,7 @@ end
 evented : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
 foul evented(request, socket) do
   let bot = userFor(request)
-  let mine : [Organization] = App.Live.Chat.organizations(bot)
+  let mine : [Organization] = App.Live.Places.organizations(bot)
   let ids : [String] = mine.map { |each| each.id }
   let after = request.query("after").or("0").to(Integer).or(0)
   let seat = "${Metro.Id.serial()}"
@@ -451,7 +452,7 @@ private do
     let tab = App.Live.Chat.arrived(bot, App.Paths.threaded(address, thread))
     return Error(failed(request, 404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
 
-    match App.Live.Chat.visible(bot, tab) do
+    match App.Live.Places.visible(bot, tab) do
       Just(conversation) => return Ok((tab, conversation))
       None => return Error(failed(request, 404, "There is no such conversation, or this bot is not in it."))
     end

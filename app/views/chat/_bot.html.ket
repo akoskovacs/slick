@@ -5,14 +5,14 @@ params: [robot: Robot]
   <strong><%= robot.caption %></strong>
   <span class="hint"><%= robot.belonging %></span>
   <% if !robot.here? %>
-    <button type="button" class="quiet" data-event="bot-enlist" data-id="<%= robot.key %>">Add to <%= robot.spot %></button>
+    <button type="button" class="quiet" data-event="bot-add" data-id="<%= robot.key %>">Add to <%= robot.spot %></button>
   <% end %>
-  <button type="button" class="quiet" data-event="bot-rekey" data-id="<%= robot.key %>">New token</button>
+  <button type="button" class="quiet" data-event="bot-rotate" data-id="<%= robot.key %>">New token</button>
   <button type="button" class="quiet" data-event="bot-remove" data-id="<%= robot.key %>">Remove</button>
   <details class="operators">
     <summary>Operators (<%= robot.operated %>)</summary>
     <p class="hint">Who may allow its tools, and use its <code>/model</code>, <code>/mode</code> and <code>/adopt</code>.</p>
-    <form data-live="bot-operators" data-live-quiet>
+    <form data-live="bot-operators-set" data-live-quiet>
       <input type="hidden" name="bot" value="<%= robot.key %>">
       <ul class="picks-list"><%== robot.operators %></ul>
       <button type="submit" class="quiet">Save operators</button>

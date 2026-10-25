@@ -1,0 +1,315 @@
+using Metro.Live.Presence, only: [Presence]
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+
+# The bots dialog, driven the way a browser drives it: one event at a time.
+# Each example starts from a database of its own (`fresh`).
+
+# Acme Corp, whose administrator is Ada, with Bob and Eve as members; and
+# Other, Mallory's, which Ada is in too. `acme` and `other` are Ada's tabs
+# in each.
+record World do
+  statuses : Server<Presence>
+  ada : User
+  bob : User
+  eve : User
+  mal : User
+  acme : Tab
+  other : Tab
+end
+
+foul stepped(world: World, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
+  let entries = fields.map { |pair| match pair do (key, value) => (key, Just(value)) end }
+  App.Live.Chat.handled(Process.spawn(App.Live.Events.Bus {}), world.statuses, user, tab, entries)
+end
+
+foul shown(world: World, user: User, tab: Tab) -> String do
+  App.Live.Chat.markup(world.statuses, user, tab)
+end
+
+# Makes a bot from a tab of `user`'s, and the bot its token speaks for.
+foul createBot(world: World, user: User, tab: Tab, name: String, owner: String) -> (Tab, User) do
+  let (made, _) = stepped(world, user, tab, [("event", "bot-create"), ("name", name), ("owner", owner)])
+  let bot : User = App.Services.Bots.bearer(Just("Bearer ${made.secret}")).or(user)
+  (made, bot)
+end
+
+# A database of one's own, in memory: gone with the example. Each example
+# opens it itself, `with Harmat.Connection = fresh() do … end` — a block
+# keeps the connection of where it is written, so a helper handed the
+# example as a block would run it against another database.
+foul fresh() -> DB.Store.StoreConnection do
+  let store = DB.Store.started(Config.Database.sqlite(":memory:")).try
+  DB.Store.migrate(store).try
+  DB.Store.StoreConnection { store: store }
+end
+
+# The people and organizations of `World`, made the way people make them.
+foul populated() -> World do
+  let member = do |name, email|
+    let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
+    let user : User = App.Services.Authentication.current(Just(token)).try
+    user
+  end
+  let unpeopled = World {
+    statuses: Process.spawn(Presence {}),
+    ada: member("Ada", "ada@example.com"),
+    bob: member("Bob", "bob@example.com"),
+    eve: member("Eve", "eve@example.com"),
+    mal: member("Mallory", "mal@example.com"),
+    acme: Tab {},
+    other: Tab {}
+  }
+  let ada = unpeopled.ada
+  let mal = unpeopled.mal
+  let (acme, _) = stepped(unpeopled, ada, Tab {}, [("event", "charter"), ("name", "Acme Corp")])
+  stepped(unpeopled, ada, acme, [("event", "enlist"), ("email", "bob@example.com")])
+  stepped(unpeopled, ada, acme, [("event", "enlist"), ("email", "eve@example.com")])
+  let (other, _) = stepped(unpeopled, mal, Tab {}, [("event", "charter"), ("name", "Other")])
+  stepped(unpeopled, mal, other, [("event", "enlist"), ("email", "ada@example.com")])
+  World {
+    ...unpeopled,
+    acme: acme,
+    other: Tab { organization: other.organization }
+  }
+end
+
+describe("App.Live.Bots, making one") do
+  it("makes a person's own bot, a member known by a token stored only as a digest") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      Assert.truthy(made.secret.contains?("slick_bot_"))
+      let dialog = shown(world, world.bob, made)
+      Assert.truthy(dialog.contains?(made.secret))
+      Assert.truthy(dialog.contains?("deploy-bot"))
+      Assert.falsy(shown(world, world.ada, Tab {}).contains?(made.secret))
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("class=\"flag\">BOT"))
+      Assert.truthy(bot.bot?)
+      Assert.equal(bot.ownerId, world.bob.id)
+      Assert.equal(bot.ownerOrganizationId, "")
+    end
+  end
+
+  it("knows a bot by its whole token, and never lets it sign in like a person") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_wrong")), None)
+      Assert.equal(App.Services.Bots.bearer(None), None)
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer ")), None)
+      Assert.truthy(App.Services.Authentication.signIn(bot.email, "").error?)
+      Assert.truthy(App.Services.Authentication.signIn(bot.email, made.secret).error?)
+    end
+  end
+
+  it("refuses a bot without a proper name") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, changed) = stepped(world, world.bob, Tab {}, [("event", "bot-create"), ("name", "x"), ("owner", "me")])
+      Assert.falsy(changed)
+      Assert.equal(made.dialog, "bots")
+      Assert.truthy(!made.dialogProblem.empty?)
+      Assert.equal(made.secret, "")
+    end
+  end
+
+  it("lists a person's own bots under Bots, and everyone else's among the people") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      let bobs = shown(world, world.bob, Tab {}).split("<h2>Bots</h2>")
+      Assert.falsy(bobs.first.or("").contains?(">deploy-bot"))
+      Assert.truthy(bobs.drop(1).first.or("").contains?(">deploy-bot"))
+      let adas = shown(world, world.ada, Tab {}).split("<h2>Bots</h2>")
+      Assert.truthy(adas.first.or("").contains?(">deploy-bot"))
+      Assert.falsy(adas.drop(1).first.or("").contains?(">deploy-bot"))
+    end
+  end
+
+  it("lets a bot write where its organization lets a member, and nowhere else") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      let (_, sent) = stepped(world, bot, Tab {}, [("event", "send"), ("body", "deployed :rocket:")])
+      Assert.truthy(sent)
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("deployed 🚀"))
+      Assert.equal(App.Live.Chat.arrived(bot, "/other/channels/general"), Tab {})
+      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct"), ("user", world.bob.id)])
+      Assert.equal(App.Live.Places.visible(bot, chat), None)
+    end
+  end
+end
+
+describe("App.Live.Bots, an organization's") do
+  it("makes one only for an administrator, and lists it only to them") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (eveTries, _) = stepped(world, world.eve, Tab {}, [("event", "bot-create"), ("name", "acme-bot"), ("owner", "organization")])
+      Assert.truthy(eveTries.dialogProblem.contains?("Only an administrator"))
+      let (_, bot) = createBot(world, world.ada, Tab {}, "acme-bot", "organization")
+      Assert.equal(bot.ownerId, "")
+      Assert.equal(bot.ownerOrganizationId, world.acme.organization)
+      let evesDialog = shown(world, world.eve, Tab { dialog: "bots" })
+      Assert.falsy(evesDialog.split("<h2>Bots</h2>").drop(1).first.or("").contains?(">acme-bot"))
+      let adasDialog = shown(world, world.ada, Tab { dialog: "bots" })
+      Assert.truthy(adasDialog.contains?("acme-bot"))
+      Assert.truthy(adasDialog.contains?("belongs to Acme Corp"))
+      Assert.falsy(shown(world, world.mal, Tab {}).contains?("acme-bot"))
+    end
+  end
+
+  it("marks a person's own bots as theirs in the dialog") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      Assert.truthy(shown(world, world.bob, Tab { dialog: "bots" }).contains?("<span class=\"hint\">yours</span>"))
+    end
+  end
+end
+
+describe("App.Live.Bots, a new token") do
+  it("gives a person's bot one only for its owner, and the old one stops working") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      let (adaTries, _) = stepped(world, world.ada, Tab {}, [("event", "bot-rotate"), ("id", bot.id)])
+      Assert.equal(adaTries.secret, "")
+      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${made.secret}")).set?)
+      let (rotated, changed) = stepped(world, world.bob, Tab {}, [("event", "bot-rotate"), ("id", bot.id)])
+      Assert.falsy(changed)
+      Assert.truthy(rotated.secret != made.secret)
+      Assert.equal(rotated.secretFor, "deploy-bot")
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${made.secret}")), None)
+      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${rotated.secret}")).set?)
+    end
+  end
+
+  it("gives an organization's bot one only from an administrator, there") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, bot) = createBot(world, world.ada, Tab {}, "acme-bot", "organization")
+      let (eveTries, _) = stepped(world, world.eve, Tab {}, [("event", "bot-rotate"), ("id", bot.id)])
+      Assert.equal(eveTries.secret, "")
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "bot-rotate"), ("id", bot.id)])
+      Assert.equal(malTries.secret, "")
+      # Ada is in Other too, but from there she cannot touch Acme's bot.
+      let (elsewhere, _) = stepped(world, world.ada, world.other, [("event", "bot-rotate"), ("id", bot.id)])
+      Assert.equal(elsewhere.secret, "")
+      let (rotated, _) = stepped(world, world.ada, Tab {}, [("event", "bot-rotate"), ("id", bot.id)])
+      Assert.truthy(rotated.secret.contains?("slick_bot_"))
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${made.secret}")), None)
+      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${rotated.secret}")).set?)
+    end
+  end
+end
+
+describe("App.Live.Bots, adding one to an organization") do
+  it("adds a person's own bot to another organization they are in") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, bot) = createBot(world, world.ada, Tab {}, "ada-bot", "me")
+      Assert.falsy(shown(world, world.mal, Tab {}).contains?(">ada-bot"))
+      let (added, changed) = stepped(world, world.ada, world.other, [("event", "bot-add"), ("id", bot.id)])
+      Assert.truthy(changed)
+      Assert.equal(added.dialog, "bots")
+      Assert.truthy(shown(world, world.mal, Tab {}).contains?(">ada-bot"))
+    end
+  end
+
+  it("adds nobody else's bot, not even the organization's") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, own) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      let (malTries, malAdded) = stepped(world, world.mal, Tab {}, [("event", "bot-add"), ("id", own.id)])
+      Assert.falsy(malAdded)
+      Assert.truthy(malTries.dialogProblem.contains?("not one of your bots"))
+      let (_, shared) = createBot(world, world.ada, Tab {}, "acme-bot", "organization")
+      let (_, adaAdded) = stepped(world, world.ada, world.other, [("event", "bot-add"), ("id", shared.id)])
+      Assert.falsy(adaAdded)
+    end
+  end
+end
+
+describe("App.Live.Bots, removing one") do
+  it("removes an organization's bot only for an administrator, with its access") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, bot) = createBot(world, world.ada, Tab {}, "acme-bot", "organization")
+      let (_, malRemoved) = stepped(world, world.mal, Tab {}, [("event", "bot-remove"), ("id", bot.id)])
+      Assert.falsy(malRemoved)
+      let (_, eveRemoved) = stepped(world, world.eve, Tab {}, [("event", "bot-remove"), ("id", bot.id)])
+      Assert.falsy(eveRemoved)
+      Assert.truthy(App.Services.Bots.bearer(Just("Bearer ${made.secret}")).set?)
+      let (removed, changed) = stepped(world, world.ada, Tab {}, [("event", "bot-remove"), ("id", bot.id)])
+      Assert.truthy(changed)
+      Assert.truthy(removed.notice.contains?("acme-bot"))
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${made.secret}")), None)
+      Assert.falsy(shown(world, world.ada, Tab { dialog: "bots" }).contains?(">acme-bot"))
+    end
+  end
+
+  it("removes a person's own bot only for its owner") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      let (_, adaRemoved) = stepped(world, world.ada, Tab {}, [("event", "bot-remove"), ("id", bot.id)])
+      Assert.falsy(adaRemoved)
+      let (_, bobRemoved) = stepped(world, world.bob, Tab {}, [("event", "bot-remove"), ("id", bot.id)])
+      Assert.truthy(bobRemoved)
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer ${made.secret}")), None)
+      Assert.falsy(shown(world, world.bob, Tab { dialog: "bots" }).contains?(">deploy-bot"))
+      Assert.falsy(App.Services.Authentication.current(Just(made.secret)).set?)
+    end
+  end
+end
+
+describe("App.Live.Bots, operators") do
+  it("lets a bot's owner choose its operators among the people there") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      let (saved, changed) = stepped(world, world.bob, Tab {}, [("event", "bot-operators-set"), ("bot", bot.id), ("operator", world.eve.id)])
+      Assert.truthy(changed)
+      Assert.truthy(saved.notice.contains?("saved"))
+      Assert.equal(DB.Repositories.BotOperators.listed(bot.id).or([]), [world.eve.id])
+    end
+  end
+
+  it("refuses operators from anybody else, or from outside the organization") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, bot) = createBot(world, world.bob, Tab {}, "deploy-bot", "me")
+      let (eveTries, eveChanged) = stepped(world, world.eve, Tab {}, [("event", "bot-operators-set"), ("bot", bot.id), ("operator", world.eve.id)])
+      Assert.falsy(eveChanged)
+      Assert.truthy(eveTries.dialogProblem.contains?("Only the bot owner"))
+      let (outsider, outsiderChanged) = stepped(world, world.bob, Tab {}, [("event", "bot-operators-set"), ("bot", bot.id), ("operator", world.mal.id)])
+      Assert.falsy(outsiderChanged)
+      Assert.truthy(outsider.dialogProblem.contains?("Choose people"))
+      Assert.equal(DB.Repositories.BotOperators.listed(bot.id).or([]), [])
+    end
+  end
+end
+
+describe("App.Live.Bots, what bots read") do
+  it("lets an administrator choose how much of a channel bots read") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (access, changed) = stepped(world, world.ada, Tab {}, [("event", "bot-access-set"), ("access", "mentions")])
+      Assert.truthy(changed)
+      Assert.truthy(access.notice.contains?("mentions"))
+    end
+  end
+
+  it("refuses a member, and anything but none, mentions or all") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (eveTries, eveChanged) = stepped(world, world.eve, Tab {}, [("event", "bot-access-set"), ("access", "none")])
+      Assert.falsy(eveChanged)
+      Assert.truthy(eveTries.failure.contains?("Only an administrator"))
+      let (odd, oddChanged) = stepped(world, world.ada, Tab {}, [("event", "bot-access-set"), ("access", "everything")])
+      Assert.falsy(oddChanged)
+      Assert.equal(odd, Tab {})
+    end
+  end
+end

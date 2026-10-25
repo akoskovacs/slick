@@ -40,3 +40,17 @@ record Tab do
   # front. What arrives while they are not has not been read.
   attentive? : Bool = true
 end
+
+# The tab with nothing open over the conversation: no form, no dialog, no
+# message left from the last thing tried. Everything else it keeps.
+closed : Tab -> Tab
+let closed(tab) = Tab {
+  ...tab,
+  retitling?: false,
+  dialog: "",
+  dialogProblem: "",
+  notice: "",
+  secret: "",
+  secretFor: "",
+  failure: ""
+}

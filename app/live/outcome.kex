@@ -1,0 +1,23 @@
+# What an event did to a tab: the tab's next state, and whether it changed
+# something other tabs show — in which case they are told to refresh.
+module App.Live.Outcome
+
+using App.Live.Tab, only: [Tab, closed]
+
+type Outcome = (Tab, Bool)
+
+# Nothing anybody else sees has changed.
+unchanged : Tab -> Outcome
+let unchanged(tab) = (tab, false)
+
+# Something others see has changed: their tabs refresh.
+changed : Tab -> Outcome
+let changed(tab) = (tab, true)
+
+# A dialog left open, saying what was wrong with its last try.
+refused : Tab -> String -> String -> Outcome
+let refused(tab, dialog, problem) = (Tab {
+  ...closed(tab),
+  dialog: dialog,
+  dialogProblem: problem
+}, false)

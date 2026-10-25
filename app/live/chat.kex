@@ -15,7 +15,8 @@ module App.Live.Chat
 using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field, repeated]
 using Metro.Validation, only: [rules, validates, present, sized, passing]
-using App.Live.Tab, only: [Tab]
+using App.Live.Places, only: [home, visible, organizations, memberOrganization, member?]
+using App.Live.Tab, only: [Tab, closed]
 using App.Live.Unread, only: [Unread]
 using App.Models.Attachment, only: [Attachment]
 using App.Models.Command, only: [Command]
@@ -93,7 +94,7 @@ foul markup(statuses, user, tab) do
       let now = Metro.Clock.milliseconds()
       let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now)
         .map { |note| note.member.split(" ").first.or("") }
-      let bots : [User] = tab.dialog == "bots" then manageable(user, organization) else []
+      let bots : [User] = tab.dialog == "bots" then App.Live.Bots.manageable(user, organization) else []
       let operators : {String: [String]} = bots.reduce({}) { |found, bot|
         found.put(bot.id, DB.Repositories.BotOperators.listed(bot.id).or([]))
       }
@@ -199,19 +200,19 @@ foul handled(events, statuses, user, tab, entries) do
   match field(entries, "event") do
     "open" => opened(user, tab, field(entries, "id"))
     "direct" => whispered(user, tab, field(entries, "user"))
-    "found" => (Tab { ...settled(tab), dialog: "channel" }, false)
+    "found" => (Tab { ...closed(tab), dialog: "channel" }, false)
     "create" => established(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"), field(entries, "team"))
-    "group" => (Tab { ...settled(tab), dialog: "group" }, false)
+    "group" => (Tab { ...closed(tab), dialog: "group" }, false)
     "gather" => gathered(user, tab, repeated(entries, "person"))
-    "promote" => (Tab { ...settled(tab), dialog: "promote" }, false)
+    "promote" => (Tab { ...closed(tab), dialog: "promote" }, false)
     "promote-set" => promotedTo(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"))
-    "admit" => (Tab { ...settled(tab), dialog: "admit" }, false)
+    "admit" => (Tab { ...closed(tab), dialog: "admit" }, false)
     "admit-set" => admittedTo(user, tab, repeated(entries, "person"))
     "team" => teamed(user, tab, field(entries, "id"))
-    "unteam" => (Tab { ...settled(tab), team: "" }, false)
-    "team-new" => (Tab { ...settled(tab), dialog: "team" }, false)
+    "unteam" => (Tab { ...closed(tab), team: "" }, false)
+    "team-new" => (Tab { ...closed(tab), dialog: "team" }, false)
     "team-form" => teamFormed(user, tab, entries)
-    "team-edit" => (Tab { ...settled(tab), dialog: "team-edit" }, false)
+    "team-edit" => (Tab { ...closed(tab), dialog: "team-edit" }, false)
     "team-set" => teamRevised(user, tab, entries)
     "team-join" => teamJoined(user, tab, [user.id])
     "team-add" => teamJoined(user, tab, repeated(entries, "person"))
@@ -220,44 +221,44 @@ foul handled(events, statuses, user, tab, entries) do
     "send" => sent(events, statuses, user, tab, field(entries, "body").trim)
     "draft" => drafted(user, tab, field(entries, "place"), field(entries, "body"))
     "typing" => typing(statuses, user, tab)
-    "retitle" => (Tab { ...settled(tab), retitling?: true }, false)
+    "retitle" => (Tab { ...closed(tab), retitling?: true }, false)
     "topic" => retitled(user, tab, field(entries, "topic").trim)
     "react" => reacted(user, tab, field(entries, "message"), field(entries, "emoji"))
     "answer" => answered(events, user, tab, entries)
-    "cancel" => (settled(tab), false)
+    "cancel" => (closed(tab), false)
     "thread" => threaded(user, tab, field(entries, "message"))
     "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
     "profile" => profiled(user, tab, field(entries, "user"))
-    "bot-operators" => operatorsSet(user, tab, field(entries, "bot"), repeated(entries, "operator"))
-    "bot-access" => botAccessSet(user, tab, field(entries, "access"))
-    "settings" => (Tab { ...settled(tab), thread: "", profile: "", team: "", view: "settings" }, false)
+    "bot-operators-set" => App.Live.Bots.setOperators(user, tab, field(entries, "bot"), repeated(entries, "operator"))
+    "bot-access-set" => App.Live.Bots.setAccess(user, tab, field(entries, "access"))
+    "settings" => (Tab { ...closed(tab), thread: "", profile: "", team: "", view: "settings" }, false)
     "settings-set" => settingsSet(user, tab, entries)
     "role-set" => roleGiven(user, tab, field(entries, "user"), field(entries, "role"))
     "role-remove" => roleTaken(user, tab, field(entries, "user"))
-    "unprofile" => (Tab { ...settled(tab), profile: "" }, false)
+    "unprofile" => (Tab { ...closed(tab), profile: "" }, false)
     "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
     "share" => shared(user, tab, field(entries, "file"))
     "share-failed" => (refusedUpload(tab, field(entries, "filename"), field(entries, "reason")), false)
     "unshare" => (Tab { ...tab, pending: tab.pending.reject { |id| id == field(entries, "file") } }, false)
-    "files" => (Tab { ...settled(tab), thread: "", view: "files" }, false)
-    "messages" => (Tab { ...settled(tab), view: "" }, false)
-    "profile-edit" => (Tab { ...settled(tab), dialog: "profile" }, false)
+    "files" => (Tab { ...closed(tab), thread: "", view: "files" }, false)
+    "messages" => (Tab { ...closed(tab), view: "" }, false)
+    "profile-edit" => (Tab { ...closed(tab), dialog: "profile" }, false)
     "profile-set" => described(user, tab, entries)
     "reply" => replied(events, statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(user, field(entries, "path")), false)
     "organization" => switched(user, tab, field(entries, "id"))
-    "organize" => (Tab { ...settled(tab), dialog: "organization" }, false)
+    "organize" => (Tab { ...closed(tab), dialog: "organization" }, false)
     "charter" => organized(user, tab, field(entries, "name").trim)
-    "invite" => (Tab { ...settled(tab), dialog: "invite" }, false)
+    "invite" => (Tab { ...closed(tab), dialog: "invite" }, false)
     "enlist" => invited(user, tab, field(entries, "email").trim.lowerCase)
-    "status" => (Tab { ...settled(tab), dialog: "status" }, false)
+    "status" => (Tab { ...closed(tab), dialog: "status" }, false)
     "status-set" => restyled(user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
     "status-clear" => restyled(user, tab, "", "")
-    "bots" => (Tab { ...settled(tab), dialog: "bots" }, false)
-    "bot-create" => botMade(user, tab, field(entries, "name").trim, field(entries, "owner"))
-    "bot-rekey" => botRenewed(user, tab, field(entries, "id"))
-    "bot-enlist" => botBrought(user, tab, field(entries, "id"))
-    "bot-remove" => botRemoved(user, tab, field(entries, "id"))
+    "bots" => (Tab { ...closed(tab), dialog: "bots" }, false)
+    "bot-create" => App.Live.Bots.create(user, tab, field(entries, "name").trim, field(entries, "owner"))
+    "bot-rotate" => App.Live.Bots.rotateToken(user, tab, field(entries, "id"))
+    "bot-add" => App.Live.Bots.add(user, tab, field(entries, "id"))
+    "bot-remove" => App.Live.Bots.remove(user, tab, field(entries, "id"))
     _ => (tab, false)
   end
 end
@@ -346,60 +347,6 @@ foul grouped(user, location, thread) do
   end
 end
 
-# The organization at an address, if this person is in it.
-memberOrganization : User -> String -> Organization?
-foul memberOrganization(user, slug) do
-  match Organizations.addressed(slug) do
-    Ok(Just(organization)) => return affiliated?(organization.id, user.id) then Just(organization) else None
-    _ => return None
-  end
-end
-
-# The organization a tab is in: the one it names, if its person is in it,
-# and otherwise the first one they are in. `None` is somebody in none.
-home : User -> Tab -> Organization?
-foul home(user, tab) do
-  let mine : [String] = Grants.organizationsOf(user.id).or([])
-  let chosen = mine.contains?(tab.organization) then tab.organization else mine.first.or("")
-  return None if chosen.empty?
-
-  match Organizations.identified(chosen) do
-    Ok(Just(organization)) => return Just(organization)
-    _ => return None
-  end
-end
-
-# The conversation a tab is showing, if its person may read it: it has to be
-# in the tab's organization, and theirs to read there.
-visible : User -> Tab -> Conversation?
-foul visible(user, tab) do
-  match home(user, tab) do
-    None => return None
-    Just(organization) => do
-      let found = tab.conversation.empty? then Conversations.channelCalled(organization.id, App.Models.Conversation.GENERAL) else Conversations.lookup(tab.conversation)
-      match found do
-        Ok(Just(conversation)) => do
-          return None if conversation.organizationId != organization.id || !App.Services.Authority.canRead(user, conversation)
-          return Just(conversation)
-        end
-        _ => return None
-      end
-    end
-  end
-end
-
-# The organizations a person is in, oldest membership first.
-organizations : User -> [Organization]
-foul organizations(user) do
-  let mine : [String] = Grants.organizationsOf(user.id).or([])
-  return mine.flatMap do |id|
-    match Organizations.identified(id) do
-      Ok(Just(organization)) => [organization]
-      _ => []
-    end
-  end
-end
-
 private do
   # How much somebody has not read: in the organization the tab is in, by
   # channel and by private chat, and in each of the others altogether.
@@ -470,11 +417,6 @@ private do
   # The channels of these that this person may read.
   readable : User -> [Conversation] -> [Conversation]
   foul readable(user, channels) = channels.filter { |channel| App.Services.Authority.canRead(user, channel) }
-
-  # Whether a user is in an organization, by their grants.
-  foul affiliated?(organizationId: String, userId: String) -> Bool do
-    return Grants.organizationsOf(userId).or([]).contains?(organizationId)
-  end
 
   # The messages of a conversation newer than how far this person has read
   # there; none in the one they are reading.
@@ -646,30 +588,16 @@ private do
   summed : {String: Integer} -> Integer
   let summed(counts) = counts.values.reduce(0) { |sum, count| sum + count }
 
-  # A tab with nothing open over the conversation: no form, no dialog, no
-  # message left from the last thing tried.
-  settled : Tab -> Tab
-  let settled(tab) = Tab {
-    organization: tab.organization,
-    conversation: tab.conversation,
-    thread: tab.thread,
-    profile: tab.profile,
-    team: tab.team,
-    pending: tab.pending,
-    view: tab.view,
-    attentive?: tab.attentive?
-  }
-
   switched : User -> Tab -> String -> (Tab, Bool)
   foul switched(user, tab, id) do
-    return (tab, false) if !affiliated?(id, user.id)
+    return (tab, false) if !member?(id, user.id)
     return (Tab { organization: id }, false)
   end
 
   # Creates an organization with its first member and its #general.
   organized : User -> Tab -> String -> (Tab, Bool)
   foul organized(user, tab, name) do
-    let refused = Tab { ...settled(tab), dialog: "organization" }
+    let refused = Tab { ...closed(tab), dialog: "organization" }
     let problems = Metro.Validation.checked(organizationRules, {"name": name}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
@@ -702,7 +630,7 @@ private do
   # Puts somebody who has registered into the tab's organization.
   invited : User -> Tab -> String -> (Tab, Bool)
   foul invited(user, tab, email) do
-    let refused = Tab { ...settled(tab), dialog: "invite" }
+    let refused = Tab { ...closed(tab), dialog: "invite" }
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
@@ -711,157 +639,10 @@ private do
         end
         match Users.credentials(email) do
           Ok(Just((person, _))) => match Memberships.enlisted(organization.id, person.id) do
-            Ok(_) => return (Tab { ...settled(tab), notice: "${person.shown} is now in ${organization.name}." }, true)
+            Ok(_) => return (Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." }, true)
             Error(_) => return (Tab { ...refused, dialogProblem: "${person.shown} is already in ${organization.name}." }, false)
           end
           _ => return (Tab { ...refused, dialogProblem: "Nobody has registered with ${email}. They need an account first." }, false)
-        end
-      end
-    end
-  end
-
-  let botRules = rules do
-    validates("name", "A bot's name", [present, sized(2, 40)])
-  end
-
-  # Makes a bot of this person's, in the tab's organization. Its token is
-  # kept in the tab, to be shown until the dialog is closed, and nowhere else.
-  # The bots a person may look after from a tab: their own, and — for an
-  # administrator — those of the organization the tab is in.
-  manageable : User -> Organization -> [User]
-  foul manageable(user, organization) do
-    let own : [User] = Users.operated(user.id).or([])
-    if App.Services.Authority.canManage(user, organization.id)
-      return Users.maintained(organization.id).or([]) + own
-    end
-    return own
-  end
-
-  # `owner` is "me" for a bot of this person's own; anything else makes it
-  # the organization's.
-  botMade : User -> Tab -> String -> String -> (Tab, Bool)
-  foul botMade(user, tab, name, owner) do
-    let refused = Tab { ...settled(tab), dialog: "bots" }
-    let problems = Metro.Validation.checked(botRules, {"name": name}).messages
-    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if owner != "me" && !App.Services.Authority.canManage(user, organization.id)
-          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can make a bot for it." }, false)
-        end
-        match App.Services.Bots.built(user, owner == "me" then "" else organization.id, name) do
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-          Ok((bot, token)) => do
-            Memberships.enlisted(organization.id, bot.id)
-            return (Tab { ...refused, secret: token, secretFor: bot.name }, true)
-          end
-        end
-      end
-    end
-  end
-
-  botRenewed : User -> Tab -> String -> (Tab, Bool)
-  foul botRenewed(user, tab, id) do
-    let refused = Tab { ...settled(tab), dialog: "bots" }
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !ownBot(user, id) && !App.Services.Authority.canManage(user, organization.id)
-          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can manage its bots." }, false)
-        end
-        let named = manageable(user, organization).find { |bot| bot.id == id }.map { |bot| bot.name }.or("the bot")
-        match App.Services.Bots.renewed(user, organization.id, id) do
-          Ok(token) => return (Tab { ...refused, secret: token, secretFor: named }, false)
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Puts one of this person's bots into the tab's organization.
-  botBrought : User -> Tab -> String -> (Tab, Bool)
-  foul botBrought(user, tab, id) do
-    let refused = Tab { ...settled(tab), dialog: "bots" }
-    let owned : [User] = Users.operated(user.id).or([])
-    return (Tab { ...refused, dialogProblem: "That is not one of your bots." }, false) if !owned.any? { |bot| bot.id == id }
-
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        Memberships.enlisted(organization.id, id)
-        return (refused, true)
-      end
-    end
-  end
-
-  # Deletes a bot — this person's own, or the tab's organization's — and
-  # takes its access with it.
-  botRemoved : User -> Tab -> String -> (Tab, Bool)
-  foul botRemoved(user, tab, id) do
-    let refused = Tab { ...settled(tab), dialog: "bots" }
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !ownBot(user, id) && !App.Services.Authority.canManage(user, organization.id)
-          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can manage its bots." }, false)
-        end
-        let named = manageable(user, organization).find { |bot| bot.id == id }.map { |bot| bot.name }.or("the bot")
-        match App.Services.Bots.removed(user, organization.id, id) do
-          Ok(true) => return (Tab { ...refused, notice: "${named} was removed." }, true)
-          Ok(false) => return (Tab { ...refused, dialogProblem: "That is not one of your bots, or of this organization's." }, false)
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-    end
-  end
-
-  foul operatorsSet(user: User, tab: Tab, botId: String, operators: [String]) -> (Tab, Bool) do
-    let refused = Tab { ...tab, dialog: "bots", dialogProblem: "" }
-    match currentOrganization(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !manageable(user, organization).any? { |bot| bot.id == botId }
-          return (Tab { ...refused, dialogProblem: "Only the bot owner or a workspace administrator can change its operators." }, false)
-        end
-        let roster : [String] = Memberships.roster(organization.id).or([])
-        let people = Users.everyone.or([])
-          .filter { |person| roster.contains?(person.id) && !person.bot? }
-        if operators.any? { |id| !people.any? { |person| person.id == id } }
-          return (Tab { ...refused, dialogProblem: "Choose people in this workspace." }, false)
-        end
-        match DB.Repositories.BotOperators.replaced(botId, operators) do
-          Ok(_) => return (Tab { ...refused, notice: "Bot operators saved." }, true)
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Whether a bot is this person's own.
-  ownBot : User -> String -> Bool
-  foul ownBot(user, id) = Users.operated(user.id).or([]).any? { |bot| bot.id == id }
-
-  # How much of a channel or group chat its bots may read. Only an
-  # administrator changes it.
-  botAccessSet : User -> Tab -> String -> (Tab, Bool)
-  foul botAccessSet(user, tab, access) do
-    let refused = Tab { ...settled(tab), retitling?: false }
-    return (tab, false) if !["none", "mentions", "all"].contains?(access)
-
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => do
-        return (tab, false) if !conversation.channel? && !conversation.group?
-        if !App.Services.Authority.canAdminister(user, conversation)
-          return (Tab { ...refused, failure: "Only an administrator can change what bots read here." }, false)
-        end
-
-        match Conversations.botAccess(conversation.id, access) do
-          Ok(true) => return (Tab { ...refused, notice: "Bots here read ${access}." }, true)
-          Ok(false) => return (Tab { ...refused, failure: "That conversation is not there." }, false)
-          Error(reason) => return (Tab { ...refused, failure: reason }, false)
         end
       end
     end
@@ -872,7 +653,7 @@ private do
   # a channel.
   settingsSet : User -> Tab -> [(String, String?)] -> (Tab, Bool)
   foul settingsSet(user, tab, entries) do
-    let refused = Tab { ...settled(tab), view: "settings" }
+    let refused = Tab { ...closed(tab), view: "settings" }
     let access = field(entries, "access")
     let botAccess = field(entries, "bot-access")
     let teamId = field(entries, "team")
@@ -896,7 +677,7 @@ private do
         end
 
         match Conversations.configured(conversation.id, access, teamId, botAccess) do
-          Ok(true) => return (Tab { ...settled(tab), view: "", notice: "Channel settings saved." }, true)
+          Ok(true) => return (Tab { ...closed(tab), view: "", notice: "Channel settings saved." }, true)
           Ok(false) => return (Tab { ...refused, failure: "That conversation is not there." }, false)
           Error(reason) => return (Tab { ...refused, failure: reason }, false)
         end
@@ -909,7 +690,7 @@ private do
   # administrator cannot be demoted.
   roleGiven : User -> Tab -> String -> String -> (Tab, Bool)
   foul roleGiven(user, tab, personId, role) do
-    let refused = Tab { ...settled(tab), profile: personId }
+    let refused = Tab { ...closed(tab), profile: personId }
     return (tab, false) if !["admin", "member", "read-only"].contains?(role)
     return (tab, false) if personId == user.id
 
@@ -937,7 +718,7 @@ private do
   # does it, and not to the last one.
   roleTaken : User -> Tab -> String -> (Tab, Bool)
   foul roleTaken(user, tab, personId) do
-    let refused = Tab { ...settled(tab), profile: "" }
+    let refused = Tab { ...closed(tab), profile: "" }
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
@@ -966,13 +747,13 @@ private do
   # words. Both empty takes it back.
   restyled : User -> Tab -> String -> String -> (Tab, Bool)
   foul restyled(user, tab, emoji, saying) do
-    let refused = Tab { ...settled(tab), dialog: "status" }
+    let refused = Tab { ...closed(tab), dialog: "status" }
     let problems = Metro.Validation.checked(statusRules, {"text": saying}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
     return (Tab { ...refused, dialogProblem: "Pick one of the emoji offered." }, false) if !App.Models.Emoji.status?(emoji)
 
     match Users.restyled(user.id, emoji, saying) do
-      Ok(_) => return (settled(tab), true)
+      Ok(_) => return (closed(tab), true)
       Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
     end
   end
@@ -981,7 +762,7 @@ private do
   # stored, whatever was sent for it: the form shows it, but only to read.
   described : User -> Tab -> [(String, String?)] -> (Tab, Bool)
   foul described(user, tab, entries) do
-    let refused = Tab { ...settled(tab), dialog: "profile" }
+    let refused = Tab { ...closed(tab), dialog: "profile" }
     match Users.member(user.id) do
       Ok(Just(stored)) => do
         let given = App.Models.User.DETAILS.map do |column, _, _|
@@ -1005,7 +786,7 @@ private do
           nicknameShown?: field(entries, "show_nickname") == "yes"
         }
         match Users.described(changed) do
-          Ok(_) => return (settled(tab), true)
+          Ok(_) => return (closed(tab), true)
           Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
         end
       end
@@ -1067,7 +848,7 @@ private do
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => match rooted(conversation, id) do
-        Just(first) => return (Tab { ...settled(tab), thread: first.id, profile: "", team: "" }, false)
+        Just(first) => return (Tab { ...closed(tab), thread: first.id, profile: "", team: "" }, false)
         None => return (tab, false)
       end
     end
@@ -1080,8 +861,8 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        return (tab, false) if !affiliated?(organization.id, id)
-        return (Tab { ...settled(tab), thread: "", profile: id, team: "" }, false)
+        return (tab, false) if !member?(organization.id, id)
+        return (Tab { ...closed(tab), thread: "", profile: id, team: "" }, false)
       end
     end
   end
@@ -1127,7 +908,7 @@ private do
             # A command for a bot is used, not said.
             if invoked(events, user, conversation, first.id, body)
               statuses.lifted(conversation.id, user.id)
-              return (Tab { ...settled(tab), thread: first.id }, true)
+              return (Tab { ...closed(tab), thread: first.id }, true)
             end
             return repliedTo(events, statuses, user, tab, conversation, first, body)
           end
@@ -1154,9 +935,9 @@ private do
           threadId: first.id,
           body: ""
         })
-        return (Tab { ...settled(tab), thread: first.id }, true)
+        return (Tab { ...closed(tab), thread: first.id }, true)
       end
-      Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
+      Error(reason) => return (Tab { ...closed(tab), failure: "Not sent: ${reason}" }, false)
     end
   end
 
@@ -1178,11 +959,11 @@ private do
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        return (tab, false) if !affiliated?(organization.id, other)
+        return (tab, false) if !member?(organization.id, other)
 
         match Conversations.between(organization.id, user.id, other) do
           Ok(conversation) => return (Tab { organization: organization.id, conversation: conversation.id }, false)
-          Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
+          Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
         end
       end
     end
@@ -1196,7 +977,7 @@ private do
   # channel by them.
   established : User -> Tab -> String -> String -> String -> (Tab, Bool)
   foul established(user, tab, title, access, teamId) do
-    let refused = Tab { ...settled(tab), dialog: "channel" }
+    let refused = Tab { ...closed(tab), dialog: "channel" }
     let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
@@ -1226,13 +1007,13 @@ private do
   # already have; with one person picked, the private chat with them.
   gathered : User -> Tab -> [String] -> (Tab, Bool)
   foul gathered(user, tab, picked) do
-    let refused = Tab { ...settled(tab), dialog: "group" }
+    let refused = Tab { ...closed(tab), dialog: "group" }
     match home(user, tab) do
       None => return (tab, false)
       Just(organization) => do
-        let others = picked.uniq.filter { |id| id != user.id && affiliated?(organization.id, id) }
+        let others = picked.uniq.filter { |id| id != user.id && member?(organization.id, id) }
         return (Tab { ...refused, dialogProblem: "Pick at least one person." }, false) if others.empty?
-        return whispered(user, settled(tab), others.first.or("")) if others.count == 1
+        return whispered(user, closed(tab), others.first.or("")) if others.count == 1
 
         match Conversations.among(organization.id, others, user.id) do
           Ok(chat) => return (Tab { organization: organization.id, conversation: chat.id }, true)
@@ -1246,14 +1027,14 @@ private do
   # was in it stays in it.
   promotedTo : User -> Tab -> String -> String -> (Tab, Bool)
   foul promotedTo(user, tab, title, access) do
-    let refused = Tab { ...settled(tab), dialog: "promote" }
+    let refused = Tab { ...closed(tab), dialog: "promote" }
     let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => do
-        return (settled(tab), false) if !conversation.group?
+        return (closed(tab), false) if !conversation.group?
         if !App.Services.Authority.canAdminister(user, conversation)
           return (Tab { ...refused, dialogProblem: "Only an administrator can make this a channel." }, false)
         end
@@ -1270,22 +1051,22 @@ private do
   # Lets people of the organization into the private channel the tab shows.
   admittedTo : User -> Tab -> [String] -> (Tab, Bool)
   foul admittedTo(user, tab, picked) do
-    let refused = Tab { ...settled(tab), dialog: "admit" }
+    let refused = Tab { ...closed(tab), dialog: "admit" }
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => do
-        return (settled(tab), false) if !conversation.channel? || conversation.public?
+        return (closed(tab), false) if !conversation.channel? || conversation.public?
         if !App.Services.Authority.canAdminister(user, conversation)
           return (Tab { ...refused, dialogProblem: "Only an administrator of this channel can add people." }, false)
         end
 
         let newcomers = picked.uniq.filter do |id|
-          !conversation.admits?(id) && affiliated?(conversation.organizationId, id)
+          !conversation.admits?(id) && member?(conversation.organizationId, id)
         end
         return (Tab { ...refused, dialogProblem: "Pick at least one person who is not in it yet." }, false) if newcomers.empty?
 
         match Conversations.admitted(conversation.id, newcomers) do
-          Ok(count) => return (Tab { ...settled(tab), notice: count == 1 then "Added one person." else "Added ${count} people." }, true)
+          Ok(count) => return (Tab { ...closed(tab), notice: count == 1 then "Added one person." else "Added ${count} people." }, true)
           Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
         end
       end
@@ -1309,7 +1090,7 @@ private do
   # Opens a team beside the conversation, in place of a thread or a profile.
   teamed : User -> Tab -> String -> (Tab, Bool)
   foul teamed(user, tab, id) do
-    let opened = Tab { ...settled(tab), thread: "", profile: "", team: id }
+    let opened = Tab { ...closed(tab), thread: "", profile: "", team: id }
     match teamHere(user, opened) do
       Just(_) => return (opened, false)
       None => return (tab, false)
@@ -1320,7 +1101,7 @@ private do
   # else what its name suggests.
   teamFormed : User -> Tab -> [(String, String?)] -> (Tab, Bool)
   foul teamFormed(user, tab, entries) do
-    let refused = Tab { ...settled(tab), dialog: "team" }
+    let refused = Tab { ...closed(tab), dialog: "team" }
     let name = field(entries, "name").trim
     let description = field(entries, "description").trim
     let given = field(entries, "handle").trim.lowerCase
@@ -1345,7 +1126,7 @@ private do
           members: [user.id]
         }
         match Teams.formed(team, user.id) do
-          Ok(made) => return (Tab { ...settled(tab), thread: "", profile: "", team: made.id }, true)
+          Ok(made) => return (Tab { ...closed(tab), thread: "", profile: "", team: made.id }, true)
           Error(_) => return (Tab { ...refused, dialogProblem: "There is already a team called @${chosen}." }, false)
         end
       end
@@ -1358,19 +1139,19 @@ private do
   # Renames the open team, and says again what it is for.
   teamRevised : User -> Tab -> [(String, String?)] -> (Tab, Bool)
   foul teamRevised(user, tab, entries) do
-    let refused = Tab { ...settled(tab), dialog: "team-edit" }
+    let refused = Tab { ...closed(tab), dialog: "team-edit" }
     let name = field(entries, "name").trim
     let description = field(entries, "description").trim
     let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
     return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
 
     match teamHere(user, tab) do
-      None => return (settled(tab), false)
+      None => return (closed(tab), false)
       Just(team) => do
         return (Tab { ...refused, dialogProblem: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
 
         match Teams.revised(team.id, name, description) do
-          Ok(_) => return (settled(tab), true)
+          Ok(_) => return (closed(tab), true)
           Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
         end
       end
@@ -1383,12 +1164,12 @@ private do
     match teamHere(user, tab) do
       None => return (tab, false)
       Just(team) => do
-        return (Tab { ...settled(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
+        return (Tab { ...closed(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
 
-        let newcomers = picked.filter { |id| affiliated?(team.organizationId, id) }
+        let newcomers = picked.filter { |id| member?(team.organizationId, id) }
         match Teams.joinedAll(team.id, newcomers) do
-          Ok(count) => return (settled(tab), count > 0)
-          Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
+          Ok(count) => return (closed(tab), count > 0)
+          Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
         end
       end
     end
@@ -1400,11 +1181,11 @@ private do
     match teamHere(user, tab) do
       None => return (tab, false)
       Just(team) => do
-        return (Tab { ...settled(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
+        return (Tab { ...closed(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
 
         match Teams.left(team.id, id) do
-          Ok(count) => return (settled(tab), count > 0)
-          Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
+          Ok(count) => return (closed(tab), count > 0)
+          Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
         end
       end
     end
@@ -1440,7 +1221,7 @@ private do
         # A command for a bot is used, not said; the files waiting stay.
         if invoked(events, user, conversation, "", body)
           statuses.lifted(conversation.id, user.id)
-          return (settled(tab), true)
+          return (closed(tab), true)
         end
         return postedTo(events, statuses, user, tab, conversation, body)
       end
@@ -1454,9 +1235,9 @@ private do
       Ok(message) => do
         # Whatever they were said to be doing, they have done.
         statuses.lifted(conversation.id, user.id)
-        return (Tab { ...settled(tab), pending: [] }, true)
+        return (Tab { ...closed(tab), pending: [] }, true)
       end
-      Error(reason) => return (Tab { ...settled(tab), failure: "Not sent: ${reason}" }, false)
+      Error(reason) => return (Tab { ...closed(tab), failure: "Not sent: ${reason}" }, false)
     end
   end
 
@@ -1515,13 +1296,13 @@ private do
   retitled : User -> Tab -> String -> (Tab, Bool)
   foul retitled(user, tab, topic) do
     let problems = Metro.Validation.checked(topicRules, {"topic": topic}).messages
-    return (Tab { ...settled(tab), retitling?: true, failure: problems.first.or("") }, false) if !problems.empty?
+    return (Tab { ...closed(tab), retitling?: true, failure: problems.first.or("") }, false) if !problems.empty?
 
     match visible(user, tab) do
       None => return (tab, false)
       Just(conversation) => match Conversations.retitled(conversation.id, topic) do
-        Ok(changed) => return (settled(tab), changed)
-        Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
+        Ok(changed) => return (closed(tab), changed)
+        Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
       end
     end
   end
@@ -1539,7 +1320,7 @@ private do
           return (tab, false) if message.conversationId != conversation.id
           match Reactions.flipped(message, user.id, emoji) do
             Ok(_) => return (tab, true)
-            Error(reason) => return (Tab { ...settled(tab), failure: reason }, false)
+            Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
           end
         end
         _ => return (tab, false)
