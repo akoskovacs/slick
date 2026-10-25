@@ -21,7 +21,7 @@ foul built(maker, organizationId, name) do
     id: id, email: "${id}@bots.invalid", name: name, kind: "bot",
     ownerId: organizationId.empty? then maker.id else "", ownerOrganizationId: organizationId
   }
-  return Users.automated(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }
+  return Users.createBot(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }
 end
 
 # Gives a bot a new token; the old one stops working. The bot has to be
@@ -31,12 +31,12 @@ renewed : User -> OrganizationId -> String -> Result<String, String>
 foul renewed(asker, organizationId, botId) do
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
   let digest = Metro.Auth.Token.digest(token)
-  let own = Users.rekeyed(botId, asker.id, digest).or(false)
+  let own = Users.rekeyBot(botId, asker.id, digest).or(false)
 
   return Ok(token) if own
   return Error("That is not one of your bots.") if organizationId.empty?
 
-  let shared = Users.rekeyedFor(botId, organizationId, digest).or(false)
+  let shared = Users.rekeyOrganizationBot(botId, organizationId, digest).or(false)
 
   return shared then Ok(token) else Error("That is not one of your bots, or of this organization's.")
 end
@@ -46,11 +46,11 @@ end
 # already made sure this person is in.
 removed : User -> OrganizationId -> String -> Result<Bool, String>
 foul removed(asker, organizationId, botId) do
-  let own = Users.removed(botId, asker.id).or(false)
+  let own = Users.removeBot(botId, asker.id).or(false)
   return Ok(true) if own
   return Error("That is not one of your bots.") if organizationId.empty?
 
-  let shared = Users.removedFor(botId, organizationId).or(false)
+  let shared = Users.removeOrganizationBot(botId, organizationId).or(false)
 
   return shared then Ok(true) else Error("That is not one of your bots, or of this organization's.")
 end
@@ -61,7 +61,7 @@ foul bearer(header) do
   let token = header.or("").split("Bearer ").drop(1).first.or("").trim
   return None if token.empty?
 
-  match Users.bearing(Metro.Auth.Token.digest(token)) do
+  match Users.findByToken(Metro.Auth.Token.digest(token)) do
     Ok(Just(bot)) => return Just(bot)
     _ => return None
   end

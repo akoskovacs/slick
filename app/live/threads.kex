@@ -17,7 +17,7 @@ root : Conversation -> String -> Message?
 foul root(conversation, id) do
   return None if id.empty?
 
-  match Messages.single(id) do
+  match Messages.find(id) do
     Ok(Just(message)) => do
       return None if message.conversationId != conversation.id
       return Just(message) if message.parentId.empty?
@@ -34,7 +34,7 @@ foul messages(conversation, id) do
   match root(conversation, id) do
     None => return []
     Just(first) => do
-      let replies : [Message] = Messages.answering(first.id).or([])
+      let replies : [Message] = Messages.replies(first.id).or([])
       return [first] + replies
     end
   end

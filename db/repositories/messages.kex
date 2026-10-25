@@ -8,7 +8,7 @@ using App.Models.Message, only: [Message]
 
 # The newest `limit` messages of a conversation, oldest first. Replies are
 # not among them: they are read with the thread they belong to.
-foul latest(conversationId: String, limit: Integer) -> Result<[Message], String> do
+foul latest(conversationId: String, limit: Integer) -> [Message] or! String do
   return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.conversationId == conversationId)
     .where(DB.Schema.Messages.parentId == "")
@@ -21,7 +21,7 @@ end
 # How many messages of a conversation are newer than `after`, in
 # milliseconds since 1970. Replies are not counted: they are read in their
 # thread.
-foul newer(conversationId: String, after: Integer) -> Result<Integer, String> do
+foul newerCount(conversationId: String, after: Integer) -> Integer or! String do
   return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.conversationId == conversationId)
     .where(DB.Schema.Messages.parentId == "")
@@ -30,7 +30,7 @@ foul newer(conversationId: String, after: Integer) -> Result<Integer, String> do
 end
 
 # The replies to any of these messages newer than `after`, oldest first.
-foul replyingTo(rootIds: [String], after: Integer) -> Result<[Message], String> do
+foul repliesTo(rootIds: [String], after: Integer) -> [Message] or! String do
   return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.parentId.in(rootIds))
     .where(DB.Schema.Messages.sentAt > after)
@@ -39,7 +39,7 @@ foul replyingTo(rootIds: [String], after: Integer) -> Result<[Message], String> 
 end
 
 # The replies to a message, oldest first.
-foul answering(rootId: String) -> Result<[Message], String> do
+foul replies(rootId: String) -> [Message] or! String do
   return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.parentId == rootId)
     .orderBy([:sent_at, :id])
@@ -48,7 +48,7 @@ end
 
 # The bot authors of a thread's messages — the root and its replies — by id,
 # from among `botIds`.
-foul botAuthors(rootId: String, botIds: [String]) -> Result<[String], String> do
+foul botAuthors(rootId: String, botIds: [String]) -> [String] or! String do
   let root = Database.select([:user_id]).from(DB.Schema.Messages)
     .where(DB.Schema.Messages.id == rootId)
     .pluck(:user_id)
@@ -63,7 +63,7 @@ end
 # Stores a message, stamped now. With a parent it is a reply, and the
 # parent's count is brought up to date — counted again, not added to, so
 # two replies at once cannot leave it wrong.
-foul said(conversationId: String, userId: String, body: String, parent: String) -> Result<Message, String> do
+foul create(conversationId: String, userId: String, body: String, parent: String) -> Message or! String do
   let moment = Metro.Clock.milliseconds()
   let message = Message {
     id: "m${moment}-${Metro.Id.serial()}",
@@ -82,7 +82,7 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     parent_id: parent
   }
   # A reply and its thread's count change together, or not at all.
-  let stored : Result<Integer, String> = Database.transaction do
+  let stored : Integer or! String = Database.transaction do
     let inserted = Database.insert(DB.Schema.Messages)
       .values(row)
       .run
@@ -90,7 +90,7 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
     if parent.empty?
       Ok(inserted)
     else
-      let replies = answering(parent).try
+      let replies = replies(parent).try
       Database.update(DB.Schema.Messages)
         .set({reply_count: replies.count})
         .where(DB.Schema.Messages.id == parent)
@@ -101,7 +101,7 @@ foul said(conversationId: String, userId: String, body: String, parent: String) 
 end
 
 # One message, or `None`.
-foul single(id: String) -> Result<Message?, String> do
+foul find(id: String) -> Message? or! String do
   return Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.id == id)
     .first(as: Message)

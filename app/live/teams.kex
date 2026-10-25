@@ -11,7 +11,6 @@ using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
-using DB.Repositories.Teams, as: Teams
 
 let teamRules = rules do
   validates("name", "A team's name", [present, sized(2, 40)])
@@ -55,7 +54,7 @@ foul create(user, tab, name, description, given) do
         members: [user.id]
       }
 
-      match Teams.formed(team, user.id) do
+      match DB.Repositories.Teams.create(team, user.id) do
         Ok(made) => return changed(beside(tab, made.id))
         Error(_) => return refused(tab, "team", "There is already a team called @${handle}.")
       end
@@ -74,7 +73,7 @@ foul update(user, tab, name, description) do
     Just(team) => do
       return refused(tab, "team-edit", "@${team.handle} is ${SYNCED}") if team.managed?
 
-      match Teams.revised(team.id, name, description) do
+      match DB.Repositories.Teams.update(team.id, name, description) do
         Ok(_) => return changed(closed(tab))
         Error(reason) => return refused(tab, "team-edit", reason)
       end
@@ -91,7 +90,7 @@ foul addMembers(user, tab, picked) do
       return failed(tab, "@${team.handle} is ${SYNCED}") if team.managed?
 
       let newcomers = picked.filter { |id| member?(team.organizationId, id) }
-      match Teams.joinedAll(team.id, newcomers) do
+      match DB.Repositories.Teams.addMembers(team.id, newcomers) do
         Ok(count) => return (closed(tab), count > 0)
         Error(reason) => return failed(tab, reason)
       end
@@ -107,7 +106,7 @@ foul removeMember(user, tab, id) do
     Just(team) => do
       return failed(tab, "@${team.handle} is ${SYNCED}") if team.managed?
 
-      match Teams.left(team.id, id) do
+      match DB.Repositories.Teams.removeMember(team.id, id) do
         Ok(count) => return (closed(tab), count > 0)
         Error(reason) => return failed(tab, reason)
       end
@@ -136,7 +135,7 @@ private do
 
     match home(user, tab) do
       None => return None
-      Just(organization) => match Teams.single(tab.team) do
+      Just(organization) => match DB.Repositories.Teams.find(tab.team) do
         Ok(Just(team)) => return team.organizationId == organization.id then Just(team) else None
         _ => return None
       end

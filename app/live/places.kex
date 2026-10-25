@@ -15,7 +15,7 @@ using DB.Repositories.Organizations, as: Organizations
 # The organization at an address, if this person is in it.
 memberOrganization : User -> String -> Organization?
 foul memberOrganization(user, slug) do
-  match Organizations.addressed(slug) do
+  match Organizations.findBySlug(slug) do
     Ok(Just(organization)) => return member?(organization.id, user.id) then Just(organization) else None
     _ => return None
   end
@@ -29,7 +29,7 @@ foul home(user, tab) do
   let chosen = mine.contains?(tab.organization) then tab.organization else mine.first.or("")
   return None if chosen.empty?
 
-  match Organizations.identified(chosen) do
+  match Organizations.find(chosen) do
     Ok(Just(organization)) => return Just(organization)
     _ => return None
   end
@@ -42,7 +42,7 @@ foul visible(user, tab) do
   match home(user, tab) do
     None => return None
     Just(organization) => do
-      let found = tab.conversation.empty? then Conversations.channelCalled(organization.id, App.Models.Conversation.GENERAL) else Conversations.lookup(tab.conversation)
+      let found = tab.conversation.empty? then Conversations.findChannel(organization.id, App.Models.Conversation.GENERAL) else Conversations.find(tab.conversation)
       match found do
         Ok(Just(conversation)) => do
           return None if conversation.organizationId != organization.id || !App.Services.Authority.canRead(user, conversation)
@@ -59,7 +59,7 @@ organizations : User -> [Organization]
 foul organizations(user) do
   let mine : [String] = Grants.organizationsOf(user.id).or([])
   return mine.flatMap do |id|
-    match Organizations.identified(id) do
+    match Organizations.find(id) do
       Ok(Just(organization)) => [organization]
       _ => []
     end

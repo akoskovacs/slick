@@ -236,7 +236,7 @@ describe("Slick") do
         "{\"commands\":[{\"name\":\"/model\",\"description\":\"Pick a model\"},{\"name\":\"mode\"}]}"
       ))
       Assert.equal(declaring.code, 200)
-      Assert.equal(DB.Repositories.Commands.of([claude.id]).map { |found| found.map { |command| command.name } }, Ok(["mode", "model"]))
+      Assert.equal(DB.Repositories.Commands.forBots([claude.id]).map { |found| found.map { |command| command.name } }, Ok(["mode", "model"]))
       let offeredHere = App.Live.Chat.markup(statuses, ada, Tab {})
       Assert.truthy(offeredHere.contains?("data-live-hook=\"Composer\""))
       Assert.truthy(offeredHere.contains?("&quot;insert&quot;:&quot;@claude /model &quot;"))
@@ -570,14 +570,14 @@ describe("Slick") do
       # Transactions go through the store as one: an Error answered from
       # one undoes what it did; Ok keeps it.
       let undone = Harmat.Database.transaction do
-        DB.Repositories.Drafts.kept(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "undone" }).try
+        DB.Repositories.Drafts.save(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "undone" }).try
         Error("changed my mind")
       end
       Assert.equal(undone, Error("changed my mind"))
       Assert.falsy(DB.Repositories.Drafts.pending(ada.id).or([]).any? { |draft| draft.body == "undone" })
       let done = Harmat.Database.transaction do
-        DB.Repositories.Drafts.kept(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "done" }).try
-        DB.Repositories.Drafts.kept(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "" })
+        DB.Repositories.Drafts.save(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "done" }).try
+        DB.Repositories.Drafts.save(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "" })
       end
       Assert.truthy(done.ok?)
       Assert.falsy(DB.Repositories.Drafts.pending(ada.id).or([]).any? { |draft| draft.conversationId == "c-nowhere" })
@@ -761,10 +761,10 @@ describe("App.Authority, deciding from grants") do
       let secret = Conversation { id: "c2", kind: "channel", slug: "o1#secret", title: "secret", organizationId: "o1", access: "private" }
       let dm = Conversation { id: "d1", kind: "direct", slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
 
-      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u1", resourceType: "organization", resourceId: "o1", role: "member" }).try
-      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u2", resourceType: "organization", resourceId: "o1", role: "admin" }).try
-      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u3", resourceType: "organization", resourceId: "o1", role: "read-only" }).try
-      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u2", resourceType: "organization", resourceId: "o1", role: "admin" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u3", resourceType: "organization", resourceId: "o1", role: "read-only" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
 
       # A public channel: members, admins and read-only users read it; only
       # members and admins write.
@@ -780,14 +780,14 @@ describe("App.Authority, deciding from grants") do
       Assert.falsy(App.Services.Authority.canRead(bob, secret))
       Assert.truthy(App.Services.Authority.canAdminister(bob, secret))
 
-      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u1", resourceType: "conversation", resourceId: "c2", role: "member" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u1", resourceType: "conversation", resourceId: "c2", role: "member" }).try
       Assert.truthy(App.Services.Authority.canRead(ada, secret))
       Assert.truthy(App.Services.Authority.canWrite(ada, secret))
       Assert.falsy(App.Services.Authority.canAdminister(ada, secret))
 
       # A team that owns the channel hands its members the channel.
-      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "u1", resourceType: "team", resourceId: "t1", role: "member" }).try
-      DB.Repositories.Grants.granted(Grant { subjectType: "team", subjectId: "t1", resourceType: "conversation", resourceId: "c2", role: "admin" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u1", resourceType: "team", resourceId: "t1", role: "member" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "team", subjectId: "t1", resourceType: "conversation", resourceId: "c2", role: "admin" }).try
       Assert.truthy(App.Services.Authority.canAdminister(ada, secret))
       Assert.falsy(App.Services.Authority.canRead(carl, secret))
 
@@ -872,11 +872,11 @@ describe("App.Authority, what a channel lets its bots read") do
     with Harmat.Connection = DB.Store.StoreConnection { store: store } do
       let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
       let channel = Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: "o1", access: "public", botAccess: "mentions" }
-      DB.Repositories.Grants.granted(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
 
-      let asked = DB.Repositories.Messages.said("c1", "u1", "a question", "").try
-      let named = DB.Repositories.Messages.said("c1", "u1", "hey @muse, help", "").try
-      DB.Repositories.Messages.said("c1", "b1", "I am on it", asked.id).try
+      let asked = DB.Repositories.Messages.create("c1", "u1", "a question", "").try
+      let named = DB.Repositories.Messages.create("c1", "u1", "hey @muse, help", "").try
+      DB.Repositories.Messages.create("c1", "b1", "I am on it", asked.id).try
 
       # "mentions": the newest messages are not listed, a thread it is named
       # in is read, and a thread it has replied in is read.
@@ -885,7 +885,7 @@ describe("App.Authority, what a channel lets its bots read") do
       Assert.truthy(App.Services.Authority.botMayRead(bot, channel, asked.id))
 
       # "all": everything.
-      DB.Repositories.Conversations.botAccess("c1", "all").try
+      DB.Repositories.Conversations.setBotAccess("c1", "all").try
       Assert.truthy(App.Services.Authority.botMayRead(bot, Conversation { ...channel, botAccess: "all" }, ""))
 
       # "none": nothing.

@@ -114,7 +114,7 @@ describe("App.Live.Profiles, one's own details") do
     with Harmat.Connection = fresh() do
       let world = populated()
       stepped(world, world.bob, Tab {}, BOBS)
-      DB.Repositories.Users.managing(world.bob.id, ["name", "title"])
+      DB.Repositories.Users.markManaged(world.bob.id, ["name", "title"])
       stepped(world, world.bob, Tab {}, [
         ("event", "profile-update"),
         ("name", "Hacked"),

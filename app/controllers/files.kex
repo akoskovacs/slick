@@ -18,7 +18,7 @@ foul uploaded(request) do
   let user = userFor(request)
   match Metro.Storage.received(request) do
     Error(reason) => return request.json(422, {"error": reason})
-    Ok(blob) => match Attachments.uploaded(user.id, blob) do
+    Ok(blob) => match Attachments.create(user.id, blob) do
       Ok(file) => return request.json(200, {"file": file.id, "name": file.filename})
       Error(reason) => return request.json(500, {"error": reason})
     end
@@ -31,7 +31,7 @@ end
 fetched : WebRequest -> WebRequest
 foul fetched(request) do
   let user = userFor(request)
-  match Attachments.single(request.param("id").or("")) do
+  match Attachments.find(request.param("id").or("")) do
     Ok(Just(file)) => do
       return request.plain(404, "Not Found") if !allowed?(user.id, file)
       return Metro.Storage.served(request, file.blob)
@@ -45,9 +45,9 @@ private do
   foul allowed?(userId, file) do
     return file.userId == userId if !file.sent?
 
-    match Conversations.lookup(file.conversationId) do
+    match Conversations.find(file.conversationId) do
       Ok(Just(conversation)) => do
-        let member = Memberships.affiliated?(conversation.organizationId, userId)
+        let member = Memberships.member?(conversation.organizationId, userId)
         return member && conversation.admits?(userId)
       end
       _ => return false

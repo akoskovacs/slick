@@ -75,12 +75,12 @@ private do
       organizations: organizations(user),
       organization: organization,
       channels: App.Live.Places.readable(user, Conversations.channels(organization.id).or([])),
-      groups: Conversations.groupsOf(organization.id, user.id).or([]),
-      teams: Teams.ofOrganization(organization.id).or([]),
+      groups: Conversations.groups(organization.id, user.id).or([]),
+      teams: Teams.inOrganization(organization.id).or([]),
       people: everyone.filter { |person| roster.contains?(person.id) },
       online: online,
       bots: bots,
-      operators: bots.reduce({}) { |found, bot| found.put(bot.id, DB.Repositories.BotOperators.listed(bot.id).or([])) },
+      operators: bots.reduce({}) { |found, bot| found.put(bot.id, DB.Repositories.BotOperators.forBot(bot.id).or([])) },
       drafts: Drafts.pending(user.id).or([]),
       roles: roles,
       administrator: App.Services.Authority.canManage(user, organization.id)
@@ -94,12 +94,12 @@ private do
     return App.Views.Chat.Page.Pane {
       conversation: Just(conversation),
       messages: Messages.latest(conversation.id, WINDOW).or([]),
-      reactions: Reactions.throughout(conversation.id).or([]),
-      responses: Answers.collected(conversation.id).or([]),
+      reactions: Reactions.inConversation(conversation.id).or([]),
+      responses: Answers.inConversation(conversation.id).or([]),
       thread: App.Live.Threads.messages(conversation, tab.thread),
       cabinet: App.Live.Files.cabinet(user, tab, conversation),
       commands: App.Live.Commands.available(user, conversation, people),
-      invocations: DB.Repositories.Invocations.inside(conversation.id).or([]),
+      invocations: DB.Repositories.Invocations.inConversation(conversation.id).or([]),
       doing: doing.reject { |note| note.member == user.id }
     }
   end

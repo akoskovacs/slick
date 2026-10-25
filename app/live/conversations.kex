@@ -11,7 +11,6 @@ using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
-using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Teams, as: Teams
 
 let channelRules = rules do
@@ -49,7 +48,7 @@ foul openDirect(user, tab, other) do
     Just(organization) => do
       return unchanged(tab) if !member?(organization.id, other)
 
-      match Conversations.between(organization.id, user.id, other) do
+      match DB.Repositories.Conversations.findOrCreateDirect(organization.id, user.id, other) do
         Ok(conversation) => return unchanged(at(organization.id, conversation.id))
         Error(reason) => return failed(tab, reason)
       end
@@ -71,7 +70,7 @@ foul createChannel(user, tab, title, access, teamId) do
       if !App.Services.Authority.canCreate(user, organization.id)
         return refused(tab, "channel", "You may not make a channel in ${organization.name}.")
       end
-      let owner : Team? = match Teams.single(teamId) do
+      let owner : Team? = match Teams.find(teamId) do
         Ok(found) => found
         Error(_) => None
       end
@@ -81,7 +80,7 @@ foul createChannel(user, tab, title, access, teamId) do
       return refused(tab, "channel", "A channel can only be made for a team you are in.") if !owns
 
       let kept = access == "private" then "private" else "public"
-      match Conversations.founded(organization.id, title, user.id, access: kept, teamId: teamId) do
+      match DB.Repositories.Conversations.create(organization.id, title, user.id, access: kept, teamId: teamId) do
         Ok(channel) => return changed(at(organization.id, channel.id))
         Error(_) => return refused(tab, "channel", "There is already a channel called ${title}.")
       end
@@ -100,7 +99,7 @@ foul createGroup(user, tab, picked) do
       return refused(tab, "group", "Pick at least one person.") if others.empty?
       return openDirect(user, closed(tab), others.first.or("")) if others.count == 1
 
-      match Conversations.among(organization.id, others, user.id) do
+      match DB.Repositories.Conversations.findOrCreateGroup(organization.id, others, user.id) do
         Ok(chat) => return changed(at(organization.id, chat.id))
         Error(reason) => return refused(tab, "group", reason)
       end
@@ -124,7 +123,7 @@ foul makeChannel(user, tab, title, access) do
       end
 
       let kept = access == "public" then "public" else "private"
-      match Conversations.promoted(conversation.id, title, kept) do
+      match DB.Repositories.Conversations.promote(conversation.id, title, kept) do
         Ok(channel) => return changed(at(channel.organizationId, channel.id))
         Error(_) => return refused(tab, "promote", "There is already a channel called ${title}.")
       end
@@ -148,7 +147,7 @@ foul addPeople(user, tab, picked) do
       end
       return refused(tab, "admit", "Pick at least one person who is not in it yet.") if newcomers.empty?
 
-      match Conversations.admitted(conversation.id, newcomers) do
+      match DB.Repositories.Conversations.admit(conversation.id, newcomers) do
         Ok(count) => do
           let notice = count == 1 then "Added one person." else "Added ${count} people."
           return changed(Tab { ...closed(tab), notice: notice })
@@ -169,7 +168,7 @@ foul setTopic(user, tab, topic) do
 
   match visible(user, tab) do
     None => return unchanged(tab)
-    Just(conversation) => match Conversations.retitled(conversation.id, topic) do
+    Just(conversation) => match DB.Repositories.Conversations.setTopic(conversation.id, topic) do
       Ok(said) => return (closed(tab), said)
       Error(reason) => return failed(tab, reason)
     end
@@ -192,7 +191,7 @@ foul configure(user, tab, access, teamId, botAccess) do
         return unchanged(inSettings(tab, "Only an administrator can change a channel's settings."))
       end
       if !teamId.empty? && teamId != conversation.teamId
-        let owner : Team? = match Teams.single(teamId) do
+        let owner : Team? = match Teams.find(teamId) do
           Ok(found) => found
           Error(_) => None
         end
@@ -202,7 +201,7 @@ foul configure(user, tab, access, teamId, botAccess) do
         return unchanged(inSettings(tab, "A channel can only belong to a team you are in.")) if !owns
       end
 
-      match Conversations.configured(conversation.id, access, teamId, botAccess) do
+      match DB.Repositories.Conversations.configure(conversation.id, access, teamId, botAccess) do
         Ok(true) => return changed(Tab { ...closed(tab), view: "", notice: "Channel settings saved." })
         Ok(false) => return unchanged(inSettings(tab, "That conversation is not there."))
         Error(reason) => return unchanged(inSettings(tab, reason))

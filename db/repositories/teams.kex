@@ -1,6 +1,6 @@
 # Teams, and who is in them.
 #
-#   DB.Repositories.Teams.ofOrganization(organization.id)
+#   DB.Repositories.Teams.inOrganization(organization.id)
 #
 # A team a sync has (`managed?`) keeps its name and members as the sync
 # says: the conditions here leave it alone, whoever asks. A team's members
@@ -14,7 +14,7 @@ using DB.Repositories.Grants, as: Grants
 
 # Creates a team, with its first members. Fails when the organization has a
 # team of that handle: the unique index decides.
-foul formed(team: Team, by: String) -> Result<Team, String> do
+foul create(team: Team, by: String) -> Team or! String do
   let made = Team { ...team, id: Metro.Id.generate(prefix: "t") }
   let row = {
     id: made.id,
@@ -25,19 +25,19 @@ foul formed(team: Team, by: String) -> Result<Team, String> do
     created_by: by,
     created_at: Metro.Clock.milliseconds()
   }
-  let stored : Result<Team, String> = Database.transaction do
+  let stored : Team or! String = Database.transaction do
     Database.insert(DB.Schema.Teams)
       .values(row)
       .run
       .try
-    joinedAll(made.id, made.members).try
+    addMembers(made.id, made.members).try
     Ok(made)
   end
   return stored
 end
 
 # Every team of an organization, by handle, each with its members.
-foul ofOrganization(organizationId: String) -> Result<[Team], String> do
+foul inOrganization(organizationId: String) -> [Team] or! String do
   let rows = Database.select().from(DB.Schema.Teams)
     .where(DB.Schema.Teams.organizationId == organizationId)
     .orderBy([:handle])
@@ -47,7 +47,7 @@ foul ofOrganization(organizationId: String) -> Result<[Team], String> do
 end
 
 # One team, with its members, or `None`.
-foul single(id: String) -> Result<Team?, String> do
+foul find(id: String) -> Team? or! String do
   let row = Database.select().from(DB.Schema.Teams)
     .where(DB.Schema.Teams.id == id)
     .first(as: Team)
@@ -63,7 +63,7 @@ end
 
 # Renames a team and says again what it is for; whether there was such a
 # team that is not a sync's.
-foul revised(id: String, name: String, description: String) -> Result<Bool, String> do
+foul update(id: String, name: String, description: String) -> Bool or! String do
   return Database.within(DB.Schema.Teams.externalId == "")
     .update(DB.Schema.Teams)
     .set({name: name, description: description})
@@ -74,13 +74,13 @@ end
 
 # Puts people in a team, leaving out whoever is in it already: each is
 # granted membership of the team.
-foul joinedAll(teamId: String, userIds: [String]) -> Result<Integer, String> do
+foul addMembers(teamId: String, userIds: [String]) -> Integer or! String do
   let present : [String] = members(teamId).try
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   # A `.try` inside a block given to `map` would leave only that block:
   # what failed is collected instead.
   let failures = newcomers.flatMap do |userId|
-    let stored = Grants.granted(Grant { subjectType: "user", subjectId: userId, resourceType: "team", resourceId: teamId, role: "member" })
+    let stored = Grants.grant(Grant { subjectType: "user", subjectId: userId, resourceType: "team", resourceId: teamId, role: "member" })
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
@@ -90,13 +90,13 @@ foul joinedAll(teamId: String, userIds: [String]) -> Result<Integer, String> do
 end
 
 # Takes a person out of a team, and their grant with them.
-foul left(teamId: String, userId: String) -> Result<Integer, String> do
-  return Grants.revoked(Grants.key("user", userId, "team", teamId))
+foul removeMember(teamId: String, userId: String) -> Integer or! String do
+  return Grants.revoke(Grants.key("user", userId, "team", teamId))
 end
 
 # Hands a team to a sync, as the group of this id — or, with "", takes it
 # back: from then on it is changed here again.
-foul managing(id: String, externalId: String) -> Result<Integer, String> do
+foul markManaged(id: String, externalId: String) -> Integer or! String do
   return Database.update(DB.Schema.Teams)
     .set({external_id: externalId})
     .where(DB.Schema.Teams.id == id)
@@ -104,18 +104,18 @@ foul managing(id: String, externalId: String) -> Result<Integer, String> do
 end
 
 # The ids of the people in a team.
-foul members(teamId: String) -> Result<[String], String> do
+foul members(teamId: String) -> [String] or! String do
   return Grants.members("team", teamId)
 end
 
 # The ids of the people in any of some teams, by team.
-foul rosters(teamIds: [String]) -> Result<{String: [String]}, String> do
+foul rosters(teamIds: [String]) -> {String: [String]} or! String do
   return Grants.membersOf("team", teamIds)
 end
 
 private do
   # Teams with their members filled in, and whether a sync has each.
-  foul membered(teams: [Team]) -> Result<[Team], String> do
+  foul membered(teams: [Team]) -> [Team] or! String do
     let byTeam : {String: [String]} = rosters(teams.map { |team| team.id }).try
     return Ok(teams.map do |team|
       Team {

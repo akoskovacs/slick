@@ -1,7 +1,7 @@
 # How far people have read, in conversations and in the threads they
 # follow.
 #
-#   DB.Repositories.Readings.reached(user.id, Reading {
+#   DB.Repositories.Readings.markRead(user.id, Reading {
 #     conversationId: chat.id,
 #     readAt: message.sentAt
 #   })
@@ -12,7 +12,7 @@ using App.Models.Reading, only: [Reading]
 
 # Everywhere a person has read: each conversation, and each thread they
 # follow.
-foul marks(userId: String) -> Result<[Reading], String> do
+foul marks(userId: String) -> [Reading] or! String do
   return Database.select([:conversation_id, :thread_id, :read_at]).from(DB.Schema.Readings)
     .where(DB.Schema.Readings.userId == userId)
     .all(as: Reading)
@@ -20,7 +20,7 @@ end
 
 # Notes how far a person has read a conversation, or a thread of it: the
 # old mark and the new one swapped in one transaction.
-foul reached(userId: String, reading: Reading) -> Result<Integer, String> do
+foul markRead(userId: String, reading: Reading) -> Integer or! String do
   let place = "${userId}:${reading.conversationId}"
   let id = reading.threadId.empty? then place else "${place}:${reading.threadId}"
   let row = {
@@ -30,7 +30,7 @@ foul reached(userId: String, reading: Reading) -> Result<Integer, String> do
     thread_id: reading.threadId,
     read_at: reading.readAt
   }
-  let swapped : Result<Integer, String> = Database.transaction do
+  let swapped : Integer or! String = Database.transaction do
     Database.delete(DB.Schema.Readings)
       .where(DB.Schema.Readings.id == id)
       .run

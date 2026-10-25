@@ -1,6 +1,6 @@
 # Answers to the forms in messages.
 #
-#   DB.Repositories.Answers.recorded(organization.id, message, 1, user.id, "Deploy to: staging")
+#   DB.Repositories.Answers.save(organization.id, message, 1, user.id, "Deploy to: staging")
 module DB.Repositories.Answers
 
 using Harmat.Database, as: Database
@@ -12,7 +12,7 @@ using App.Models.Message, only: [Message]
 using App.Models.Answer, only: [Answer]
 
 # Every answer in a conversation.
-foul collected(conversationId: String) -> Result<[Answer], String> do
+foul inConversation(conversationId: String) -> [Answer] or! String do
   return Database.select().from(DB.Schema.Answers)
     .where(DB.Schema.Answers.conversationId == conversationId)
     .orderBy([:answered_at, :id])
@@ -21,7 +21,7 @@ end
 
 # Every answer, in an organization, to the forms somebody asked — a bot
 # reading what its own messages were answered with. Oldest first.
-foul addressedTo(organizationId: String, askerId: String) -> Result<[Answer], String> do
+foul askedBy(organizationId: String, askerId: String) -> [Answer] or! String do
   return Database.select().from(DB.Schema.Answers)
     .where(DB.Schema.Answers.organizationId == organizationId)
     .where(DB.Schema.Answers.askerId == askerId)
@@ -31,7 +31,7 @@ end
 
 # Records a person's answer to one form of a message. An earlier answer of
 # theirs to that form is replaced: a person has one.
-foul recorded(organizationId: String, message: Message, form: Integer, userId: String, answer: String) -> Result<Answer, String> do
+foul save(organizationId: String, message: Message, form: Integer, userId: String, answer: String) -> Answer or! String do
   let id = "${message.id}:${form}:${userId}"
   let answered = Answer {
     messageId: message.id,
@@ -54,7 +54,7 @@ foul recorded(organizationId: String, message: Message, form: Integer, userId: S
     answered_at: answered.answeredAt
   }
   # The earlier answer and this one are swapped in one transaction.
-  let swapped : Result<Integer, String> = Database.transaction do
+  let swapped : Integer or! String = Database.transaction do
     Database.delete(DB.Schema.Answers)
       .where(DB.Schema.Answers.id == id)
       .run

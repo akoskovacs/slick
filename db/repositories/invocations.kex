@@ -1,20 +1,20 @@
 # Slash commands somebody used.
 #
-#   DB.Repositories.Invocations.inside(conversation.id)
+#   DB.Repositories.Invocations.inConversation(conversation.id)
 module DB.Repositories.Invocations
 
 using Harmat.Database, as: Database
 using App.Models.Invocation, only: [Invocation]
 
 # Keeps one, as it is.
-foul recorded(invocation: Invocation) -> Result<Integer, String> do
+foul save(invocation: Invocation) -> Integer or! String do
   return Database.insert(DB.Schema.Invocations)
     .record(invocation)
     .run
 end
 
 # Every one used in a conversation, its threads included, oldest first.
-foul inside(conversationId: String) -> Result<[Invocation], String> do
+foul inConversation(conversationId: String) -> [Invocation] or! String do
   return Database.select().from(DB.Schema.Invocations)
     .where(DB.Schema.Invocations.conversationId == conversationId)
     .orderBy([:invoked_at, :id])
@@ -23,7 +23,7 @@ end
 
 # Those meant for a bot in an organization after `after`, oldest first:
 # what the bot is told.
-foul meantFor(organizationId: String, botId: String, after: Integer) -> Result<[Invocation], String> do
+foul forBot(organizationId: String, botId: String, after: Integer) -> [Invocation] or! String do
   return Database.select().from(DB.Schema.Invocations)
     .where(DB.Schema.Invocations.organizationId == organizationId)
     .where(DB.Schema.Invocations.botId == botId)

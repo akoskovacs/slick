@@ -41,7 +41,7 @@ foul botMayRead(bot: User, conversation: Conversation, root: String) -> Bool do
   return true if conversation.botsAll?
   return false if root.empty?
 
-  match DB.Repositories.Messages.single(root) do
+  match DB.Repositories.Messages.find(root) do
     Ok(Just(message)) => do
       return true if App.Models.User.mentioned?(bot.name, message.body)
       return DB.Repositories.Messages.botAuthors(root, [bot.id]).or([]).count > 0

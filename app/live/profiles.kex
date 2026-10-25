@@ -32,7 +32,7 @@ end
 # stored, whatever was sent for it: the form shows it, but only to read.
 update : User -> Tab -> [(String, String?)] -> Outcome
 foul update(user, tab, entries) do
-  match Users.member(user.id) do
+  match Users.find(user.id) do
     Ok(Just(stored)) => do
       let given = App.Models.User.DETAILS.map do |column, _, _|
         let kept = stored.locked?(column)
@@ -54,7 +54,7 @@ foul update(user, tab, entries) do
         nickname: chosen(given, "nickname"),
         nicknameShown?: field(entries, "show_nickname") == "yes"
       }
-      match Users.described(described) do
+      match Users.update(described) do
         Ok(_) => return changed(closed(tab))
         Error(reason) => return refused(tab, "profile", reason)
       end
@@ -71,7 +71,7 @@ foul setStatus(user, tab, emoji, saying) do
   return refused(tab, "status", problems.first.or("")) if !problems.empty?
   return refused(tab, "status", "Pick one of the emoji offered.") if !App.Models.Emoji.status?(emoji)
 
-  match Users.restyled(user.id, emoji, saying) do
+  match Users.setStatus(user.id, emoji, saying) do
     Ok(_) => return changed(closed(tab))
     Error(reason) => return refused(tab, "status", reason)
   end

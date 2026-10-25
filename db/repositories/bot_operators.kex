@@ -5,7 +5,7 @@ module DB.Repositories.BotOperators
 using Harmat.Database, as: Database
 
 # A bot's operators, by their id.
-foul listed(botId: String) -> Result<[String], String> do
+foul forBot(botId: String) -> [String] or! String do
   return Database.select()
     .from(DB.Schema.BotOperators)
     .where(DB.Schema.BotOperators.botId == botId)
@@ -15,8 +15,8 @@ end
 
 # A bot's operators, all of them at once: the old ones and the new ones are
 # swapped in one transaction.
-foul replaced(botId: String, users: [String]) -> Result<Bool, String> do
-  let swapped : Result<Integer, String> = Database.transaction do
+foul replace(botId: String, users: [String]) -> Bool or! String do
+  let swapped : Integer or! String = Database.transaction do
     let cleared = Database.delete(DB.Schema.BotOperators)
       .where(DB.Schema.BotOperators.botId == botId)
       .run

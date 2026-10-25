@@ -1,14 +1,14 @@
 # The slash commands bots answer to.
 #
-#   DB.Repositories.Commands.declared(bot.id, commands)
+#   DB.Repositories.Commands.declare(bot.id, commands)
 module DB.Repositories.Commands
 
 using Harmat.Database, as: Database
 using App.Models.Command, only: [Command]
 
 # Replaces a bot's commands with these, all at once.
-foul declared(botId: String, commands: [Command]) -> Result<Integer, String> do
-  let replaced : Result<Integer, String> = Database.transaction do
+foul declare(botId: String, commands: [Command]) -> Integer or! String do
+  let replaced : Integer or! String = Database.transaction do
     Database.delete(DB.Schema.Commands)
       .where(DB.Schema.Commands.botId == botId)
       .run
@@ -35,7 +35,7 @@ foul declared(botId: String, commands: [Command]) -> Result<Integer, String> do
 end
 
 # The commands of some bots, by name.
-foul of(botIds: [String]) -> Result<[Command], String> do
+foul forBots(botIds: [String]) -> [Command] or! String do
   return Database.select().from(DB.Schema.Commands)
     .where(DB.Schema.Commands.botId.in(botIds))
     .orderBy([:name, :bot_id])

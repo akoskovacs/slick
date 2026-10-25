@@ -8,28 +8,28 @@ using DB.Repositories.Grants, as: Grants
 
 # Puts a person in an organization as a member. Fails when they are already
 # in it: the grant of the same name is already there.
-foul enlisted(organizationId: String, userId: String) -> Result<Integer, String> do
+foul add(organizationId: String, userId: String) -> Integer or! String do
   return Error("${userId} is already in ${organizationId}") if Grants.holds?("user", userId, "organization", organizationId)
-  return Grants.granted(Grant { subjectType: "user", subjectId: userId, resourceType: "organization", resourceId: organizationId, role: "member" }).map { |_| 1 }
+  return Grants.grant(Grant { subjectType: "user", subjectId: userId, resourceType: "organization", resourceId: organizationId, role: "member" }).map { |_| 1 }
 end
 
 # Whether a person is in an organization.
-foul affiliated?(organizationId: String, userId: String) -> Bool do
+foul member?(organizationId: String, userId: String) -> Bool do
   return Grants.holds?("user", userId, "organization", organizationId)
 end
 
 # When a person joined an organization, in milliseconds since 1970; 0 if
 # they are not in it.
-foul joined(organizationId: String, userId: String) -> Integer do
-  return Grants.whenGranted("user", userId, "organization", organizationId)
+foul joinedAt(organizationId: String, userId: String) -> Integer do
+  return Grants.grantedAt("user", userId, "organization", organizationId)
 end
 
 # The ids of the organizations a person is in, oldest membership first.
-foul affiliations(userId: String) -> Result<[String], String> do
+foul organizationsOf(userId: String) -> [String] or! String do
   return Grants.organizationsOf(userId)
 end
 
 # The ids of the people in an organization.
-foul roster(organizationId: String) -> Result<[String], String> do
+foul roster(organizationId: String) -> [String] or! String do
   return Grants.members("organization", organizationId)
 end

@@ -1,13 +1,13 @@
 # Unsent messages, kept as they are typed.
 #
-#   DB.Repositories.Drafts.kept(user.id, Draft { conversationId: chat.id, body: "half a tho" })
+#   DB.Repositories.Drafts.save(user.id, Draft { conversationId: chat.id, body: "half a tho" })
 module DB.Repositories.Drafts
 
 using Harmat.Database, as: Database
 using App.Models.Draft, only: [Draft]
 
 # Everything a person has started writing and not sent.
-foul pending(userId: String) -> Result<[Draft], String> do
+foul pending(userId: String) -> [Draft] or! String do
   return Database.select().from(DB.Schema.Drafts)
     .where(DB.Schema.Drafts.userId == userId)
     .all(as: Draft)
@@ -17,7 +17,7 @@ end
 # kept before; nothing written takes it away.
 # The old one and the new one are swapped in one transaction, so a draft is
 # never lost between them.
-foul kept(userId: String, draft: Draft) -> Result<Integer, String> do
+foul save(userId: String, draft: Draft) -> Integer or! String do
   let id = "${userId}:${draft.conversationId}:${draft.threadId}"
   let row = {
     id: id,
@@ -28,7 +28,7 @@ foul kept(userId: String, draft: Draft) -> Result<Integer, String> do
     body: draft.body,
     saved_at: Metro.Clock.milliseconds()
   }
-  let swapped : Result<Integer, String> = Database.transaction do
+  let swapped : Integer or! String = Database.transaction do
     let cleared = Database.delete(DB.Schema.Drafts)
       .where(DB.Schema.Drafts.id == id)
       .run

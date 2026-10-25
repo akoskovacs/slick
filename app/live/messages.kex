@@ -18,7 +18,6 @@ using App.Models.User, only: [User]
 using DB.Repositories.Answers, as: Answers
 using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Drafts, as: Drafts
-using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Readings, as: Readings
 
@@ -99,7 +98,7 @@ foul saveDraft(user, tab, place, body) do
       let thread = place == "reply" then root else ""
       return unchanged(tab) if place == "reply" && thread.empty?
 
-      Drafts.kept(user.id, Draft {
+      Drafts.save(user.id, Draft {
         conversationId: conversation.id,
         threadId: thread,
         personId: conversation.direct? then conversation.counterpart(user.id) else "",
@@ -119,11 +118,11 @@ foul react(user, tab, messageId, emoji) do
 
   match visible(user, tab) do
     None => return unchanged(tab)
-    Just(conversation) => match Messages.single(messageId) do
+    Just(conversation) => match DB.Repositories.Messages.find(messageId) do
       Ok(Just(message)) => do
         return unchanged(tab) if message.conversationId != conversation.id
 
-        match Reactions.flipped(message, user.id, emoji) do
+        match Reactions.toggle(message, user.id, emoji) do
           Ok(_) => return changed(tab)
           Error(reason) => return failed(tab, reason)
         end
@@ -140,13 +139,13 @@ answer : Server<App.Live.Events.Bus> -> User -> Tab -> [(String, String?)] -> Ou
 foul answer(events, user, tab, entries) do
   match visible(user, tab) do
     None => return unchanged(tab)
-    Just(conversation) => match Messages.single(field(entries, "message")) do
+    Just(conversation) => match DB.Repositories.Messages.find(field(entries, "message")) do
       Ok(Just(message)) => do
         return unchanged(tab) if message.conversationId != conversation.id
 
         match App.Helpers.RichText.answer(message.body, entries) do
           None => return unchanged(tab)
-          Just((form, said)) => match Answers.recorded(conversation.organizationId, message, form, user.id, said) do
+          Just((form, said)) => match Answers.save(conversation.organizationId, message, form, user.id, said) do
             Ok(given) => do
               # Only the bot whose form it was is told, and it is told only
               # where to look.
@@ -166,7 +165,7 @@ end
 # the next message: only one of theirs that has not been sent.
 attach : User -> Tab -> String -> Outcome
 foul attach(user, tab, id) do
-  match Attachments.single(id) do
+  match Attachments.find(id) do
     Ok(Just(file)) => do
       return unchanged(tab) if file.userId != user.id || file.sent? || tab.pending.contains?(id)
       return unchanged(Tab { ...tab, pending: (tab.pending + [id]).take(PENDING) })
@@ -206,17 +205,17 @@ private do
   # A reply said in the thread `first` starts.
   replyTo : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> Conversation -> Message -> String -> Outcome
   foul replyTo(events, statuses, user, tab, conversation, first, body) do
-    match Messages.said(conversation.id, user.id, body, first.id) do
+    match DB.Repositories.Messages.create(conversation.id, user.id, body, first.id) do
       Ok(reply) => do
         App.Live.Events.publish(events, conversation, "message", reply.id, first.id, reply.sentAt, "", body)
         statuses.lifted(conversation.id, user.id)
         # Who replies in a thread follows it, and has read it so far.
-        Readings.reached(user.id, Reading {
+        Readings.markRead(user.id, Reading {
           conversationId: conversation.id,
           threadId: first.id,
           readAt: reply.sentAt
         })
-        Drafts.kept(user.id, Draft {
+        Drafts.save(user.id, Draft {
           conversationId: conversation.id,
           threadId: first.id,
           body: ""
@@ -233,14 +232,14 @@ private do
   post : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> [String] -> Message or! String
   foul post(events, user, conversation, body, pending) do
     let posted : Message or! String = Harmat.Database.transaction do
-      let message : Message = Messages.said(conversation.id, user.id, body, "").try
-      Readings.reached(user.id, Reading {
+      let message : Message = DB.Repositories.Messages.create(conversation.id, user.id, body, "").try
+      Readings.markRead(user.id, Reading {
         conversationId: conversation.id,
         threadId: message.id,
         readAt: message.sentAt
       }).try
-      Attachments.sent(user.id, pending, conversation.id, message.id).try
-      Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" }).try
+      Attachments.markSent(user.id, pending, conversation.id, message.id).try
+      Drafts.save(user.id, Draft { conversationId: conversation.id, body: "" }).try
       Ok(message)
     end
     match posted do

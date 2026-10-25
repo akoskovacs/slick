@@ -92,7 +92,7 @@ describe("App.Live.Teams, who is in one") do
       let world = populated()
       let design = createDesign(world)
       stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
-      DB.Repositories.Teams.managing(design.team, "scim-group-1").try
+      DB.Repositories.Teams.markManaged(design.team, "scim-group-1").try
       let (refusedAdd, addChanged) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.eve.id)])
       Assert.falsy(addChanged)
       Assert.truthy(refusedAdd.failure.contains?("kept in sync"))

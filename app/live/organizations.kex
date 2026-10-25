@@ -57,7 +57,7 @@ foul invite(user, tab, email) do
       end
 
       match Users.credentials(email) do
-        Ok(Just((person, _))) => match Memberships.enlisted(organization.id, person.id) do
+        Ok(Just((person, _))) => match Memberships.add(organization.id, person.id) do
           Ok(_) => return changed(Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." })
           Error(_) => return refused(tab, "invite", "${person.shown} is already in ${organization.name}.")
         end
@@ -95,7 +95,7 @@ foul setRole(user, tab, personId, role) do
         resourceId: organization.id,
         role: role
       }
-      match Grants.granted(grant) do
+      match Grants.grant(grant) do
         Ok(_) => return changed(Tab { ...profile, notice: "Their role is ${role} now." })
         Error(reason) => return unchanged(Tab { ...profile, failure: reason })
       end
@@ -120,7 +120,7 @@ foul removeMember(user, tab, personId) do
         return unchanged(Tab { ...away, failure: "The last administrator cannot be removed." })
       end
 
-      match Grants.revoked(Grants.key("user", personId, "organization", organization.id)) do
+      match Grants.revoke(Grants.key("user", personId, "organization", organization.id)) do
         Ok(_) => return changed(Tab { ...away, notice: "They are no longer in ${organization.name}." })
         Error(reason) => return unchanged(Tab { ...away, failure: reason })
       end

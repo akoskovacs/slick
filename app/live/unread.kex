@@ -85,17 +85,17 @@ private do
     open: String,
     openThread: String
   ) -> ({String: Integer}, {String: Integer}, {String: Integer}) do
-    let since = Memberships.joined(organization.id, user.id)
+    let since = Memberships.joinedAt(organization.id, user.id)
     let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
-    let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
-    let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
+    let chats : [Conversation] = Conversations.directs(organization.id, user.id).or([])
+    let groups : [Conversation] = Conversations.groups(organization.id, user.id).or([])
     let places = (channels + chats + groups).map { |conversation| conversation.id }
     let follows = marks.filter do |mark|
       !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId)
     end
     let roots = follows.map { |mark| mark.threadId }
     let oldest = follows.map { |mark| mark.readAt }.min.or(0)
-    let replies : [Message] = follows.empty? then [] else Messages.replyingTo(roots, oldest).or([])
+    let replies : [Message] = follows.empty? then [] else Messages.repliesTo(roots, oldest).or([])
     let answered = replies.filter do |reply|
       reply.userId != user.id && follows.any? do |mark|
         mark.threadId == reply.parentId && reply.sentAt > mark.readAt
@@ -124,7 +124,7 @@ private do
     return 0 if conversation.id == open
     let mark = marks.find { |each| each.conversationId == conversation.id && each.threadId.empty? }
     let read = mark.map { |each| each.readAt }.or(since)
-    return Messages.newer(conversation.id, read).or(0)
+    return Messages.newerCount(conversation.id, read).or(0)
   end
 
   # When the newest of some messages was sent; 0 for none.
@@ -144,7 +144,7 @@ private do
       .find { |mark| mark.conversationId == reading.conversationId && mark.threadId == reading.threadId }
       .map { |mark| mark.readAt }
       .or(0)
-    Readings.reached(user.id, reading) if reading.readAt > before
+    Readings.markRead(user.id, reading) if reading.readAt > before
   end
 
   sum : {String: Integer} -> Integer

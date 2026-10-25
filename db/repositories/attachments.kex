@@ -1,13 +1,13 @@
 # Uploaded files: what they are and where they belong.
 #
-#   DB.Repositories.Attachments.inside(conversation.id)
+#   DB.Repositories.Attachments.inConversation(conversation.id)
 module DB.Repositories.Attachments
 
 using Harmat.Database, as: Database
 using App.Models.Attachment, only: [Attachment]
 
 # Notes a file somebody has just uploaded: theirs alone, until it is sent.
-foul uploaded(userId: String, blob: Metro.Storage.Blob) -> Result<Attachment, String> do
+foul create(userId: String, blob: Metro.Storage.Blob) -> Attachment or! String do
   let file = Attachment {
     id: blob.key,
     userId: userId,
@@ -33,14 +33,14 @@ foul uploaded(userId: String, blob: Metro.Storage.Blob) -> Result<Attachment, St
 end
 
 # One file, or `None`.
-foul single(id: String) -> Result<Attachment?, String> do
+foul find(id: String) -> Attachment? or! String do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.id == id)
     .first(as: Attachment)
 end
 
 # Several files, by id, as many of them as there are.
-foul among(ids: [String]) -> Result<[Attachment], String> do
+foul findAll(ids: [String]) -> [Attachment] or! String do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.id.in(ids))
     .orderBy([:uploaded_at, :id])
@@ -48,7 +48,7 @@ foul among(ids: [String]) -> Result<[Attachment], String> do
 end
 
 # Every file sent into a conversation, newest first.
-foul inside(conversationId: String) -> Result<[Attachment], String> do
+foul inConversation(conversationId: String) -> [Attachment] or! String do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.conversationId == conversationId)
     .orderBy(descending: [:uploaded_at, :id])
@@ -57,12 +57,12 @@ end
 
 # Sends a person's files with a message: only theirs, and only those not
 # sent before. How many went.
-foul sent(
+foul markSent(
   userId: String,
   ids: [String],
   conversationId: String,
   messageId: String
-) -> Result<Integer, String> do
+) -> Integer or! String do
   return Database.within(DB.Schema.Files.userId == userId)
     .update(DB.Schema.Files)
     .set({conversation_id: conversationId, message_id: messageId})

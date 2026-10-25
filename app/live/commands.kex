@@ -24,7 +24,7 @@ foul available(user, conversation, people) do
     bots.filter { |bot| conversation.admits?(bot.id) }
   end
   return [] if listening.empty?
-  return DB.Repositories.Commands.of(listening.map { |bot| bot.id }).or([])
+  return DB.Repositories.Commands.forBots(listening.map { |bot| bot.id }).or([])
 end
 
 # Whether what was sent is a slash command for a bot in reach — and if so,
@@ -64,8 +64,8 @@ foul run(events, user, conversation, threadId, body) do
     invokedAt: moment
   }
   let kept : Integer or! String = Harmat.Database.transaction do
-    DB.Repositories.Invocations.recorded(used).try
-    Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
+    DB.Repositories.Invocations.save(used).try
+    Drafts.save(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
   end
   if kept.ok?
     App.Live.Events.publish(events, conversation, "command", "", used.threadId, used.invokedAt, command.botId, "")

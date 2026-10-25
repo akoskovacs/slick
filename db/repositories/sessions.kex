@@ -5,7 +5,7 @@ module DB.Repositories.Sessions
 
 using Harmat.Database, as: Database
 
-foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<Integer, String> do
+foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Integer or! String do
   let row = {
     token_digest: tokenDigest,
     user_id: userId,
@@ -18,14 +18,14 @@ foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Result<In
 end
 
 # Whose session a digest is, and when it expires (seconds since 1970).
-foul holder(tokenDigest: String) -> Result<(String, Integer)?, String> do
+foul holder(tokenDigest: String) -> (String, Integer)? or! String do
   return Database.select().from(DB.Schema.Sessions)
     .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
     .first(as: Session)
     .map { |session| session.map { |held| (held.userId, held.expiresAt) } }
 end
 
-foul revoke(tokenDigest: String) -> Result<Bool, String> do
+foul revoke(tokenDigest: String) -> Bool or! String do
   return Database.delete(DB.Schema.Sessions)
     .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
     .run

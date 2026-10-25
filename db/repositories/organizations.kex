@@ -1,6 +1,6 @@
 # Organizations.
 #
-#   DB.Repositories.Organizations.addressed("acme")
+#   DB.Repositories.Organizations.findBySlug("acme")
 module DB.Repositories.Organizations
 
 using Harmat.Database, as: Database
@@ -8,7 +8,7 @@ using App.Models.Organization, only: [Organization]
 
 # Creates an organization. Fails when the address is taken: the unique
 # index on `slug` decides.
-foul chartered(name: String, slug: String, by: String) -> Result<Organization, String> do
+foul create(name: String, slug: String, by: String) -> Organization or! String do
   let organization = Organization {
     id: Metro.Id.generate(prefix: "o"),
     slug: slug,
@@ -28,14 +28,14 @@ foul chartered(name: String, slug: String, by: String) -> Result<Organization, S
 end
 
 # The organization at this address, or `None`.
-foul addressed(slug: String) -> Result<Organization?, String> do
+foul findBySlug(slug: String) -> Organization? or! String do
   return Database.select().from(DB.Schema.Organizations)
     .where(DB.Schema.Organizations.slug == slug)
     .first(as: Organization)
 end
 
 # The organization with this id, or `None`.
-foul identified(id: String) -> Result<Organization?, String> do
+foul find(id: String) -> Organization? or! String do
   return Database.select().from(DB.Schema.Organizations)
     .where(DB.Schema.Organizations.id == id)
     .first(as: Organization)

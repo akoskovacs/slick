@@ -183,7 +183,7 @@ end
 # the bus can tell which bots it names.
 publish : Server<Bus> -> Conversation -> String -> String -> String -> Integer -> String -> String -> Void
 foul publish(events, conversation, kind, messageId, threadId, at, bot, body) do
-  match DB.Repositories.Organizations.identified(conversation.organizationId) do
+  match DB.Repositories.Organizations.find(conversation.organizationId) do
     Ok(Just(organization)) => do
       let replied = if kind == "message" && !threadId.empty?
         DB.Repositories.Messages.botAuthors(threadId, DB.Repositories.Users.botIds().or([])).or([])

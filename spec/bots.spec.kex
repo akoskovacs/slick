@@ -210,7 +210,7 @@ describe("App.Live.Bots, operators") do
       let (saved, changed) = stepped(world, world.bob, Tab {}, [("event", "bot-operators-set"), ("bot", bot.id), ("operator", world.eve.id)])
       Assert.truthy(changed)
       Assert.truthy(saved.notice.contains?("saved"))
-      Assert.equal(DB.Repositories.BotOperators.listed(bot.id).or([]), [world.eve.id])
+      Assert.equal(DB.Repositories.BotOperators.forBot(bot.id).or([]), [world.eve.id])
     end
   end
 
@@ -224,7 +224,7 @@ describe("App.Live.Bots, operators") do
       let (outsider, outsiderChanged) = stepped(world, world.bob, Tab {}, [("event", "bot-operators-set"), ("bot", bot.id), ("operator", world.mal.id)])
       Assert.falsy(outsiderChanged)
       Assert.truthy(outsider.dialogProblem.contains?("Choose people"))
-      Assert.equal(DB.Repositories.BotOperators.listed(bot.id).or([]), [])
+      Assert.equal(DB.Repositories.BotOperators.forBot(bot.id).or([]), [])
     end
   end
 end

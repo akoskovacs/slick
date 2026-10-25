@@ -88,7 +88,7 @@ foul whoami(request) do
   let bot = userFor(request)
   let mine : [Organization] = App.Live.Places.organizations(bot)
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
-  let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed, "operators": DB.Repositories.BotOperators.listed(bot.id).or([])}
+  let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed, "operators": DB.Repositories.BotOperators.forBot(bot.id).or([])}
   return request.json(answer)
 end
 
@@ -118,7 +118,7 @@ foul commandsDeclared(request) do
     )
   end
 
-  match DB.Repositories.Commands.declared(bot.id, commands) do
+  match DB.Repositories.Commands.declare(bot.id, commands) do
     Error(reason) => return failed(request, 500, reason)
     Ok(_) => do
       hubFor(request).changed("api", "everyone")
@@ -156,7 +156,7 @@ foul groupList(request) do
   let organization = organizationFor(request).try
   let bot = userFor(request)
   let people : [User] = Users.everyone.or([])
-  let found : [Conversation] = Conversations.groupsOf(organization, bot.id).or([])
+  let found : [Conversation] = Conversations.groups(organization, bot.id).or([])
   let listed : [Any] = found.map do |chat|
     let others = chat.participants.reject { |id| id == bot.id }
     let names : [Any] = others.map do |id|
@@ -179,7 +179,7 @@ foul chatList(request) do
   let organization = organizationFor(request).try
   let bot = userFor(request)
   let people : [User] = Users.everyone.or([])
-  let found : [Conversation] = Conversations.directsOf(organization, bot.id).or([])
+  let found : [Conversation] = Conversations.directs(organization, bot.id).or([])
   let listed : [Any] = found.map do |chat|
     let other = chat.firstUser == bot.id then chat.secondUser else chat.firstUser
     let person = people.find { |each| each.id == other }
@@ -205,7 +205,7 @@ foul answerList(request) do
   let bot = userFor(request)
   let since = request.query("after").or("0").to(Integer).or(0)
   let people : [User] = Users.everyone.or([])
-  let found = Answers.addressedTo(organization, bot.id).or([]).filter { |each| each.answeredAt > since }
+  let found = Answers.askedBy(organization, bot.id).or([]).filter { |each| each.answeredAt > since }
   let listed : [Any] = found.flatMap { |each| placedAnswer(bot, people, each) }
   return request.json(listed)
 rescue |error|
@@ -222,9 +222,9 @@ foul invocationList(request) do
   let bot = userFor(request)
   let since = request.query("after").or("0").to(Integer).or(0)
   let people : [User] = Users.everyone.or([])
-  let found = DB.Repositories.Invocations.meantFor(organization, bot.id, since).or([])
+  let found = DB.Repositories.Invocations.forBot(organization, bot.id, since).or([])
   let listed : [Any] = found.flatMap do |each|
-    match Conversations.lookup(each.conversationId) do
+    match Conversations.find(each.conversationId) do
       Ok(Just(conversation)) => [toldInvocation(bot, people, each, conversation)]
       _ => []
     end
@@ -276,7 +276,7 @@ foul posted(request) do
   hubFor(request).changed("api", "everyone")
   let people : [User] = Users.everyone.or([])
   let inChannel : [Message] = Messages.latest(conversation.id, 1).or([])
-  let inThread : [Message] = Messages.answering(tab.thread).or([])
+  let inThread : [Message] = Messages.replies(tab.thread).or([])
   let newest = thread.empty? then inChannel else inThread.reverse.take(1)
   let answer : {String: Any} = newest.first.map { |message| described(message, people) }.or({})
   return request.json(201, answer)
@@ -361,8 +361,8 @@ private do
   # A response as the API tells it, with where its message is. Nothing for
   # one whose message or conversation is gone.
   foul placedAnswer(bot: User, people: [User], given: App.Models.Answer.Answer) -> [Any] do
-    match Messages.single(given.messageId) do
-      Ok(Just(message)) => match Conversations.lookup(given.conversationId) do
+    match Messages.find(given.messageId) do
+      Ok(Just(message)) => match Conversations.find(given.conversationId) do
         Ok(Just(conversation)) => return [toldAnswer(bot, people, given, message, conversation)]
         _ => return []
       end
@@ -405,13 +405,13 @@ private do
   # replies, oldest first. Nothing, when the message is not one of this
   # conversation's.
   foul unfolded(conversation: Conversation, rootId: String) -> [Any] do
-    match Messages.single(rootId) do
+    match Messages.find(rootId) do
       Ok(Just(root)) => do
         let none : [Any] = []
         return none if root.conversationId != conversation.id
 
         let people : [User] = Users.everyone.or([])
-        let replies : [Message] = Messages.answering(root.id).or([])
+        let replies : [Message] = Messages.replies(root.id).or([])
         let listed : [Any] = ([root] + replies).map { |message| described(message, people) }
         return listed
       end

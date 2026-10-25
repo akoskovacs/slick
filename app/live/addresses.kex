@@ -20,7 +20,7 @@ foul tabFor(user, location) do
   match App.Paths.channelPath.captured(location) do
     Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
       None => return Tab {}
-      Just(organization) => match Conversations.channelCalled(organization.id, parts.get("name").or("")) do
+      Just(organization) => match Conversations.findChannel(organization.id, parts.get("name").or("")) do
         Ok(Just(channel)) => return Tab { organization: organization.id, conversation: channel.id, thread: thread }
         _ => return Tab { organization: organization.id }
       end

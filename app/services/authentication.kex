@@ -63,7 +63,7 @@ foul current(Just(token)) do
         Sessions.revoke(digest)
         return None
       end
-      match Users.member(userId) do
+      match Users.find(userId) do
         Ok(found) => found
         Error(_) => None
       end

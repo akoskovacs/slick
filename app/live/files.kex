@@ -12,8 +12,8 @@ using DB.Repositories.Attachments, as: Attachments
 # start of each small text file.
 cabinet : User -> Tab -> Conversation -> App.Views.Chat.Page.Cabinet
 foul cabinet(user, tab, conversation) do
-  let stored : [Attachment] = Attachments.inside(conversation.id).or([])
-  let waiting : [Attachment] = tab.pending.empty? then [] else Attachments.among(tab.pending).or([])
+  let stored : [Attachment] = Attachments.inConversation(conversation.id).or([])
+  let waiting : [Attachment] = tab.pending.empty? then [] else Attachments.findAll(tab.pending).or([])
   let queued = waiting.filter { |file| file.userId == user.id && !file.sent? }
   let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
   let glimpsed = tab.view == "files" then small else []

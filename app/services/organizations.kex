@@ -18,10 +18,10 @@ create : User -> String -> String -> Organization or! String
 foul create(founder, name, slug) do
   let made : Organization or! String = Harmat.Database.transaction do
     let organization : Organization = DB.Repositories.Organizations
-      .chartered(name, slug, founder.id)
+      .create(name, slug, founder.id)
       .try
-    Memberships.enlisted(organization.id, founder.id).try
-    Grants.granted(Grant {
+    Memberships.add(organization.id, founder.id).try
+    Grants.grant(Grant {
       subjectType: "user",
       subjectId: founder.id,
       resourceType: "organization",
@@ -29,9 +29,9 @@ foul create(founder, name, slug) do
       role: "admin"
     }).try
     let general : Conversation = Conversations
-      .founded(organization.id, App.Models.Conversation.GENERAL, founder.id)
+      .create(organization.id, App.Models.Conversation.GENERAL, founder.id)
       .try
-    Conversations.retitled(general.id, GENERAL_TOPIC).try
+    Conversations.setTopic(general.id, GENERAL_TOPIC).try
     Ok(organization)
   end
   return made
