@@ -6,7 +6,7 @@ params: [rows: String, nicknamed?: Bool, problem: String, synced?: Bool]
     aria-modal="true" aria-label="Edit your profile">
     <h2>Edit your profile</h2>
     <p class="hint">What people see when they open your profile.</p>
-    <form class="asking details-form" data-live="profile-set" data-live-quiet>
+    <form class="asking details-form" data-live="profile-update" data-live-quiet>
       <%== rows %>
       <label class="choice">
         <input type="checkbox" name="show_nickname" value="yes"<% if nicknamed? %> checked<% end %>>

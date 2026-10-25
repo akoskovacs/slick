@@ -549,7 +549,7 @@ private do
             [matePartial(Mate {
               key: person.id,
               caption: person.id == user.id then "${person.shown} (you)" else person.shown,
-              action: "profile",
+              action: "profile-open",
               subject: "user",
               badged: person.bot? then "BOT" else "",
               removable?: !team.managed?

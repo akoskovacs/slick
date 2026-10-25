@@ -1,0 +1,170 @@
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using Spec.Support, only: [World, stepped, shown, fresh, populated]
+
+# Profiles from a tab. Each example starts from a world of its own
+# (Spec.Support).
+
+# Bob's details, as his form sends them.
+let BOBS = [
+  ("event", "profile-update"),
+  ("name", "Bob"),
+  ("title", "Engineer"),
+  ("department", "Platform"),
+  ("phone", "+36 1 234"),
+  ("time_zone", "Europe/Budapest"),
+  ("bio", "Builds <things>"),
+  ("nickname", "Bobby")
+]
+
+# Bob's profile, open in a tab of Ada's.
+foul bobsProfile(world: World) -> Tab do
+  let (opened, _) = stepped(world, world.ada, Tab {}, [("event", "profile-open"), ("user", world.bob.id)])
+  opened
+end
+
+describe("App.Live.Profiles, opening one") do
+  it("opens somebody's profile beside the conversation") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let profile = bobsProfile(world)
+      Assert.equal(profile.profile, world.bob.id)
+      let card = shown(world, world.ada, profile)
+      Assert.truthy(card.contains?("aria-label=\"Profile of Bob\""))
+      Assert.truthy(card.contains?("mailto:bob@example.com"))
+      Assert.truthy(card.contains?("data-event=\"direct-open\" data-user=\"${world.bob.id}\""))
+    end
+  end
+
+  it("says whose a bot is, on its profile") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, _) = stepped(world, world.bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot"), ("owner", "me")])
+      let bot : User = App.Services.Bots.bearer(Just("Bearer ${made.secret}")).or(world.bob)
+      let (botProfile, _) = stepped(world, world.ada, Tab {}, [("event", "profile-open"), ("user", bot.id)])
+      let card = shown(world, world.ada, botProfile)
+      Assert.truthy(card.contains?("Belongs to"))
+      Assert.truthy(card.contains?("data-event=\"profile-open\" data-user=\"${world.bob.id}\">Bob</button>"))
+      Assert.falsy(card.contains?("mailto:"))
+    end
+  end
+
+  it("stays open over other events, until a thread takes its place or it is closed") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      stepped(world, world.ada, Tab {}, [("event", "send"), ("body", "a thread")])
+      let general = App.Live.Places.visible(world.ada, Tab {}).map { |chat| chat.id }.or("")
+      let said : [App.Models.Message.Message] = DB.Repositories.Messages.latest(general, 1).or([])
+      let id = said.first.map { |message| message.id }.or("")
+      let profile = bobsProfile(world)
+      let (cancelled, _) = stepped(world, world.ada, profile, [("event", "cancel")])
+      Assert.equal(cancelled.profile, world.bob.id)
+      let (thread, _) = stepped(world, world.ada, profile, [("event", "thread-open"), ("message", id)])
+      Assert.equal(thread.profile, "")
+      Assert.equal(thread.thread, id)
+      let (closed, _) = stepped(world, world.ada, profile, [("event", "profile-close")])
+      Assert.equal(closed.profile, "")
+    end
+  end
+
+  it("shows nobody outside the organization, whatever the tab names") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "profile-open"), ("user", world.eve.id)])
+      Assert.equal(malTries.profile, "")
+      Assert.falsy(shown(world, world.mal, Tab { profile: world.eve.id }).contains?("Profile of Eve"))
+    end
+  end
+end
+
+describe("App.Live.Profiles, one's own details") do
+  it("fills in somebody's own profile, a nickname only when asked") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, changed) = stepped(world, world.bob, Tab {}, BOBS)
+      Assert.truthy(changed)
+      let card = shown(world, world.ada, bobsProfile(world))
+      Assert.truthy(card.contains?("Engineer"))
+      Assert.truthy(card.contains?("Europe/Budapest"))
+      Assert.truthy(card.contains?("Builds &lt;things&gt;"))
+      Assert.falsy(card.contains?("Bobby"))
+    end
+  end
+
+  it("cannot empty a name") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (unnamed, changed) = stepped(world, world.bob, Tab {}, [("event", "profile-update"), ("name", "  ")])
+      Assert.falsy(changed)
+      Assert.truthy(unnamed.dialogProblem.contains?("Name cannot be empty"))
+    end
+  end
+
+  it("shows a nickname everywhere when somebody goes by it, the name on the profile") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      stepped(world, world.bob, Tab {}, BOBS + [("show_nickname", "yes")])
+      let card = shown(world, world.ada, bobsProfile(world))
+      Assert.truthy(card.contains?("aria-label=\"Profile of Bobby\""))
+      Assert.truthy(card.contains?("<p class=\"formal\">Bob</p>"))
+    end
+  end
+
+  it("keeps what a sync has taken over, and shows it locked") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      stepped(world, world.bob, Tab {}, BOBS)
+      DB.Repositories.Users.managing(world.bob.id, ["name", "title"])
+      stepped(world, world.bob, Tab {}, [
+        ("event", "profile-update"),
+        ("name", "Hacked"),
+        ("title", "CEO"),
+        ("department", "Sales")
+      ])
+      let card = shown(world, world.ada, bobsProfile(world))
+      Assert.truthy(card.contains?("Engineer"))
+      Assert.truthy(card.contains?("Sales"))
+      Assert.falsy(card.contains?("Hacked"))
+      Assert.falsy(card.contains?("CEO"))
+      let form = shown(world, world.bob, Tab { dialog: "profile" })
+      let inputOf = do |column|
+        form
+          .split("name=\"${column}\"")
+          .second
+          .or("")
+          .split(">")
+          .first
+          .or("")
+      end
+      Assert.truthy(inputOf("title").contains?("value=\"Engineer\""))
+      Assert.truthy(inputOf("title").contains?("readonly"))
+      Assert.truthy(inputOf("department").contains?("value=\"Sales\""))
+      Assert.falsy(inputOf("department").contains?("readonly"))
+    end
+  end
+end
+
+describe("App.Live.Profiles, a status") do
+  it("shows an emoji Slick offers and a few words beside the name") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, changed) = stepped(world, world.ada, Tab {}, [("event", "status-set"), ("emoji", "🌴"), ("text", "On vacation <till Monday>")])
+      Assert.truthy(changed)
+      Assert.truthy(shown(world, world.bob, Tab {}).contains?("<span class=\"emblem\" title=\"On vacation &lt;till Monday&gt;\">🌴</span>"))
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("<p class=\"menu-status\">🌴 On vacation &lt;till Monday&gt;</p>"))
+    end
+  end
+
+  it("takes no emoji Slick does not offer, and takes a status back") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (odd, oddChanged) = stepped(world, world.ada, Tab {}, [("event", "status-set"), ("emoji", "<img>"), ("text", "x")])
+      Assert.falsy(oddChanged)
+      Assert.truthy(!odd.dialogProblem.empty?)
+      stepped(world, world.ada, Tab {}, [("event", "status-set"), ("emoji", "🌴"), ("text", "away")])
+      stepped(world, world.ada, Tab {}, [("event", "status-clear")])
+      Assert.falsy(shown(world, world.bob, Tab {}).contains?("🌴"))
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("<p class=\"menu-status\">No status set</p>"))
+    end
+  end
+end

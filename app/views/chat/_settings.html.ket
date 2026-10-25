@@ -2,7 +2,7 @@
 params: [organization: String, public?: Bool, botAccess: String, teams: String]
 ---
 <div class="settings-scroll">
-  <form class="settings" data-live="settings-set" data-live-quiet>
+  <form class="settings" data-live="channel-configure" data-live-quiet>
     <div class="settings-intro">
       <h2>Channel settings</h2>
       <p class="hint">Manage access and how apps participate in this channel.</p>

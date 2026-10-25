@@ -1,0 +1,95 @@
+# Profiles from a tab: opening somebody's beside the conversation, and
+# changing one's own — details, and a status.
+module App.Live.Profiles
+
+using Metro.Live.Socket, only: [field]
+using Metro.Validation, only: [rules, validates, sized]
+using App.Live.Outcome, only: [Outcome, unchanged, changed, refused]
+using App.Live.Places, only: [home, member?]
+using App.Live.Tab, only: [Tab, closed]
+using App.Models.User, only: [User]
+using DB.Repositories.Users, as: Users
+
+let statusRules = rules do
+  validates("text", "A status", [sized(0, 80)])
+end
+
+# Opens somebody's profile beside the conversation, in place of a thread or
+# a team: only of somebody in the tab's organization.
+open : User -> Tab -> String -> Outcome
+foul open(user, tab, id) do
+  match home(user, tab) do
+    None => return unchanged(tab)
+    Just(organization) => do
+      return unchanged(tab) if !member?(organization.id, id)
+      return unchanged(Tab { ...closed(tab), thread: "", profile: id, team: "" })
+    end
+  end
+end
+
+# Changes somebody's own details. One a sync has taken over keeps what is
+# stored, whatever was sent for it: the form shows it, but only to read.
+update : User -> Tab -> [(String, String?)] -> Outcome
+foul update(user, tab, entries) do
+  match Users.member(user.id) do
+    Ok(Just(stored)) => do
+      let given = App.Models.User.DETAILS.map do |column, _, _|
+        let kept = stored.locked?(column)
+        (column, kept then stored.detail(column) else field(entries, column).trim)
+      end
+      let problems = App.Models.User.DETAILS.flatMap do |column, label, longest|
+        faults(column, label, longest, chosen(given, column))
+      end
+      return refused(tab, "profile", problems.first.or("")) if !problems.empty?
+
+      let described = User {
+        ...stored,
+        name: chosen(given, "name"),
+        title: chosen(given, "title"),
+        department: chosen(given, "department"),
+        phone: chosen(given, "phone"),
+        timeZone: chosen(given, "time_zone"),
+        bio: chosen(given, "bio"),
+        nickname: chosen(given, "nickname"),
+        nicknameShown?: field(entries, "show_nickname") == "yes"
+      }
+      match Users.described(described) do
+        Ok(_) => return changed(closed(tab))
+        Error(reason) => return refused(tab, "profile", reason)
+      end
+    end
+    _ => return unchanged(tab)
+  end
+end
+
+# What somebody says about themselves: an emoji Slick offers, and a few
+# words. Both empty takes it back.
+setStatus : User -> Tab -> String -> String -> Outcome
+foul setStatus(user, tab, emoji, saying) do
+  let problems = Metro.Validation.checked(statusRules, {"text": saying}).messages
+  return refused(tab, "status", problems.first.or("")) if !problems.empty?
+  return refused(tab, "status", "Pick one of the emoji offered.") if !App.Models.Emoji.status?(emoji)
+
+  match Users.restyled(user.id, emoji, saying) do
+    Ok(_) => return changed(closed(tab))
+    Error(reason) => return refused(tab, "status", reason)
+  end
+end
+
+private do
+  # What was given for one detail.
+  chosen : [(String, String)] -> String -> String
+  let chosen(pairs, column) = pairs
+    .flatMap { |key, value| key == column then [value] else [] }
+    .first
+    .or("")
+
+  # What is wrong with what was given for one detail: a display name is
+  # needed, and none may be longer than it may.
+  faults : String -> String -> Integer -> String -> [String]
+  let faults("name", label, longest, "") = ["${label} cannot be empty."]
+  let faults(column, label, longest, text) do
+    return [] if text.chars.count <= longest
+    ["${label} cannot be longer than ${longest} characters."]
+  end
+end

@@ -14,14 +14,12 @@ module App.Live.Chat
 
 using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field, repeated]
-using Metro.Validation, only: [rules, validates, sized]
 using App.Live.Places, only: [home, visible, organizations, memberOrganization, member?]
 using App.Live.Tab, only: [Tab, closed]
 using App.Live.Unread, only: [Unread]
 using App.Models.Attachment, only: [Attachment]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
-using App.Models.Grant, only: [Grant]
 using App.Models.Message, only: [Message]
 using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
@@ -195,14 +193,14 @@ foul handled(events, statuses, user, tab, entries) do
     "cancel" => (closed(tab), false)
     "thread-open" => App.Live.Threads.open(user, tab, field(entries, "message"))
     "thread-close" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
-    "profile" => profiled(user, tab, field(entries, "user"))
+    "profile-open" => App.Live.Profiles.open(user, tab, field(entries, "user"))
     "bot-operators-set" => App.Live.Bots.setOperators(user, tab, field(entries, "bot"), repeated(entries, "operator"))
     "bot-access-set" => App.Live.Bots.setAccess(user, tab, field(entries, "access"))
     "settings" => (Tab { ...closed(tab), thread: "", profile: "", team: "", view: "settings" }, false)
-    "settings-set" => settingsSet(user, tab, entries)
-    "role-set" => roleGiven(user, tab, field(entries, "user"), field(entries, "role"))
-    "role-remove" => roleTaken(user, tab, field(entries, "user"))
-    "unprofile" => (Tab { ...closed(tab), profile: "" }, false)
+    "channel-configure" => App.Live.Conversations.configure(user, tab, field(entries, "access"), field(entries, "team"), field(entries, "bot-access"))
+    "role-set" => App.Live.Organizations.setRole(user, tab, field(entries, "user"), field(entries, "role"))
+    "member-remove" => App.Live.Organizations.removeMember(user, tab, field(entries, "user"))
+    "profile-close" => (Tab { ...closed(tab), profile: "" }, false)
     "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
     "file-attach" => App.Live.Messages.attach(user, tab, field(entries, "file"))
     "file-attach-failed" => App.Live.Messages.refuseUpload(tab, field(entries, "filename"), field(entries, "reason"))
@@ -210,7 +208,7 @@ foul handled(events, statuses, user, tab, entries) do
     "files" => (Tab { ...closed(tab), thread: "", view: "files" }, false)
     "messages" => (Tab { ...closed(tab), view: "" }, false)
     "profile-edit" => (Tab { ...closed(tab), dialog: "profile" }, false)
-    "profile-set" => described(user, tab, entries)
+    "profile-update" => App.Live.Profiles.update(user, tab, entries)
     "reply" => App.Live.Messages.reply(events, statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(user, field(entries, "path")), false)
     "organization-switch" => App.Live.Organizations.switch(user, tab, field(entries, "id"))
@@ -219,8 +217,8 @@ foul handled(events, statuses, user, tab, entries) do
     "invite" => (Tab { ...closed(tab), dialog: "invite" }, false)
     "invite-send" => App.Live.Organizations.invite(user, tab, field(entries, "email").trim.lowerCase)
     "status" => (Tab { ...closed(tab), dialog: "status" }, false)
-    "status-set" => restyled(user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
-    "status-clear" => restyled(user, tab, "", "")
+    "status-set" => App.Live.Profiles.setStatus(user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
+    "status-clear" => App.Live.Profiles.setStatus(user, tab, "", "")
     "bots" => (Tab { ...closed(tab), dialog: "bots" }, false)
     "bot-create" => App.Live.Bots.create(user, tab, field(entries, "name").trim, field(entries, "owner"))
     "bot-rotate" => App.Live.Bots.rotateToken(user, tab, field(entries, "id"))
@@ -404,179 +402,4 @@ private do
 
   summed : {String: Integer} -> Integer
   let summed(counts) = counts.values.reduce(0) { |sum, count| sum + count }
-
-  # Changes a channel's settings at once: who may read it, the team that
-  # owns it, and how much its bots may read. Only an administrator, and only
-  # a channel.
-  settingsSet : User -> Tab -> [(String, String?)] -> (Tab, Bool)
-  foul settingsSet(user, tab, entries) do
-    let refused = Tab { ...closed(tab), view: "settings" }
-    let access = field(entries, "access")
-    let botAccess = field(entries, "bot-access")
-    let teamId = field(entries, "team")
-    return (Tab { ...refused, failure: "Pick who may read it." }, false) if !["public", "private"].contains?(access)
-    return (Tab { ...refused, failure: "Pick what bots may read." }, false) if !["none", "mentions", "all"].contains?(botAccess)
-
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => do
-        return (tab, false) if !conversation.channel?
-        if !App.Services.Authority.canAdminister(user, conversation)
-          return (Tab { ...refused, failure: "Only an administrator can change a channel's settings." }, false)
-        end
-        if !teamId.empty? && teamId != conversation.teamId
-          let owner : Team? = match Teams.single(teamId) do
-            Ok(found) => found
-            Error(_) => None
-          end
-          let owns = owner.map { |team| team.organizationId == conversation.organizationId && team.includes?(user.id) }.or(false)
-          return (Tab { ...refused, failure: "A channel can only belong to a team you are in." }, false) if !owns
-        end
-
-        match Conversations.configured(conversation.id, access, teamId, botAccess) do
-          Ok(true) => return (Tab { ...closed(tab), view: "", notice: "Channel settings saved." }, true)
-          Ok(false) => return (Tab { ...refused, failure: "That conversation is not there." }, false)
-          Error(reason) => return (Tab { ...refused, failure: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Gives a person a role in the tab's organization. Only an administrator
-  # changes roles, only of someone in the organization, and the last
-  # administrator cannot be demoted.
-  roleGiven : User -> Tab -> String -> String -> (Tab, Bool)
-  foul roleGiven(user, tab, personId, role) do
-    let refused = Tab { ...closed(tab), profile: personId }
-    return (tab, false) if !["admin", "member", "read-only"].contains?(role)
-    return (tab, false) if personId == user.id
-
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !App.Services.Authority.canManage(user, organization.id)
-          return (Tab { ...refused, failure: "Only an administrator can change a member's role." }, false)
-        end
-        let was = App.Services.Authority.role(personId, "organization", organization.id)
-        return (Tab { ...refused, failure: "They are not in ${organization.name}." }, false) if !was.set?
-        if role != "admin" && was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
-          return (Tab { ...refused, failure: "The last administrator cannot be demoted." }, false)
-        end
-
-        match Grants.granted(Grant { subjectType: "user", subjectId: personId, resourceType: "organization", resourceId: organization.id, role: role }) do
-          Ok(_) => return (Tab { ...refused, notice: "Their role is ${role} now." }, true)
-          Error(reason) => return (Tab { ...refused, failure: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Takes a person out of the tab's organization. Only an administrator
-  # does it, and not to the last one.
-  roleTaken : User -> Tab -> String -> (Tab, Bool)
-  foul roleTaken(user, tab, personId) do
-    let refused = Tab { ...closed(tab), profile: "" }
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !App.Services.Authority.canManage(user, organization.id)
-          return (Tab { ...refused, failure: "Only an administrator can remove a member." }, false)
-        end
-        let was = App.Services.Authority.role(personId, "organization", organization.id)
-        return (Tab { ...refused, failure: "They are not in ${organization.name}." }, false) if !was.set?
-        if was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
-          return (Tab { ...refused, failure: "The last administrator cannot be removed." }, false)
-        end
-
-        match Grants.revoked(Grants.key("user", personId, "organization", organization.id)) do
-          Ok(_) => return (Tab { ...refused, notice: "They are no longer in ${organization.name}." }, true)
-          Error(reason) => return (Tab { ...refused, failure: reason }, false)
-        end
-      end
-    end
-  end
-
-  let statusRules = rules do
-    validates("text", "A status", [sized(0, 80)])
-  end
-
-  # What somebody says about themselves: an emoji Slick offers, and a few
-  # words. Both empty takes it back.
-  restyled : User -> Tab -> String -> String -> (Tab, Bool)
-  foul restyled(user, tab, emoji, saying) do
-    let refused = Tab { ...closed(tab), dialog: "status" }
-    let problems = Metro.Validation.checked(statusRules, {"text": saying}).messages
-    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-    return (Tab { ...refused, dialogProblem: "Pick one of the emoji offered." }, false) if !App.Models.Emoji.status?(emoji)
-
-    match Users.restyled(user.id, emoji, saying) do
-      Ok(_) => return (closed(tab), true)
-      Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-    end
-  end
-
-  # Changes somebody's own details. One a sync has taken over keeps what is
-  # stored, whatever was sent for it: the form shows it, but only to read.
-  described : User -> Tab -> [(String, String?)] -> (Tab, Bool)
-  foul described(user, tab, entries) do
-    let refused = Tab { ...closed(tab), dialog: "profile" }
-    match Users.member(user.id) do
-      Ok(Just(stored)) => do
-        let given = App.Models.User.DETAILS.map do |column, _, _|
-          let kept = stored.locked?(column)
-          (column, kept then stored.detail(column) else field(entries, column).trim)
-        end
-        let problems = App.Models.User.DETAILS.flatMap do |column, label, longest|
-          faults(column, label, longest, chosen(given, column))
-        end
-        return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-
-        let changed = User {
-          ...stored,
-          name: chosen(given, "name"),
-          title: chosen(given, "title"),
-          department: chosen(given, "department"),
-          phone: chosen(given, "phone"),
-          timeZone: chosen(given, "time_zone"),
-          bio: chosen(given, "bio"),
-          nickname: chosen(given, "nickname"),
-          nicknameShown?: field(entries, "show_nickname") == "yes"
-        }
-        match Users.described(changed) do
-          Ok(_) => return (closed(tab), true)
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-      _ => return (tab, false)
-    end
-  end
-
-  # What was given for one detail.
-  chosen : [(String, String)] -> String -> String
-  let chosen(pairs, column) = pairs
-    .flatMap { |key, value| key == column then [value] else [] }
-    .first
-    .or("")
-
-  # What is wrong with what was given for one detail: a display name is
-  # needed, and none may be longer than it may.
-  faults : String -> String -> Integer -> String -> [String]
-  let faults("name", label, longest, "") = ["${label} cannot be empty."]
-  let faults(column, label, longest, text) do
-    return [] if text.chars.count <= longest
-    ["${label} cannot be longer than ${longest} characters."]
-  end
-
-  # Opens somebody's profile beside the conversation, in place of a thread:
-  # only of somebody in the tab's organization.
-  profiled : User -> Tab -> String -> (Tab, Bool)
-  foul profiled(user, tab, id) do
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        return (tab, false) if !member?(organization.id, id)
-        return (Tab { ...closed(tab), thread: "", profile: id, team: "" }, false)
-      end
-    end
-  end
 end

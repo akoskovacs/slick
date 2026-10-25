@@ -261,3 +261,48 @@ describe("App.Live.Conversations, other organizations") do
     end
   end
 end
+
+describe("App.Live.Conversations, a channel's settings") do
+  it("lets an administrator change who may read a channel, and what bots read") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let random = createChannel(world, "random", "public")
+      let (saved, changed) = stepped(world, world.ada, Tab { ...random, view: "settings" }, [("event", "channel-configure"), ("access", "private"), ("bot-access", "mentions"), ("team", "")])
+      Assert.truthy(changed)
+      Assert.equal(saved.view, "")
+      Assert.truthy(saved.notice.contains?("saved"))
+      Assert.equal(App.Live.Places.visible(world.bob, random), None)
+    end
+  end
+
+  it("gives a channel only to a team its administrator is in") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let random = createChannel(world, "random", "public")
+      let (bobs, _) = stepped(world, world.bob, Tab {}, [("event", "team-create"), ("name", "Ops")])
+      let (refused, changed) = stepped(world, world.ada, random, [("event", "channel-configure"), ("access", "public"), ("bot-access", "all"), ("team", bobs.team)])
+      Assert.falsy(changed)
+      Assert.equal(refused.view, "settings")
+      Assert.truthy(refused.failure.contains?("a team you are in"))
+      let (design, _) = stepped(world, world.ada, Tab {}, [("event", "team-create"), ("name", "Design")])
+      let (_, given) = stepped(world, world.ada, random, [("event", "channel-configure"), ("access", "public"), ("bot-access", "all"), ("team", design.team)])
+      Assert.truthy(given)
+    end
+  end
+
+  it("changes nothing for a member, or for settings it does not know") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let random = createChannel(world, "random", "public")
+      let (eveTries, eveChanged) = stepped(world, world.eve, random, [("event", "channel-configure"), ("access", "private"), ("bot-access", "none"), ("team", "")])
+      Assert.falsy(eveChanged)
+      Assert.truthy(eveTries.failure.contains?("Only an administrator"))
+      let (odd, oddChanged) = stepped(world, world.ada, random, [("event", "channel-configure"), ("access", "secret"), ("bot-access", "none"), ("team", "")])
+      Assert.falsy(oddChanged)
+      Assert.truthy(odd.failure.contains?("Pick who may read it"))
+      let (oddBots, _) = stepped(world, world.ada, random, [("event", "channel-configure"), ("access", "public"), ("bot-access", "some"), ("team", "")])
+      Assert.truthy(oddBots.failure.contains?("Pick what bots may read"))
+      Assert.truthy(App.Live.Places.visible(world.eve, random).set?)
+    end
+  end
+end

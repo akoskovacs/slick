@@ -4,7 +4,7 @@ params: [card: Card]
 <aside class="profile" aria-label="Profile of <%= card.caption %>">
   <header class="heading thread-head">
     <h1>Profile</h1>
-    <button type="button" class="quiet" data-event="unprofile" title="Close profile">✕</button>
+    <button type="button" class="quiet" data-event="profile-close" title="Close profile">✕</button>
   </header>
   <div class="profile-body">
     <span class="portrait tint-<%= card.tint %>" aria-hidden="true"><%= card.initial %></span>
@@ -51,7 +51,7 @@ params: [card: Card]
         </select>
         <button type="submit" class="primary">Save role</button>
       </form>
-      <button type="button" class="quiet" data-event="role-remove" data-user="<%= card.key %>">Remove from organization</button>
+      <button type="button" class="quiet" data-event="member-remove" data-user="<%= card.key %>">Remove from organization</button>
       </details>
     <% end %>
     <dl class="details">
@@ -78,7 +78,7 @@ params: [card: Card]
       <% else %>
         <dd>
           <button type="button" class="link"
-            data-event="profile" data-user="<%= card.keeperKey %>"><%= card.keeper %></button>
+            data-event="profile-open" data-user="<%= card.keeperKey %>"><%= card.keeper %></button>
         </dd>
       <% end %>
     <% end %>
