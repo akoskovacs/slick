@@ -1,9 +1,10 @@
-# What this process prints of its queries: each, as Rails shows them in
-# development, with how long it took (`Harmat.Log.Console`).
+# What this process prints: each query, as Rails shows them in development,
+# with how long it took (`Harmat.Log.Console`); and each request, and each
+# event of a live page, with what it cost (`Metro.Log.Console`).
 #
-#   LOG_SQL unset           printed in development, not elsewhere
-#   LOG_SQL=on              printed in every environment
-#   LOG_SQL=off             never printed
+#   LOG_SQL / LOG_REQUESTS unset    printed in development, not elsewhere
+#   LOG_SQL / LOG_REQUESTS=on       printed in every environment
+#   LOG_SQL / LOG_REQUESTS=off      never printed
 #
 # Colors are Kex's: off by themselves when the output is not a terminal,
 # with NO_COLOR=1, or with --no-colors.
@@ -13,12 +14,22 @@ using Metro.Environment, only: [Development]
 
 # The logger `main.kex` installs as `Harmat.Logger` where it serves.
 queries : Harmat.Log.Console
-foul queries do
-  let developing = Metro.Environment.current().map { |running| running == Development }.or(false)
-  let shown = match ENV.get("LOG_SQL").or("") do
-    "on" => true
-    "off" => false
-    _ => developing
+foul queries = Harmat.Log.Console { shown?: shown?("LOG_SQL") }
+
+# The logger `main.kex` installs as `Metro.Logger` where it serves.
+requests : Metro.Log.Console
+foul requests = Metro.Log.Console { shown?: shown?("LOG_REQUESTS") }
+
+private do
+  # Whether what a variable stands for is printed: as it says, or in
+  # development when it says nothing.
+  shown? : String -> Bool
+  foul shown?(variable) do
+    let developing = Metro.Environment.current().map { |running| running == Development }.or(false)
+    match ENV.get(variable).or("") do
+      "on" => return true
+      "off" => return false
+      _ => return developing
+    end
   end
-  return Harmat.Log.Console { shown?: shown }
 end
