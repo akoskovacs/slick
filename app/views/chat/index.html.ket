@@ -11,7 +11,7 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
 <div class="workspace" data-live-path="<%= place %>" data-live-title="<%= caption %>">
   <nav class="rail" aria-label="Organizations">
     <%== rail %>
-    <button type="button" class="badge add" data-event="organize" title="Create an organization">+</button>
+    <button type="button" class="badge add" data-event="organization-new" title="Create an organization">+</button>
   </nav>
   <nav class="sidebar">
     <div class="organization">

@@ -6,7 +6,7 @@ params: [who: String, email: String, problem: String, bar: String]
   <section class="editor">
     <h1>Welcome, <%= who %></h1>
     <p>You are not in an organization yet. Create one, or ask somebody in one to add <strong><%= email %></strong>: this page will change when they do.</p>
-    <form class="asking" data-live="charter" data-live-quiet>
+    <form class="asking" data-live="organization-create" data-live-quiet>
       <input id="organization-box" name="name" placeholder="Acme" maxlength="40" autocomplete="off" autofocus>
       <% if !problem.empty? %>
         <p class="problem" role="alert"><%= problem %></p>

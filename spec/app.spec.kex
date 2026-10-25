@@ -324,10 +324,10 @@ describe("Slick") do
       let bob = member("Bob", "bob@example.com")
       let eve = member("Eve", "eve@example.com")
       let mal = member("Mallory", "mal@example.com")
-      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "charter"), ("name", "Acme")])
-      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "bob@example.com")])
-      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
-      stepped(statuses, mal, Tab {}, [("event", "charter"), ("name", "Other")])
+      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "organization-create"), ("name", "Acme")])
+      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
+      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
+      stepped(statuses, mal, Tab {}, [("event", "organization-create"), ("name", "Other")])
 
       # A private channel: only whoever made it, until they add people.
       let (secret, made) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "secret"), ("access", "private")])
@@ -393,62 +393,6 @@ describe("Slick") do
       let (_, twice) = stepped(statuses, ada, promoted, [("event", "promote-set"), ("title", "trio-two")])
       Assert.falsy(twice)
 
-      # A team: its handle is mentioned for all of it.
-      let (unnamed, _) = stepped(statuses, ada, Tab {}, [("event", "team-form"), ("name", "")])
-      Assert.truthy(!unnamed.dialogProblem.empty?)
-      let (designTab, formed) = stepped(statuses, ada, Tab {}, [("event", "team-form"), ("name", "Design Crew"), ("description", "Pixels <and> people")])
-      Assert.truthy(formed)
-      let designId = designTab.team
-      let pane = App.Live.Chat.markup(statuses, ada, designTab)
-      Assert.truthy(pane.contains?("@design-crew"))
-      Assert.truthy(pane.contains?("Pixels &lt;and&gt; people"))
-      Assert.truthy(pane.contains?("1 member"))
-      let (_, dup) = stepped(statuses, bob, Tab {}, [("event", "team-form"), ("name", "Other"), ("handle", "design-crew")])
-      Assert.falsy(dup)
-      let (_, badHandle) = stepped(statuses, bob, Tab {}, [("event", "team-form"), ("name", "Ops"), ("handle", "Ops!")])
-      Assert.falsy(badHandle)
-      let (_, bobIn) = stepped(statuses, ada, designTab, [("event", "team-add"), ("person", bob.id)])
-      Assert.truthy(bobIn)
-      stepped(statuses, eve, Tab {}, [("event", "send"), ("body", "ping @design-crew")])
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("<span class=\"mention you\">@design-crew</span>"))
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("<span class=\"mention\">@design-crew</span>"))
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("&quot;name&quot;:&quot;design-crew&quot;"))
-
-      # A team's private channel: its members read it without being added.
-      let (_, notMine) = stepped(statuses, eve, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", designId)])
-      Assert.falsy(notMine)
-      let (crewOnly, _) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", designId)])
-      Assert.truthy(App.Live.Places.visible(bob, crewOnly).set?)
-      Assert.equal(App.Live.Places.visible(eve, crewOnly), None)
-      Assert.truthy(!App.Live.Chat.markup(statuses, ada, crewOnly).contains?("Belongs to @design-crew."))
-      stepped(statuses, eve, Tab { team: designId }, [("event", "team-join")])
-      Assert.truthy(App.Live.Places.visible(eve, crewOnly).set?)
-      stepped(statuses, eve, Tab { team: designId }, [("event", "team-leave")])
-      Assert.equal(App.Live.Places.visible(eve, crewOnly), None)
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab { team: designId }).contains?("🔒 crew-only"))
-
-      # Renamed and explained again; its handle stays.
-      let (_, revised) = stepped(statuses, bob, Tab { team: designId }, [("event", "team-set"), ("name", "Design"), ("description", "Everything visual")])
-      Assert.truthy(revised)
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab { team: designId }).contains?("Everything visual"))
-
-      # A team a sync keeps is changed there, not here.
-      DB.Repositories.Teams.managing(designId, "scim-group-1").try
-      let (refusedAdd, synced) = stepped(statuses, ada, Tab { team: designId }, [("event", "team-add"), ("person", eve.id)])
-      Assert.falsy(synced)
-      Assert.truthy(refusedAdd.failure.contains?("kept in sync"))
-      let (_, syncedLeave) = stepped(statuses, bob, Tab { team: designId }, [("event", "team-leave")])
-      Assert.falsy(syncedLeave)
-      let (_, syncedSet) = stepped(statuses, bob, Tab { team: designId }, [("event", "team-set"), ("name", "Hijacked"), ("description", "")])
-      Assert.falsy(syncedSet)
-      let syncedPane = App.Live.Chat.markup(statuses, ada, Tab { team: designId })
-      Assert.truthy(syncedPane.contains?("Kept in sync"))
-      Assert.falsy(syncedPane.contains?("data-event=\"team-remove\""))
-
-      # Nobody outside the organization opens its teams.
-      let (malTeam, _) = stepped(statuses, mal, Tab {}, [("event", "team"), ("id", designId)])
-      Assert.equal(malTeam.team, "")
-      Assert.falsy(App.Live.Chat.markup(statuses, mal, Tab { team: designId }).contains?("design-crew"))
       Assert.truthy(acme.organization != "")
     end
     FS.File.delete(file)
@@ -476,38 +420,16 @@ describe("Slick") do
       Assert.equal(ada.shown, "Ada")
       Assert.truthy(App.Services.Authentication.signIn("ada@example.com", "correct horse battery").ok?)
 
-      # Somebody in no organization is asked to make one; nothing else shows.
-      let lonely = App.Live.Chat.markup(statuses, ada, Tab {})
-      Assert.truthy(lonely.contains?("You are not in an organization yet"))
-      Assert.falsy(lonely.contains?("class=\"sidebar\""))
-      let (unnamed, _) = stepped(statuses, ada, Tab {}, [("event", "charter"), ("name", "!")])
-      Assert.truthy(!unnamed.dialogProblem.empty?)
-      let (reserved, _) = stepped(statuses, ada, Tab {}, [("event", "charter"), ("name", "Sign In")])
-      Assert.truthy(reserved.dialogProblem.contains?("cannot be used"))
-      let (inAcme, acmeMade) = stepped(statuses, ada, Tab {}, [("event", "charter"), ("name", "Acme Corp")])
-      Assert.truthy(acmeMade)
-      Assert.truthy(!inAcme.organization.empty?)
-      let (again, _) = stepped(statuses, bob, Tab {}, [("event", "charter"), ("name", "acme corp")])
-      Assert.truthy(again.dialogProblem.contains?("already"))
-
-      # People are added by the email they registered with.
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("You are not in an organization yet"))
-      let (unknown, _) = stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "nobody@example.com")])
-      Assert.truthy(unknown.dialogProblem.contains?("Nobody has registered"))
-      let (added, bobAdded) = stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "Bob@Example.com")])
-      Assert.truthy(bobAdded)
-      Assert.truthy(added.notice.contains?("Bob is now in Acme Corp"))
-      # Only an administrator invites; a member asking does nothing.
-      let (_, bobInvites) = stepped(statuses, bob, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
-      Assert.falsy(bobInvites)
-      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
-      let (twice, _) = stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
-      Assert.truthy(twice.dialogProblem.contains?("already in"))
+      # Acme Corp, with Bob and Eve in it; spec/organizations.spec.kex has
+      # how organizations are made and joined.
+      let (inAcme, _) = stepped(statuses, ada, Tab {}, [("event", "organization-create"), ("name", "Acme Corp")])
+      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
+      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
 
       # Mallory is registered, in an organization of her own, and not in Acme.
       let malToken = App.Services.Authentication.register("Mallory", "mal@example.com", "a fourth long phrase").try
       let mal : User = App.Services.Authentication.current(Just(malToken)).try
-      let (inOther, _) = stepped(statuses, mal, Tab {}, [("event", "charter"), ("name", "Other")])
+      let (inOther, _) = stepped(statuses, mal, Tab {}, [("event", "organization-create"), ("name", "Other")])
 
       # Everyone starts in their organization's #general.
       let first = App.Live.Chat.markup(statuses, ada, Tab {})
@@ -718,7 +640,7 @@ describe("Slick") do
       Assert.falsy(malSees.contains?("Ada"))
       Assert.falsy(malSees.contains?("hello"))
       Assert.equal(App.Live.Chat.arrived(mal, "/acmecorp/channels/random"), Tab {})
-      let (malSwitched, _) = stepped(statuses, mal, Tab {}, [("event", "organization"), ("id", inAcme.organization)])
+      let (malSwitched, _) = stepped(statuses, mal, Tab {}, [("event", "organization-switch"), ("id", inAcme.organization)])
       Assert.equal(malSwitched.organization, "")
       let malForged = Tab { organization: inAcme.organization, conversation: inRandom.conversation }
       Assert.equal(App.Live.Places.visible(mal, malForged), None)
@@ -733,19 +655,10 @@ describe("Slick") do
       Assert.falsy(malReacted)
       Assert.falsy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("mallory was here"))
 
-      # Somebody in two organizations switches between them; the same channel
-      # name is a different channel in each.
-      stepped(statuses, mal, Tab {}, [("event", "enlist"), ("email", "ada@example.com")])
-      let adaBoth = App.Live.Chat.markup(statuses, ada, Tab {})
-      Assert.truthy(adaBoth.contains?("title=\"Acme Corp\""))
-      Assert.truthy(adaBoth.contains?("title=\"Other\""))
-      let (adaInOther, _) = stepped(statuses, ada, Tab {}, [("event", "organization"), ("id", inOther.organization)])
-      Assert.equal(adaInOther.organization, inOther.organization)
-      let otherSide = App.Live.Chat.markup(statuses, ada, adaInOther)
-      Assert.truthy(otherSide.contains?("data-live-path=\"/other/channels/general\""))
-      Assert.truthy(otherSide.contains?("Mallory"))
-      Assert.falsy(otherSide.contains?("hello"))
-      Assert.falsy(otherSide.contains?("Bob"))
+      # Ada is in Mallory's organization too, where the same channel name is
+      # a different channel.
+      stepped(statuses, mal, Tab {}, [("event", "invite-send"), ("email", "ada@example.com")])
+      let (adaInOther, _) = stepped(statuses, ada, Tab {}, [("event", "organization-switch"), ("id", inOther.organization)])
       let (otherRandom, otherMade) = stepped(statuses, ada, adaInOther, [("event", "create"), ("title", "random")])
       Assert.truthy(otherMade)
       Assert.truthy(otherRandom.conversation != inRandom.conversation)
@@ -1150,9 +1063,9 @@ describe("App.Authority, roles an administrator gives") do
       let ada = member("Ada", "ada@example.com")
       let bob = member("Bob", "bob@example.com")
       let eve = member("Eve", "eve@example.com")
-      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "charter"), ("name", "Acme")])
-      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "bob@example.com")])
-      stepped(statuses, ada, Tab {}, [("event", "enlist"), ("email", "eve@example.com")])
+      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "organization-create"), ("name", "Acme")])
+      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
+      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
 
       Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
       Assert.falsy(App.Services.Authority.canManage(bob, acme.organization))

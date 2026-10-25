@@ -5,7 +5,7 @@
 module App.Live.Bots
 
 using Metro.Validation, only: [rules, validates, present, sized]
-using App.Live.Outcome, only: [Outcome, unchanged, changed, refused]
+using App.Live.Outcome, only: [Outcome, unchanged, changed, refused, failed]
 using App.Live.Places, only: [home, visible]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Organization, only: [Organization]
@@ -141,13 +141,13 @@ foul setAccess(user, tab, access) do
     Just(conversation) => do
       return unchanged(tab) if !conversation.channel? && !conversation.group?
       if !App.Services.Authority.canAdminister(user, conversation)
-        return unchanged(failed(tab, "Only an administrator can change what bots read here."))
+        return failed(tab, "Only an administrator can change what bots read here.")
       end
 
       match Conversations.botAccess(conversation.id, access) do
         Ok(true) => return changed(Tab { ...closed(tab), notice: "Bots here read ${access}." })
-        Ok(false) => return unchanged(failed(tab, "That conversation is not there."))
-        Error(reason) => return unchanged(failed(tab, reason))
+        Ok(false) => return failed(tab, "That conversation is not there.")
+        Error(reason) => return failed(tab, reason)
       end
     end
   end
@@ -188,8 +188,4 @@ private do
     secret: token,
     secretFor: name
   }
-
-  # The conversation's pane, saying what went wrong.
-  failed : Tab -> String -> Tab
-  let failed(tab, reason) = Tab { ...closed(tab), failure: reason }
 end

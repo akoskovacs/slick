@@ -45,9 +45,6 @@ using DB.Repositories.Users, as: Users
 # How many messages of a conversation a tab is shown.
 let WINDOW = 200
 
-# What the first channel of an organization is about, until somebody says.
-let GENERAL_TOPIC = "Company-wide announcements and chatter"
-
 let channelRules = rules do
   validates("title", "A channel name", [
     present,
@@ -64,15 +61,6 @@ end
 
 let topicRules = rules do
   validates("topic", "A topic", [sized(0, 250)])
-end
-
-let organizationRules = rules do
-  validates("name", "A name", [present, sized(2, 40)])
-end
-
-let teamRules = rules do
-  validates("name", "A team's name", [present, sized(2, 40)])
-  validates("description", "What a team is for", [sized(0, App.Models.Team.LONGEST_DESCRIPTION)])
 end
 
 # The live region for one person's tab, as things are stored right now.
@@ -208,16 +196,16 @@ foul handled(events, statuses, user, tab, entries) do
     "promote-set" => promotedTo(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"))
     "admit" => (Tab { ...closed(tab), dialog: "admit" }, false)
     "admit-set" => admittedTo(user, tab, repeated(entries, "person"))
-    "team" => teamed(user, tab, field(entries, "id"))
-    "unteam" => (Tab { ...closed(tab), team: "" }, false)
+    "team-open" => App.Live.Teams.open(user, tab, field(entries, "id"))
+    "team-close" => (Tab { ...closed(tab), team: "" }, false)
     "team-new" => (Tab { ...closed(tab), dialog: "team" }, false)
-    "team-form" => teamFormed(user, tab, entries)
+    "team-create" => App.Live.Teams.create(user, tab, field(entries, "name").trim, field(entries, "description").trim, field(entries, "handle").trim.lowerCase)
     "team-edit" => (Tab { ...closed(tab), dialog: "team-edit" }, false)
-    "team-set" => teamRevised(user, tab, entries)
-    "team-join" => teamJoined(user, tab, [user.id])
-    "team-add" => teamJoined(user, tab, repeated(entries, "person"))
-    "team-leave" => teamLeft(user, tab, user.id)
-    "team-remove" => teamLeft(user, tab, field(entries, "user"))
+    "team-update" => App.Live.Teams.update(user, tab, field(entries, "name").trim, field(entries, "description").trim)
+    "team-join" => App.Live.Teams.addMembers(user, tab, [user.id])
+    "team-add" => App.Live.Teams.addMembers(user, tab, repeated(entries, "person"))
+    "team-leave" => App.Live.Teams.removeMember(user, tab, user.id)
+    "team-remove" => App.Live.Teams.removeMember(user, tab, field(entries, "user"))
     "send" => sent(events, statuses, user, tab, field(entries, "body").trim)
     "draft" => drafted(user, tab, field(entries, "place"), field(entries, "body"))
     "typing" => typing(statuses, user, tab)
@@ -246,11 +234,11 @@ foul handled(events, statuses, user, tab, entries) do
     "profile-set" => described(user, tab, entries)
     "reply" => replied(events, statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(user, field(entries, "path")), false)
-    "organization" => switched(user, tab, field(entries, "id"))
-    "organize" => (Tab { ...closed(tab), dialog: "organization" }, false)
-    "charter" => organized(user, tab, field(entries, "name").trim)
+    "organization-switch" => App.Live.Organizations.switch(user, tab, field(entries, "id"))
+    "organization-new" => (Tab { ...closed(tab), dialog: "organization" }, false)
+    "organization-create" => App.Live.Organizations.create(user, tab, field(entries, "name").trim)
     "invite" => (Tab { ...closed(tab), dialog: "invite" }, false)
-    "enlist" => invited(user, tab, field(entries, "email").trim.lowerCase)
+    "invite-send" => App.Live.Organizations.invite(user, tab, field(entries, "email").trim.lowerCase)
     "status" => (Tab { ...closed(tab), dialog: "status" }, false)
     "status-set" => restyled(user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
     "status-clear" => restyled(user, tab, "", "")
@@ -587,66 +575,6 @@ private do
 
   summed : {String: Integer} -> Integer
   let summed(counts) = counts.values.reduce(0) { |sum, count| sum + count }
-
-  switched : User -> Tab -> String -> (Tab, Bool)
-  foul switched(user, tab, id) do
-    return (tab, false) if !member?(id, user.id)
-    return (Tab { organization: id }, false)
-  end
-
-  # Creates an organization with its first member and its #general.
-  organized : User -> Tab -> String -> (Tab, Bool)
-  foul organized(user, tab, name) do
-    let refused = Tab { ...closed(tab), dialog: "organization" }
-    let problems = Metro.Validation.checked(organizationRules, {"name": name}).messages
-    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-
-    let slug = App.Models.Organization.slugged(name)
-    return (Tab { ...refused, dialogProblem: "A name needs at least two letters or digits." }, false) if slug.chars.count < 2
-    return (Tab { ...refused, dialogProblem: "${name} cannot be used as a name. Try another." }, false) if App.Models.Organization.RESERVED.contains?(slug)
-
-    match chartering(user, name, slug) do
-      Error(_) => return (Tab { ...refused, dialogProblem: "There is already an organization called ${name}." }, false)
-      Ok(organization) => return (Tab { organization: organization.id }, true)
-    end
-  end
-
-  # An organization, its first member and its #general, all or nothing.
-  chartering : User -> String -> String -> Result<Organization, String>
-  foul chartering(user, name, slug) do
-    let made : Result<Organization, String> = Harmat.Database.transaction do
-      let organization : Organization = Organizations.chartered(name, slug, user.id).try
-      Memberships.enlisted(organization.id, user.id).try
-      Grants.granted(Grant { subjectType: "user", subjectId: user.id, resourceType: "organization", resourceId: organization.id, role: "admin" }).try
-      let general : Conversation = Conversations
-        .founded(organization.id, App.Models.Conversation.GENERAL, user.id)
-        .try
-      Conversations.retitled(general.id, GENERAL_TOPIC).try
-      Ok(organization)
-    end
-    return made
-  end
-
-  # Puts somebody who has registered into the tab's organization.
-  invited : User -> Tab -> String -> (Tab, Bool)
-  foul invited(user, tab, email) do
-    let refused = Tab { ...closed(tab), dialog: "invite" }
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !App.Services.Authority.canManage(user, organization.id)
-          return (Tab { ...refused, dialogProblem: "Only an administrator of ${organization.name} can invite people." }, false)
-        end
-        match Users.credentials(email) do
-          Ok(Just((person, _))) => match Memberships.enlisted(organization.id, person.id) do
-            Ok(_) => return (Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." }, true)
-            Error(_) => return (Tab { ...refused, dialogProblem: "${person.shown} is already in ${organization.name}." }, false)
-          end
-          _ => return (Tab { ...refused, dialogProblem: "Nobody has registered with ${email}. They need an account first." }, false)
-        end
-      end
-    end
-  end
 
   # Changes a channel's settings at once: who may read it, the team that
   # owns it, and how much its bots may read. Only an administrator, and only
@@ -1068,124 +996,6 @@ private do
         match Conversations.admitted(conversation.id, newcomers) do
           Ok(count) => return (Tab { ...closed(tab), notice: count == 1 then "Added one person." else "Added ${count} people." }, true)
           Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-    end
-  end
-
-  # The team the tab has open, if it is one of the tab's organization.
-  teamHere : User -> Tab -> Team?
-  foul teamHere(user, tab) do
-    return None if tab.team.empty?
-
-    match home(user, tab) do
-      None => return None
-      Just(organization) => match Teams.single(tab.team) do
-        Ok(Just(team)) => return team.organizationId == organization.id then Just(team) else None
-        _ => return None
-      end
-    end
-  end
-
-  # Opens a team beside the conversation, in place of a thread or a profile.
-  teamed : User -> Tab -> String -> (Tab, Bool)
-  foul teamed(user, tab, id) do
-    let opened = Tab { ...closed(tab), thread: "", profile: "", team: id }
-    match teamHere(user, opened) do
-      Just(_) => return (opened, false)
-      None => return (tab, false)
-    end
-  end
-
-  # A new team, with whoever made it in it. Its handle is the one given, or
-  # else what its name suggests.
-  teamFormed : User -> Tab -> [(String, String?)] -> (Tab, Bool)
-  foul teamFormed(user, tab, entries) do
-    let refused = Tab { ...closed(tab), dialog: "team" }
-    let name = field(entries, "name").trim
-    let description = field(entries, "description").trim
-    let given = field(entries, "handle").trim.lowerCase
-    let handle = given.startsWith?("@") then given.drop(1) else given
-    let chosen = handle.empty? then App.Models.Team.handled(name) else handle
-    let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
-    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-    return (Tab { ...refused, dialogProblem: "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter." }, false) if !App.Models.Team.handle?(chosen)
-
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !App.Services.Authority.canCreate(user, organization.id)
-          return (Tab { ...refused, dialogProblem: "You may not make a team in ${organization.name}." }, false)
-        end
-        let team = Team {
-          id: "",
-          organizationId: organization.id,
-          handle: chosen,
-          name: name,
-          description: description,
-          members: [user.id]
-        }
-        match Teams.formed(team, user.id) do
-          Ok(made) => return (Tab { ...closed(tab), thread: "", profile: "", team: made.id }, true)
-          Error(_) => return (Tab { ...refused, dialogProblem: "There is already a team called @${chosen}." }, false)
-        end
-      end
-    end
-  end
-
-  # What a team a sync keeps says when somebody tries to change it here.
-  let SYNCED = "kept in sync from your organization's directory: change it there."
-
-  # Renames the open team, and says again what it is for.
-  teamRevised : User -> Tab -> [(String, String?)] -> (Tab, Bool)
-  foul teamRevised(user, tab, entries) do
-    let refused = Tab { ...closed(tab), dialog: "team-edit" }
-    let name = field(entries, "name").trim
-    let description = field(entries, "description").trim
-    let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
-    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-
-    match teamHere(user, tab) do
-      None => return (closed(tab), false)
-      Just(team) => do
-        return (Tab { ...refused, dialogProblem: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
-
-        match Teams.revised(team.id, name, description) do
-          Ok(_) => return (closed(tab), true)
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Puts people of the organization in the open team.
-  teamJoined : User -> Tab -> [String] -> (Tab, Bool)
-  foul teamJoined(user, tab, picked) do
-    match teamHere(user, tab) do
-      None => return (tab, false)
-      Just(team) => do
-        return (Tab { ...closed(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
-
-        let newcomers = picked.filter { |id| member?(team.organizationId, id) }
-        match Teams.joinedAll(team.id, newcomers) do
-          Ok(count) => return (closed(tab), count > 0)
-          Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Takes somebody out of the open team.
-  teamLeft : User -> Tab -> String -> (Tab, Bool)
-  foul teamLeft(user, tab, id) do
-    match teamHere(user, tab) do
-      None => return (tab, false)
-      Just(team) => do
-        return (Tab { ...closed(tab), failure: "@${team.handle} is ${SYNCED}" }, false) if team.managed?
-
-        match Teams.left(team.id, id) do
-          Ok(count) => return (closed(tab), count > 0)
-          Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
         end
       end
     end

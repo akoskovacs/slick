@@ -1,0 +1,133 @@
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using Spec.Support, only: [World, stepped, shown, fresh, populated]
+
+# Teams from a tab. Each example starts from a world of its own
+# (Spec.Support).
+
+# Makes @design-crew from a tab of Ada's, and the tab with it open.
+foul createDesign(world: World) -> Tab do
+  let (made, _) = stepped(world, world.ada, Tab {}, [("event", "team-create"), ("name", "Design Crew"), ("description", "Pixels <and> people")])
+  made
+end
+
+describe("App.Live.Teams, making one") do
+  it("makes a team with whoever made it in it, its handle from its name") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (made, changed) = stepped(world, world.ada, Tab {}, [("event", "team-create"), ("name", "Design Crew"), ("description", "Pixels <and> people")])
+      Assert.truthy(changed)
+      Assert.truthy(!made.team.empty?)
+      let pane = shown(world, world.ada, made)
+      Assert.truthy(pane.contains?("@design-crew"))
+      Assert.truthy(pane.contains?("Pixels &lt;and&gt; people"))
+      Assert.truthy(pane.contains?("1 member"))
+    end
+  end
+
+  it("refuses a team without a name, with a handle taken, or a malformed one") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      createDesign(world)
+      let (unnamed, _) = stepped(world, world.ada, Tab {}, [("event", "team-create"), ("name", "")])
+      Assert.truthy(!unnamed.dialogProblem.empty?)
+      Assert.equal(unnamed.dialog, "team")
+      let (taken, takenChanged) = stepped(world, world.bob, Tab {}, [("event", "team-create"), ("name", "Other"), ("handle", "@design-crew")])
+      Assert.falsy(takenChanged)
+      Assert.truthy(taken.dialogProblem.contains?("already a team"))
+      let (malformed, malformedChanged) = stepped(world, world.bob, Tab {}, [("event", "team-create"), ("name", "Ops"), ("handle", "Ops!")])
+      Assert.falsy(malformedChanged)
+      Assert.truthy(malformed.dialogProblem.contains?("A handle has"))
+    end
+  end
+
+  it("renames a team and says again what it is for, its handle unchanged") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let design = createDesign(world)
+      let (_, changed) = stepped(world, world.bob, design, [("event", "team-update"), ("name", "Design"), ("description", "Everything visual")])
+      Assert.truthy(changed)
+      let pane = shown(world, world.ada, design)
+      Assert.truthy(pane.contains?("Everything visual"))
+      Assert.truthy(pane.contains?("@design-crew"))
+    end
+  end
+end
+
+describe("App.Live.Teams, who is in one") do
+  it("mentions every member by the team's handle") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let design = createDesign(world)
+      let (_, added) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
+      Assert.truthy(added)
+      stepped(world, world.eve, Tab {}, [("event", "send"), ("body", "ping @design-crew")])
+      Assert.truthy(shown(world, world.bob, Tab {}).contains?("<span class=\"mention you\">@design-crew</span>"))
+      let evesView = shown(world, world.eve, Tab {})
+      Assert.truthy(evesView.contains?("<span class=\"mention\">@design-crew</span>"))
+      Assert.truthy(evesView.contains?("&quot;name&quot;:&quot;design-crew&quot;"))
+    end
+  end
+
+  it("lets its members read its private channel without being added to it") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let design = createDesign(world)
+      stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
+      let (_, eveMade) = stepped(world, world.eve, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", design.team)])
+      Assert.falsy(eveMade)
+      let (crewOnly, _) = stepped(world, world.ada, Tab {}, [("event", "create"), ("title", "crew-only"), ("access", "private"), ("team", design.team)])
+      Assert.truthy(App.Live.Places.visible(world.bob, crewOnly).set?)
+      Assert.equal(App.Live.Places.visible(world.eve, crewOnly), None)
+      stepped(world, world.eve, Tab { team: design.team }, [("event", "team-join")])
+      Assert.truthy(App.Live.Places.visible(world.eve, crewOnly).set?)
+      stepped(world, world.eve, Tab { team: design.team }, [("event", "team-leave")])
+      Assert.equal(App.Live.Places.visible(world.eve, crewOnly), None)
+      Assert.truthy(shown(world, world.bob, Tab { team: design.team }).contains?("🔒 crew-only"))
+    end
+  end
+
+  it("leaves a team a sync keeps to the sync") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let design = createDesign(world)
+      stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
+      DB.Repositories.Teams.managing(design.team, "scim-group-1").try
+      let (refusedAdd, addChanged) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.eve.id)])
+      Assert.falsy(addChanged)
+      Assert.truthy(refusedAdd.failure.contains?("kept in sync"))
+      let (_, leaveChanged) = stepped(world, world.bob, design, [("event", "team-leave")])
+      Assert.falsy(leaveChanged)
+      let (_, updateChanged) = stepped(world, world.bob, design, [("event", "team-update"), ("name", "Hijacked"), ("description", "")])
+      Assert.falsy(updateChanged)
+      let pane = shown(world, world.ada, design)
+      Assert.truthy(pane.contains?("Kept in sync"))
+      Assert.falsy(pane.contains?("data-event=\"team-remove\""))
+    end
+  end
+end
+
+describe("App.Live.Teams, opening one") do
+  it("opens a team beside the conversation, in place of a thread or a profile") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let design = createDesign(world)
+      let (opened, _) = stepped(world, world.bob, Tab { thread: "m1", profile: world.eve.id }, [("event", "team-open"), ("id", design.team)])
+      Assert.equal(opened.team, design.team)
+      Assert.equal(opened.thread, "")
+      Assert.equal(opened.profile, "")
+      let (closed, _) = stepped(world, world.bob, opened, [("event", "team-close")])
+      Assert.equal(closed.team, "")
+    end
+  end
+
+  it("opens no team of another organization") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let design = createDesign(world)
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "team-open"), ("id", design.team)])
+      Assert.equal(malTries.team, "")
+      Assert.falsy(shown(world, world.mal, Tab { team: design.team }).contains?("design-crew"))
+    end
+  end
+end

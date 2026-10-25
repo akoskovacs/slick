@@ -388,7 +388,7 @@ let index(
   end
   let teamLines = teams.map do |team|
     entryPartial(Entry {
-      action: "team",
+      action: "team-open",
       subject: "id",
       key: team.id,
       caption: "@${team.handle}",
@@ -782,7 +782,7 @@ private do
       return teamFormPartial(
         "Create a team",
         "People mentioned all at once, who can own channels. You are in it to start with.",
-        "team-form",
+        "team-create",
         "",
         "",
         "",
@@ -797,7 +797,7 @@ private do
         Just(team) => return teamFormPartial(
           "Edit @${team.handle}",
           "Its handle stays: it is how it was mentioned so far.",
-          "team-set",
+          "team-update",
           team.name,
           team.handle,
           team.description,
@@ -813,7 +813,7 @@ private do
       return dialogPartial(
         "Create an organization",
         "Its own channels and people, apart from every other.",
-        "charter",
+        "organization-create",
         "name",
         "Acme",
         tab.dialogProblem,
@@ -825,7 +825,7 @@ private do
       return dialogPartial(
         "Add people to ${organization.name}",
         "The email somebody registered with. They are in as soon as you add them.",
-        "enlist",
+        "invite-send",
         "email",
         "name@example.com",
         tab.dialogProblem,

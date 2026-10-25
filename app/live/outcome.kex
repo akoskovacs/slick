@@ -21,3 +21,7 @@ let refused(tab, dialog, problem) = (Tab {
   dialog: dialog,
   dialogProblem: problem
 }, false)
+
+# The conversation's pane, saying what went wrong.
+failed : Tab -> String -> Outcome
+let failed(tab, reason) = (Tab { ...closed(tab), failure: reason }, false)

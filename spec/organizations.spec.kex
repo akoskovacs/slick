@@ -1,0 +1,100 @@
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using Spec.Support, only: [World, stepped, shown, fresh, populated, registered]
+
+# Organizations from a tab. Each example starts from a world of its own
+# (Spec.Support).
+
+describe("App.Live.Organizations, making one") do
+  it("asks somebody in no organization to make one, and shows nothing else") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let zed = registered("Zed", "zed@example.com")
+      let lonely = shown(world, zed, Tab {})
+      Assert.truthy(lonely.contains?("You are not in an organization yet"))
+      Assert.falsy(lonely.contains?("class=\"sidebar\""))
+    end
+  end
+
+  it("makes one with its founder as administrator, and a #general") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let zed = registered("Zed", "zed@example.com")
+      let (made, changed) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "Initech")])
+      Assert.truthy(changed)
+      Assert.truthy(!made.organization.empty?)
+      Assert.truthy(App.Services.Authority.canManage(zed, made.organization))
+      let first = shown(world, zed, made)
+      Assert.truthy(first.contains?("# general"))
+      Assert.truthy(first.contains?("Company-wide announcements"))
+    end
+  end
+
+  it("refuses a name without letters or digits, a reserved one, or one taken") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let zed = registered("Zed", "zed@example.com")
+      let (unnamed, _) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "!")])
+      Assert.truthy(!unnamed.dialogProblem.empty?)
+      Assert.equal(unnamed.dialog, "organization")
+      let (reserved, _) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "Sign In")])
+      Assert.truthy(reserved.dialogProblem.contains?("cannot be used"))
+      let (taken, changed) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "acme corp")])
+      Assert.falsy(changed)
+      Assert.truthy(taken.dialogProblem.contains?("already"))
+    end
+  end
+end
+
+describe("App.Live.Organizations, adding people") do
+  it("adds somebody by the email they registered with") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let zed = registered("Zed", "zed@example.com")
+      let (added, changed) = stepped(world, world.ada, world.acme, [("event", "invite-send"), ("email", "Zed@Example.com")])
+      Assert.truthy(changed)
+      Assert.truthy(added.notice.contains?("Zed is now in Acme Corp"))
+      Assert.falsy(shown(world, zed, Tab {}).contains?("You are not in an organization yet"))
+    end
+  end
+
+  it("adds nobody unregistered, nobody twice, and only for an administrator") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      registered("Zed", "zed@example.com")
+      let (unknown, _) = stepped(world, world.ada, world.acme, [("event", "invite-send"), ("email", "nobody@example.com")])
+      Assert.truthy(unknown.dialogProblem.contains?("Nobody has registered"))
+      let (twice, _) = stepped(world, world.ada, world.acme, [("event", "invite-send"), ("email", "eve@example.com")])
+      Assert.truthy(twice.dialogProblem.contains?("already in"))
+      let (bobTries, bobAdded) = stepped(world, world.bob, Tab {}, [("event", "invite-send"), ("email", "zed@example.com")])
+      Assert.falsy(bobAdded)
+      Assert.truthy(bobTries.dialogProblem.contains?("Only an administrator"))
+    end
+  end
+end
+
+describe("App.Live.Organizations, switching") do
+  it("switches between organizations somebody is in, each with its own people") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let both = shown(world, world.ada, Tab {})
+      Assert.truthy(both.contains?("title=\"Acme Corp\""))
+      Assert.truthy(both.contains?("title=\"Other\""))
+      let (inOther, changed) = stepped(world, world.ada, Tab {}, [("event", "organization-switch"), ("id", world.other.organization)])
+      Assert.falsy(changed)
+      Assert.equal(inOther.organization, world.other.organization)
+      let otherSide = shown(world, world.ada, inOther)
+      Assert.truthy(otherSide.contains?("data-live-path=\"/other/channels/general\""))
+      Assert.truthy(otherSide.contains?("Mallory"))
+      Assert.falsy(otherSide.contains?("Bob"))
+    end
+  end
+
+  it("switches nobody into an organization they are not in") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "organization-switch"), ("id", world.acme.organization)])
+      Assert.equal(malTries, Tab {})
+    end
+  end
+end

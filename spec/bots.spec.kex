@@ -1,77 +1,15 @@
-using Metro.Live.Presence, only: [Presence]
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
+using Spec.Support, only: [World, stepped, shown, fresh, populated]
 
-# The bots dialog, driven the way a browser drives it: one event at a time.
-# Each example starts from a database of its own (`fresh`).
-
-# Acme Corp, whose administrator is Ada, with Bob and Eve as members; and
-# Other, Mallory's, which Ada is in too. `acme` and `other` are Ada's tabs
-# in each.
-record World do
-  statuses : Server<Presence>
-  ada : User
-  bob : User
-  eve : User
-  mal : User
-  acme : Tab
-  other : Tab
-end
-
-foul stepped(world: World, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
-  let entries = fields.map { |pair| match pair do (key, value) => (key, Just(value)) end }
-  App.Live.Chat.handled(Process.spawn(App.Live.Events.Bus {}), world.statuses, user, tab, entries)
-end
-
-foul shown(world: World, user: User, tab: Tab) -> String do
-  App.Live.Chat.markup(world.statuses, user, tab)
-end
+# The bots dialog. Each example starts from a world of its own
+# (Spec.Support).
 
 # Makes a bot from a tab of `user`'s, and the bot its token speaks for.
 foul createBot(world: World, user: User, tab: Tab, name: String, owner: String) -> (Tab, User) do
   let (made, _) = stepped(world, user, tab, [("event", "bot-create"), ("name", name), ("owner", owner)])
   let bot : User = App.Services.Bots.bearer(Just("Bearer ${made.secret}")).or(user)
   (made, bot)
-end
-
-# A database of one's own, in memory: gone with the example. Each example
-# opens it itself, `with Harmat.Connection = fresh() do … end` — a block
-# keeps the connection of where it is written, so a helper handed the
-# example as a block would run it against another database.
-foul fresh() -> DB.Store.StoreConnection do
-  let store = DB.Store.started(Config.Database.sqlite(":memory:")).try
-  DB.Store.migrate(store).try
-  DB.Store.StoreConnection { store: store }
-end
-
-# The people and organizations of `World`, made the way people make them.
-foul populated() -> World do
-  let member = do |name, email|
-    let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
-    let user : User = App.Services.Authentication.current(Just(token)).try
-    user
-  end
-  let unpeopled = World {
-    statuses: Process.spawn(Presence {}),
-    ada: member("Ada", "ada@example.com"),
-    bob: member("Bob", "bob@example.com"),
-    eve: member("Eve", "eve@example.com"),
-    mal: member("Mallory", "mal@example.com"),
-    acme: Tab {},
-    other: Tab {}
-  }
-  let ada = unpeopled.ada
-  let mal = unpeopled.mal
-  let (acme, _) = stepped(unpeopled, ada, Tab {}, [("event", "charter"), ("name", "Acme Corp")])
-  stepped(unpeopled, ada, acme, [("event", "enlist"), ("email", "bob@example.com")])
-  stepped(unpeopled, ada, acme, [("event", "enlist"), ("email", "eve@example.com")])
-  let (other, _) = stepped(unpeopled, mal, Tab {}, [("event", "charter"), ("name", "Other")])
-  stepped(unpeopled, mal, other, [("event", "enlist"), ("email", "ada@example.com")])
-  World {
-    ...unpeopled,
-    acme: acme,
-    other: Tab { organization: other.organization }
-  }
 end
 
 describe("App.Live.Bots, making one") do

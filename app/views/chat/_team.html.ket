@@ -4,7 +4,7 @@ params: [crew: Crew, mates: String, rooms: String, candidates: String]
 <aside class="profile team" aria-label="Team @<%= crew.handle %>">
   <header class="heading thread-head">
     <h1>Team</h1>
-    <button type="button" class="quiet" data-event="unteam" title="Close team">✕</button>
+    <button type="button" class="quiet" data-event="team-close" title="Close team">✕</button>
   </header>
   <div class="profile-body">
     <h2>@<%= crew.handle %></h2>

@@ -1,0 +1,64 @@
+# Organizations from a tab: going to another one, making one, and adding
+# people who have registered to the one the tab is in.
+module App.Live.Organizations
+
+using Metro.Validation, only: [rules, validates, present, sized]
+using App.Live.Outcome, only: [Outcome, unchanged, changed, refused]
+using App.Live.Places, only: [home, member?]
+using App.Live.Tab, only: [Tab, closed]
+using App.Models.User, only: [User]
+using DB.Repositories.Memberships, as: Memberships
+using DB.Repositories.Users, as: Users
+
+let organizationRules = rules do
+  validates("name", "A name", [present, sized(2, 40)])
+end
+
+# Goes to another organization this person is in, at its #general.
+switch : User -> Tab -> String -> Outcome
+foul switch(user, tab, id) do
+  return unchanged(tab) if !member?(id, user.id)
+  return unchanged(Tab { organization: id })
+end
+
+# Makes an organization, with this person as its first member, and goes
+# there.
+create : User -> Tab -> String -> Outcome
+foul create(user, tab, name) do
+  let problems = Metro.Validation.checked(organizationRules, {"name": name}).messages
+  return refused(tab, "organization", problems.first.or("")) if !problems.empty?
+
+  let slug = App.Models.Organization.slugged(name)
+  if slug.chars.count < 2
+    return refused(tab, "organization", "A name needs at least two letters or digits.")
+  end
+  if App.Models.Organization.RESERVED.contains?(slug)
+    return refused(tab, "organization", "${name} cannot be used as a name. Try another.")
+  end
+
+  match App.Services.Organizations.create(user, name, slug) do
+    Error(_) => return refused(tab, "organization", "There is already an organization called ${name}.")
+    Ok(organization) => return changed(Tab { organization: organization.id })
+  end
+end
+
+# Puts somebody who has registered into the tab's organization.
+invite : User -> Tab -> String -> Outcome
+foul invite(user, tab, email) do
+  match home(user, tab) do
+    None => return unchanged(tab)
+    Just(organization) => do
+      if !App.Services.Authority.canManage(user, organization.id)
+        return refused(tab, "invite", "Only an administrator of ${organization.name} can invite people.")
+      end
+
+      match Users.credentials(email) do
+        Ok(Just((person, _))) => match Memberships.enlisted(organization.id, person.id) do
+          Ok(_) => return changed(Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." })
+          Error(_) => return refused(tab, "invite", "${person.shown} is already in ${organization.name}.")
+        end
+        _ => return refused(tab, "invite", "Nobody has registered with ${email}. They need an account first.")
+      end
+    end
+  end
+end

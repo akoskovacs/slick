@@ -1,0 +1,72 @@
+# What the specs share: a database of one's own for each example, a small
+# world of people and organizations in it, and the live view driven the way
+# a browser drives it — one event at a time.
+module Spec.Support
+
+using Metro.Live.Presence, only: [Presence]
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+
+# Acme Corp, whose administrator is Ada, with Bob and Eve as members; and
+# Other, Mallory's, which Ada is in too. `acme` and `other` are Ada's tabs
+# in each.
+record World do
+  statuses : Server<Presence>
+  ada : User
+  bob : User
+  eve : User
+  mal : User
+  acme : Tab
+  other : Tab
+end
+
+foul stepped(world: World, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
+  let entries = fields.map { |pair| match pair do (key, value) => (key, Just(value)) end }
+  App.Live.Chat.handled(Process.spawn(App.Live.Events.Bus {}), world.statuses, user, tab, entries)
+end
+
+foul shown(world: World, user: User, tab: Tab) -> String do
+  App.Live.Chat.markup(world.statuses, user, tab)
+end
+
+# A database of one's own, in memory: gone with the example. Each example
+# opens it itself, `with Harmat.Connection = fresh() do … end` — a block
+# keeps the connection of where it is written, so a helper handed the
+# example as a block would run it against another database.
+foul fresh() -> DB.Store.StoreConnection do
+  let store = DB.Store.started(Config.Database.sqlite(":memory:")).try
+  DB.Store.migrate(store).try
+  DB.Store.StoreConnection { store: store }
+end
+
+# The people and organizations of `World`, made the way people make them.
+foul populated() -> World do
+  let unpeopled = World {
+    statuses: Process.spawn(Presence {}),
+    ada: registered("Ada", "ada@example.com"),
+    bob: registered("Bob", "bob@example.com"),
+    eve: registered("Eve", "eve@example.com"),
+    mal: registered("Mallory", "mal@example.com"),
+    acme: Tab {},
+    other: Tab {}
+  }
+  let ada = unpeopled.ada
+  let mal = unpeopled.mal
+  let (acme, _) = stepped(unpeopled, ada, Tab {}, [("event", "organization-create"), ("name", "Acme Corp")])
+  stepped(unpeopled, ada, acme, [("event", "invite-send"), ("email", "bob@example.com")])
+  stepped(unpeopled, ada, acme, [("event", "invite-send"), ("email", "eve@example.com")])
+  let (other, _) = stepped(unpeopled, mal, Tab {}, [("event", "organization-create"), ("name", "Other")])
+  stepped(unpeopled, mal, other, [("event", "invite-send"), ("email", "ada@example.com")])
+  World {
+    ...unpeopled,
+    acme: acme,
+    other: Tab { organization: other.organization }
+  }
+end
+
+# Somebody who has registered, and is in no organization yet.
+foul registered(name: String, email: String) -> User do
+  let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
+  let user : User = App.Services.Authentication.current(Just(token)).try
+  user
+end
