@@ -345,7 +345,7 @@ let index(
   let channelLines = channels.map do |channel|
     let here = channel.id == shown
     entryPartial(Entry {
-      action: "open",
+      action: "conversation-open",
       subject: "id",
       key: channel.id,
       caption: channelName(channel),
@@ -377,7 +377,7 @@ let index(
   let groupLines = groups.map do |group|
     let here = group.id == shown
     entryPartial(Entry {
-      action: "open",
+      action: "conversation-open",
       subject: "id",
       key: group.id,
       caption: gathered(group, user, people),
@@ -562,7 +562,7 @@ private do
             matePartial(Mate {
               key: channel.id,
               caption: channelName(channel),
-              action: "open",
+              action: "conversation-open",
               subject: "id"
             })
           end
@@ -728,7 +728,7 @@ private do
       return channelPartial(
         "Create a channel",
         "A name of lower-case letters, digits and dashes.",
-        "create",
+        "channel-create",
         organization.name,
         owners.join(""),
         tab.dialogProblem,
@@ -742,7 +742,7 @@ private do
         "Make it a channel",
         "Everyone in this chat stays in it, with everything said so far. " +
           "A channel everyone can read shows them all of it, too.",
-        "promote-set",
+        "group-promote",
         organization.name,
         "",
         tab.dialogProblem,
@@ -756,7 +756,7 @@ private do
       return peoplePartial(
         "Start a group chat",
         "Everyone you pick, and you: only you can read it. Pick one person for a private chat.",
-        "gather",
+        "group-create",
         picks(others),
         tab.dialogProblem,
         "Start"
@@ -771,7 +771,7 @@ private do
       return peoplePartial(
         "Add people to ${named}",
         "They can read everything said in it, and write in it.",
-        "admit-set",
+        "channel-add",
         picks(outside),
         tab.dialogProblem,
         "Add"
@@ -899,7 +899,7 @@ private do
       .map { |open| open.direct? && open.counterpart(user.id) == person.id }
       .or(false)
     Entry {
-      action: "direct",
+      action: "direct-open",
       subject: "user",
       key: person.id,
       caption: person.shown,
@@ -1018,7 +1018,7 @@ private do
           ].join("")
         end
         return [
-          "<section class=\"pane\" data-live-drop=\"share\">",
+          "<section class=\"pane\" data-live-drop=\"file-attach\">",
           heading,
           shown,
           setting then "" else composer,

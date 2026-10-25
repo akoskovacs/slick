@@ -4,7 +4,7 @@ params: [opener: String, summary: String, followups: String, composer: String]
 <aside class="thread">
   <header class="heading thread-head">
     <h1>Thread</h1>
-    <button type="button" class="quiet" data-event="unthread" title="Close thread">✕</button>
+    <button type="button" class="quiet" data-event="thread-close" title="Close thread">✕</button>
   </header>
   <div class="messages" id="thread-messages" data-stick="bottom">
     <%== opener %>

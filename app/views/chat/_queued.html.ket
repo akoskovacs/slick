@@ -9,5 +9,5 @@ params: [file: Enclosure]
   <% end %>
   <span class="about"><strong><%= file.caption %></strong><span><%= file.weight %></span></span>
   <button type="button" class="quiet" title="Remove <%= file.caption %>"
-    data-event="unshare" data-file="<%= file.key %>">✕</button>
+    data-event="file-detach" data-file="<%= file.key %>">✕</button>
 </span>

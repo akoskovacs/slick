@@ -1,0 +1,264 @@
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using Spec.Support, only: [World, stepped, shown, fresh, populated]
+
+# Messages and threads from a tab. Each example starts from a world of its
+# own (Spec.Support).
+
+# Says something in Acme Corp's #general, as `user`; the id of the newest
+# message there afterwards.
+foul said(world: World, user: User, body: String) -> String do
+  stepped(world, user, Tab {}, [("event", "send"), ("body", body)])
+  shown(world, user, Tab {})
+    .split("id=\"message-")
+    .drop(1)
+    .map { |rest| rest.split("\"").first.or("") }
+    .filter { |each| each.startsWith?("m") }
+    .last
+    .or("")
+end
+
+describe("App.Live.Messages, saying something") do
+  it("says a message, with its emoji, to the others there") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, changed) = stepped(world, world.ada, Tab {}, [("event", "send"), ("body", "hello <b>world</b> :wave:")])
+      Assert.truthy(changed)
+      let bobs = shown(world, world.bob, Tab {})
+      Assert.truthy(bobs.contains?("hello &lt;b&gt;world&lt;/b&gt; 👋"))
+      Assert.truthy(bobs.contains?("<strong>Ada</strong>"))
+    end
+  end
+
+  it("says nothing without words or files") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, changed) = stepped(world, world.ada, Tab {}, [("event", "send"), ("body", "   ")])
+      Assert.falsy(changed)
+    end
+  end
+
+  it("shows a person's messages one after another as one block") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      said(world, world.ada, "hello")
+      said(world, world.ada, "and one more thing")
+      let block = shown(world, world.bob, Tab {})
+      Assert.equal(block.split("<strong>Ada</strong>").count, 2)
+      Assert.truthy(block.contains?("class=\"message continued\""))
+      said(world, world.bob, "bob cuts in")
+      said(world, world.ada, "ada again")
+      Assert.equal(shown(world, world.eve, Tab {}).split("<strong>Ada</strong>").count, 3)
+    end
+  end
+
+  it("says nothing where somebody may not write") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
+      let (_, changed) = stepped(world, world.mal, forged, [("event", "send"), ("body", "mallory was here")])
+      Assert.falsy(changed)
+      Assert.falsy(shown(world, world.ada, random).contains?("mallory was here"))
+    end
+  end
+end
+
+describe("App.Live.Messages, reactions") do
+  it("puts a reaction on, counts it, and takes it off again") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.ada, "ship it")
+      let (_, changed) = stepped(world, world.bob, Tab {}, [("event", "react"), ("message", id), ("emoji", "🎉")])
+      Assert.truthy(changed)
+      stepped(world, world.ada, Tab {}, [("event", "react"), ("message", id), ("emoji", "🎉")])
+      Assert.truthy(shown(world, world.eve, Tab {}).contains?("🎉 <span>2</span>"))
+      stepped(world, world.bob, Tab {}, [("event", "react"), ("message", id), ("emoji", "🎉")])
+      Assert.truthy(shown(world, world.eve, Tab {}).contains?("🎉 <span>1</span>"))
+    end
+  end
+
+  it("takes no reaction but an emoji, and none from another conversation") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.ada, "ship it")
+      let (_, odd) = stepped(world, world.bob, Tab {}, [("event", "react"), ("message", id), ("emoji", "<script>")])
+      Assert.falsy(odd)
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let (_, elsewhere) = stepped(world, world.bob, random, [("event", "react"), ("message", id), ("emoji", "🎉")])
+      Assert.falsy(elsewhere)
+      let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
+      let (_, outsider) = stepped(world, world.mal, forged, [("event", "react"), ("message", id), ("emoji", "🎉")])
+      Assert.falsy(outsider)
+    end
+  end
+end
+
+describe("App.Live.Messages, answering a form") do
+  it("keeps an answer with the message, shown under its form") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.bob, "[?] Lunch: pizza | soup")
+      let asking = shown(world, world.ada, Tab {})
+      Assert.truthy(asking.contains?("data-label=\"Lunch\"") && asking.contains?("data-value=\"soup\""))
+      let lunch = [("event", "answer"), ("message", id), ("form", "0"), ("label", "Lunch")]
+      let (after, changed) = stepped(world, world.ada, Tab {}, lunch + [("value", "soup")])
+      Assert.truthy(changed)
+      Assert.equal(after, Tab {})
+      let bobs = shown(world, world.bob, Tab {})
+      Assert.truthy(bobs.contains?("<li class=\"response\"><strong>Ada</strong> <span>soup</span></li>"))
+      Assert.falsy(bobs.contains?("<p>Lunch: soup</p>"))
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("<li class=\"response mine\"><strong>Ada</strong> <span>soup</span></li>"))
+    end
+  end
+
+  it("replaces an earlier answer, and takes none the form does not offer") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.bob, "[?] Lunch: pizza | soup")
+      let lunch = [("event", "answer"), ("message", id), ("form", "0"), ("label", "Lunch")]
+      stepped(world, world.ada, Tab {}, lunch + [("value", "soup")])
+      stepped(world, world.ada, Tab {}, lunch + [("value", "pizza")])
+      let bobs = shown(world, world.bob, Tab {})
+      Assert.truthy(bobs.contains?("<strong>Ada</strong> <span>pizza</span>"))
+      Assert.falsy(bobs.contains?("<span>soup</span>"))
+      let (_, cake) = stepped(world, world.ada, Tab {}, lunch + [("value", "cake")])
+      Assert.falsy(cake)
+    end
+  end
+
+  it("takes no answer from another conversation, nor from saying it") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.bob, "[?] Lunch: pizza | soup")
+      let lunch = [("event", "answer"), ("message", id), ("form", "0"), ("label", "Lunch")]
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let (_, elsewhere) = stepped(world, world.ada, random, lunch + [("value", "soup")])
+      Assert.falsy(elsewhere)
+      said(world, world.eve, "Lunch: soup")
+      Assert.falsy(shown(world, world.bob, Tab {}).contains?("<strong>Eve</strong> <span>soup</span>"))
+    end
+  end
+end
+
+describe("App.Live.Messages, drafts") do
+  it("keeps what is written and not sent, for its writer alone") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      stepped(world, world.ada, Tab {}, [("event", "draft-save"), ("place", "send"), ("body", "half a <tho")])
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("autofocus>half a &lt;tho</textarea>"))
+      Assert.falsy(shown(world, world.bob, Tab {}).contains?("half a"))
+      Assert.equal(DB.Repositories.Drafts.pending(world.ada.id).or([]).count, 1)
+    end
+  end
+
+  it("marks a conversation with a draft in the sidebar, elsewhere") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      stepped(world, world.ada, Tab {}, [("event", "draft-save"), ("place", "send"), ("body", "half a thought")])
+      Assert.truthy(shown(world, world.ada, random).contains?("# general\n      <span class=\"drafted\""))
+      Assert.falsy(shown(world, world.ada, Tab {}).contains?("class=\"drafted\""))
+      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      stepped(world, world.ada, chat, [("event", "draft-save"), ("place", "send"), ("body", "psst")])
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("data-user=\"${world.bob.id}\">Bob\n      <span class=\"drafted\""))
+    end
+  end
+
+  it("keeps a thread's box apart, and forgets a draft once it is sent") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.bob, "a thread")
+      let (thread, _) = stepped(world, world.ada, Tab {}, [("event", "thread-open"), ("message", id)])
+      stepped(world, world.ada, thread, [("event", "draft-save"), ("place", "send"), ("body", "half a thought")])
+      stepped(world, world.ada, thread, [("event", "draft-save"), ("place", "reply"), ("body", "a reply, later")])
+      let both = shown(world, world.ada, thread)
+      Assert.truthy(both.contains?(">a reply, later</textarea>"))
+      Assert.truthy(both.contains?(">half a thought</textarea>"))
+      stepped(world, world.ada, thread, [("event", "reply"), ("body", "a reply, now")])
+      Assert.falsy(shown(world, world.ada, thread).contains?("a reply, later"))
+      stepped(world, world.ada, Tab {}, [("event", "send"), ("body", "half a thought, finished")])
+      Assert.equal(DB.Repositories.Drafts.pending(world.ada.id).or([]), [])
+    end
+  end
+
+  it("keeps no draft where somebody cannot write") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
+      stepped(world, world.mal, forged, [("event", "draft-save"), ("place", "send"), ("body", "sneaky")])
+      Assert.equal(DB.Repositories.Drafts.pending(world.mal.id).or([]), [])
+    end
+  end
+end
+
+describe("App.Live.Threads") do
+  it("keeps replies out of the conversation, which counts them") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.ada, "a thread")
+      let (thread, _) = stepped(world, world.bob, Tab {}, [("event", "thread-open"), ("message", id)])
+      Assert.equal(thread.thread, id)
+      Assert.truthy(shown(world, world.bob, thread).contains?("No replies yet"))
+      let (_, replied) = stepped(world, world.bob, thread, [("event", "reply"), ("body", "a reply in the thread")])
+      Assert.truthy(replied)
+      stepped(world, world.ada, thread, [("event", "reply"), ("body", "and another")])
+      let outside = shown(world, world.eve, Tab {})
+      Assert.falsy(outside.contains?("a reply in the thread"))
+      Assert.truthy(outside.contains?("2 replies"))
+      let inside = shown(world, world.eve, thread)
+      Assert.truthy(inside.contains?("a reply in the thread"))
+      Assert.truthy(inside.contains?("and another"))
+      Assert.truthy(inside.contains?("id=\"thread-${id}\""))
+      Assert.truthy(inside.contains?("data-live-path=\"/acmecorp/channels/general?thread=${id}\""))
+    end
+  end
+
+  it("opens a thread from a reply in it, at its first message") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.ada, "a thread")
+      let (thread, _) = stepped(world, world.bob, Tab {}, [("event", "thread-open"), ("message", id)])
+      stepped(world, world.bob, thread, [("event", "reply"), ("body", "a reply")])
+      let replies : [App.Models.Message.Message] = DB.Repositories.Messages.answering(id).or([])
+      let replyId = replies.first.map { |reply| reply.id }.or("")
+      Assert.truthy(!replyId.empty?)
+      let (again, _) = stepped(world, world.eve, Tab {}, [("event", "thread-open"), ("message", replyId)])
+      Assert.equal(again.thread, id)
+    end
+  end
+
+  it("sends no reply without a thread open, nor opens one from elsewhere") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.ada, "a thread")
+      let (_, stray) = stepped(world, world.bob, Tab {}, [("event", "reply"), ("body", "lost")])
+      Assert.falsy(stray)
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let (elsewhere, _) = stepped(world, world.bob, random, [("event", "thread-open"), ("message", id)])
+      Assert.equal(elsewhere.thread, "")
+    end
+  end
+
+  it("leaves the thread open beside the conversation when something is said there") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.ada, "a thread")
+      let (thread, _) = stepped(world, world.bob, Tab {}, [("event", "thread-open"), ("message", id)])
+      let (stillOpen, _) = stepped(world, world.bob, thread, [("event", "send"), ("body", "back in the channel")])
+      Assert.equal(stillOpen.thread, id)
+    end
+  end
+
+  it("closes a thread, leaving the conversation as it was") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let id = said(world, world.ada, "a thread")
+      let (thread, _) = stepped(world, world.bob, Tab {}, [("event", "thread-open"), ("message", id)])
+      let (closed, _) = stepped(world, world.bob, thread, [("event", "thread-close")])
+      Assert.equal(closed.thread, "")
+      Assert.equal(closed.conversation, thread.conversation)
+    end
+  end
+end

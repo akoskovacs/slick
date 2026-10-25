@@ -2,7 +2,7 @@
 params: [verb: String, boxId: String, hint: String, picks: String, focused?: Bool, unsent: String, queued: String, attachable?: Bool, mentionable: String, commands: String]
 ---
 <form class="composer" data-live="<%= verb %>" data-live-reset data-live-typing
-  data-live-change="draft" data-live-pause="1000"
+  data-live-change="draft-save" data-live-pause="1000"
   data-live-hook="Composer" data-mentions="<%= mentionable %>" data-commands="<%= commands %>">
   <input type="hidden" name="place" value="<%= verb %>">
   <div class="composer-box">

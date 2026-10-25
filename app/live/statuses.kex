@@ -1,0 +1,53 @@
+# The statuses board, as tabs use it: who has a tab open, and what somebody
+# is doing in the conversation theirs shows — typing, or something a bot
+# says it is busy with.
+module App.Live.Statuses
+
+using Metro.Live.Presence, only: [Presence]
+using App.Live.Outcome, only: [Outcome]
+using App.Live.Places, only: [visible]
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+
+# The topic, on the board, of who has a tab open. A member there is
+# "<user id> <something of the tab's own>", so that closing one of two tabs
+# does not make somebody look gone.
+let ONLINE = "online"
+
+# How long "is typing" stands after a keystroke is heard of, in milliseconds.
+# The browser says so again every three seconds while it goes on.
+let TYPING_FOR = 6000
+
+# Somebody's tab has opened.
+arrive : Server<Presence> -> User -> String -> Void
+foul arrive(statuses, user, seat) do
+  statuses.noted(ONLINE, "${user.id} ${seat}", "", Metro.Clock.milliseconds() + 86400000)
+end
+
+# Somebody's tab has closed.
+leave : Server<Presence> -> User -> String -> Void
+foul leave(statuses, user, seat) do
+  statuses.lifted(ONLINE, "${user.id} ${seat}")
+end
+
+# Says what somebody is doing in the conversation their tab is showing, for
+# `milliseconds`; "" takes it back. Whether there was a conversation to say
+# it in.
+say : Server<Presence> -> User -> Tab -> String -> Integer -> Bool
+foul say(statuses, user, tab, text, milliseconds) do
+  match visible(user, tab) do
+    None => return false
+    Just(conversation) => do
+      if milliseconds <= 0
+        statuses.lifted(conversation.id, user.id)
+      else
+        statuses.noted(conversation.id, user.id, text, Metro.Clock.milliseconds() + milliseconds)
+      end
+      return true
+    end
+  end
+end
+
+# Somebody is typing: said for a few seconds, to everyone else there.
+markTyping : Server<Presence> -> User -> Tab -> Outcome
+foul markTyping(statuses, user, tab) = (tab, say(statuses, user, tab, "", TYPING_FOR))

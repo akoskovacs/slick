@@ -1,0 +1,238 @@
+# Messages from a tab: saying one, replying in a thread, what is being
+# written, reactions, answering a form a message asks, and the files that
+# go with the next message.
+module App.Live.Messages
+
+using Metro.Live.Presence, only: [Presence]
+using Metro.Live.Socket, only: [field]
+using Metro.Validation, only: [rules, validates, present, sized]
+using App.Live.Outcome, only: [Outcome, unchanged, changed, failed]
+using App.Live.Places, only: [visible]
+using App.Live.Tab, only: [Tab, closed]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Draft, only: [Draft]
+using App.Models.Message, only: [Message]
+using App.Models.Reading, only: [Reading]
+using App.Models.User, only: [User]
+using DB.Repositories.Answers, as: Answers
+using DB.Repositories.Attachments, as: Attachments
+using DB.Repositories.Drafts, as: Drafts
+using DB.Repositories.Messages, as: Messages
+using DB.Repositories.Reactions, as: Reactions
+using DB.Repositories.Readings, as: Readings
+
+let messageRules = rules do
+  validates("body", "A message", [present, sized(1, App.Models.Message.LONGEST)])
+end
+
+# How many files can go with one message.
+let PENDING = 10
+
+# Says a message in the conversation the tab shows, with the files waiting
+# in its box.
+send : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> String -> Outcome
+foul send(events, statuses, user, tab, body) do
+  # A message needs words, unless files go with it.
+  let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
+  let unfit = tab.pending.empty? || body.chars.count > App.Models.Message.LONGEST
+  return unchanged(tab) if !problems.empty? && unfit
+
+  match visible(user, tab) do
+    None => return unchanged(tab)
+    Just(conversation) => do
+      return unchanged(tab) if !App.Services.Authority.canWrite(user, conversation)
+      # A command for a bot is used, not said; the files waiting stay.
+      if App.Live.Commands.run(events, user, conversation, "", body)
+        statuses.lifted(conversation.id, user.id)
+        return changed(closed(tab))
+      end
+
+      match post(events, user, conversation, body, tab.pending) do
+        Ok(_) => do
+          # Whatever they were said to be doing, they have done.
+          statuses.lifted(conversation.id, user.id)
+          return changed(Tab { ...closed(tab), pending: [] })
+        end
+        Error(reason) => return failed(tab, "Not sent: ${reason}")
+      end
+    end
+  end
+end
+
+# Replies in the thread the tab has open, and nowhere else.
+reply : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> String -> Outcome
+foul reply(events, statuses, user, tab, body) do
+  let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
+  return unchanged(tab) if !problems.empty?
+
+  match visible(user, tab) do
+    None => return unchanged(tab)
+    Just(conversation) => do
+      return unchanged(tab) if !App.Services.Authority.canWrite(user, conversation)
+
+      match App.Live.Threads.root(conversation, tab.thread) do
+        None => return unchanged(tab)
+        Just(first) => do
+          # A command for a bot is used, not said.
+          if App.Live.Commands.run(events, user, conversation, first.id, body)
+            statuses.lifted(conversation.id, user.id)
+            return changed(Tab { ...closed(tab), thread: first.id })
+          end
+          return replyTo(events, statuses, user, tab, conversation, first, body)
+        end
+      end
+    end
+  end
+end
+
+# Keeps what is being written in one of the tab's message boxes, as it is
+# written: `place` is "reply" for the open thread's, and anything else for
+# the conversation's. Where it is kept is the tab's to say, not the
+# browser's. Nobody else is shown it, so no other tab is told.
+saveDraft : User -> Tab -> String -> String -> Outcome
+foul saveDraft(user, tab, place, body) do
+  match visible(user, tab) do
+    None => return unchanged(tab)
+    Just(conversation) => do
+      let root = App.Live.Threads.root(conversation, tab.thread).map { |first| first.id }.or("")
+      let thread = place == "reply" then root else ""
+      return unchanged(tab) if place == "reply" && thread.empty?
+
+      Drafts.kept(user.id, Draft {
+        conversationId: conversation.id,
+        threadId: thread,
+        personId: conversation.direct? then conversation.counterpart(user.id) else "",
+        body: body.take(App.Models.Message.LONGEST)
+      })
+      return unchanged(tab)
+    end
+  end
+end
+
+# Puts a reaction on a message of the conversation the tab is showing, or
+# takes it off again; nowhere else: the message is looked up, and has to
+# belong to it.
+react : User -> Tab -> String -> String -> Outcome
+foul react(user, tab, messageId, emoji) do
+  return unchanged(tab) if !App.Models.Emoji.reaction?(emoji)
+
+  match visible(user, tab) do
+    None => return unchanged(tab)
+    Just(conversation) => match Messages.single(messageId) do
+      Ok(Just(message)) => do
+        return unchanged(tab) if message.conversationId != conversation.id
+
+        match Reactions.flipped(message, user.id, emoji) do
+          Ok(_) => return changed(tab)
+          Error(reason) => return failed(tab, reason)
+        end
+      end
+      _ => return unchanged(tab)
+    end
+  end
+end
+
+# Answers a form a message asks. The answer is kept with that message — it
+# is not a message of its own — and replaces an earlier one this person gave
+# to the same form. The tab stays as it is.
+answer : Server<App.Live.Events.Bus> -> User -> Tab -> [(String, String?)] -> Outcome
+foul answer(events, user, tab, entries) do
+  match visible(user, tab) do
+    None => return unchanged(tab)
+    Just(conversation) => match Messages.single(field(entries, "message")) do
+      Ok(Just(message)) => do
+        return unchanged(tab) if message.conversationId != conversation.id
+
+        match App.Helpers.RichText.answer(message.body, entries) do
+          None => return unchanged(tab)
+          Just((form, said)) => match Answers.recorded(conversation.organizationId, message, form, user.id, said) do
+            Ok(given) => do
+              # Only the bot whose form it was is told, and it is told only
+              # where to look.
+              App.Live.Events.publish(events, conversation, "answer", message.id, message.parentId, given.answeredAt, message.userId, "")
+              return changed(tab)
+            end
+            Error(reason) => return unchanged(Tab { ...tab, failure: "Not answered: ${reason}" })
+          end
+        end
+      end
+      _ => return unchanged(tab)
+    end
+  end
+end
+
+# A file somebody has uploaded waits in the tab's message box, to go with
+# the next message: only one of theirs that has not been sent.
+attach : User -> Tab -> String -> Outcome
+foul attach(user, tab, id) do
+  match Attachments.single(id) do
+    Ok(Just(file)) => do
+      return unchanged(tab) if file.userId != user.id || file.sent? || tab.pending.contains?(id)
+      return unchanged(Tab { ...tab, pending: (tab.pending + [id]).take(PENDING) })
+    end
+    _ => return unchanged(tab)
+  end
+end
+
+# The tab, told that a file did not upload, and why.
+refuseUpload : Tab -> String -> String -> Outcome
+let refuseUpload(tab, filename, reason) = unchanged(Tab {
+  ...tab,
+  failure: "${filename} was not uploaded: ${reason}"
+})
+
+# Takes a file waiting in the message box back out of it.
+detach : Tab -> String -> Outcome
+let detach(tab, id) = unchanged(Tab {
+  ...tab,
+  pending: tab.pending.reject { |each| each == id }
+})
+
+private do
+  # A reply said in the thread `first` starts.
+  replyTo : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> Conversation -> Message -> String -> Outcome
+  foul replyTo(events, statuses, user, tab, conversation, first, body) do
+    match Messages.said(conversation.id, user.id, body, first.id) do
+      Ok(reply) => do
+        App.Live.Events.publish(events, conversation, "message", reply.id, first.id, reply.sentAt, "", body)
+        statuses.lifted(conversation.id, user.id)
+        # Who replies in a thread follows it, and has read it so far.
+        Readings.reached(user.id, Reading {
+          conversationId: conversation.id,
+          threadId: first.id,
+          readAt: reply.sentAt
+        })
+        Drafts.kept(user.id, Draft {
+          conversationId: conversation.id,
+          threadId: first.id,
+          body: ""
+        })
+        return changed(Tab { ...closed(tab), thread: first.id })
+      end
+      Error(reason) => return failed(tab, "Not sent: ${reason}")
+    end
+  end
+
+  # A message, with what goes with it, all or nothing: whoever starts a
+  # thread follows it, the files waiting in the box go with it, and the
+  # draft it was is gone.
+  post : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> [String] -> Message or! String
+  foul post(events, user, conversation, body, pending) do
+    let posted : Message or! String = Harmat.Database.transaction do
+      let message : Message = Messages.said(conversation.id, user.id, body, "").try
+      Readings.reached(user.id, Reading {
+        conversationId: conversation.id,
+        threadId: message.id,
+        readAt: message.sentAt
+      }).try
+      Attachments.sent(user.id, pending, conversation.id, message.id).try
+      Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" }).try
+      Ok(message)
+    end
+    match posted do
+      Ok(message) => App.Live.Events.publish(events, conversation, "message", message.id, "", message.sentAt, "", body)
+      Error(_) => ()
+    end
+    return posted
+  end
+end

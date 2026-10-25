@@ -6,14 +6,14 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
     <h1><%= title %></h1>
   </div>
   <% if retitling? %>
-    <form class="topic-form" data-live="topic" data-live-quiet>
+    <form class="topic-form" data-live="topic-set" data-live-quiet>
       <input name="topic" value="<%= topic %>" maxlength="250" placeholder="What is this channel about?" autocomplete="off">
       <button type="submit" class="primary">Save</button>
       <button type="button" class="quiet" data-event="cancel">Cancel</button>
     </form>
   <% elif channel? %>
     <p class="topic"><% if topic.empty? %>No topic yet<% else %><%= topic %><% end %>
-      <button type="button" class="quiet" data-event="retitle">Edit topic</button>
+      <button type="button" class="quiet" data-event="topic-edit">Edit topic</button>
     </p>
   <% end %>
   <% if !note.empty? %>

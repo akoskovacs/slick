@@ -14,13 +14,11 @@ module App.Live.Chat
 
 using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field, repeated]
-using Metro.Validation, only: [rules, validates, present, sized, passing]
+using Metro.Validation, only: [rules, validates, sized]
 using App.Live.Places, only: [home, visible, organizations, memberOrganization, member?]
 using App.Live.Tab, only: [Tab, closed]
 using App.Live.Unread, only: [Unread]
 using App.Models.Attachment, only: [Attachment]
-using App.Models.Command, only: [Command]
-using App.Models.Invocation, only: [Invocation]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Grant, only: [Grant]
@@ -34,7 +32,6 @@ using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Drafts, as: Drafts
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
-using DB.Repositories.Organizations, as: Organizations
 using DB.Repositories.Readings, as: Readings
 using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Answers, as: Answers
@@ -44,24 +41,6 @@ using DB.Repositories.Users, as: Users
 
 # How many messages of a conversation a tab is shown.
 let WINDOW = 200
-
-let channelRules = rules do
-  validates("title", "A channel name", [
-    present,
-    sized(2, 30),
-    passing("may only have lower-case letters, digits and dashes.") do |text|
-      text.chars.all? { |char| char.lower? || char.digit? || "${char}" == "-" }
-    end
-  ])
-end
-
-let messageRules = rules do
-  validates("body", "A message", [present, sized(1, App.Models.Message.LONGEST)])
-end
-
-let topicRules = rules do
-  validates("topic", "A topic", [sized(0, 250)])
-end
 
 # The live region for one person's tab, as things are stored right now.
 #
@@ -80,7 +59,7 @@ foul markup(statuses, user, tab) do
       let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
       let teams : [Team] = Teams.ofOrganization(organization.id).or([])
       let now = Metro.Clock.milliseconds()
-      let online : [String] = Metro.Live.Presence.standing(statuses, ONLINE, now)
+      let online : [String] = Metro.Live.Presence.standing(statuses, App.Live.Statuses.ONLINE, now)
         .map { |note| note.member.split(" ").first.or("") }
       let bots : [User] = tab.dialog == "bots" then App.Live.Bots.manageable(user, organization) else []
       let operators : {String: [String]} = bots.reduce({}) { |found, bot|
@@ -124,12 +103,12 @@ foul markup(statuses, user, tab) do
         end
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
-          let thread = unfolded(conversation, tab.thread)
+          let thread = App.Live.Threads.messages(conversation, tab.thread)
           # Somebody looking at a conversation reads it as far as its newest
           # message, and the thread open beside it, if they follow it, as
           # far as its newest reply.
           let reading = tab.attentive? then conversation.id else ""
-          let readingThread = tab.attentive? then opening(thread) else ""
+          let readingThread = tab.attentive? then App.Live.Threads.firstId(thread) else ""
           if tab.attentive?
             noted(user, marks, Reading {
               conversationId: conversation.id,
@@ -163,7 +142,7 @@ foul markup(statuses, user, tab) do
             drafts,
             unread,
             cabinet,
-            offering(user, conversation, people),
+            App.Live.Commands.available(user, conversation, people),
             DB.Repositories.Invocations.inside(conversation.id).or([]),
             Just(conversation),
             messages,
@@ -186,16 +165,16 @@ end
 handled : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
 foul handled(events, statuses, user, tab, entries) do
   match field(entries, "event") do
-    "open" => opened(user, tab, field(entries, "id"))
-    "direct" => whispered(user, tab, field(entries, "user"))
-    "found" => (Tab { ...closed(tab), dialog: "channel" }, false)
-    "create" => established(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"), field(entries, "team"))
-    "group" => (Tab { ...closed(tab), dialog: "group" }, false)
-    "gather" => gathered(user, tab, repeated(entries, "person"))
+    "conversation-open" => App.Live.Conversations.open(user, tab, field(entries, "id"))
+    "direct-open" => App.Live.Conversations.openDirect(user, tab, field(entries, "user"))
+    "channel-new" => (Tab { ...closed(tab), dialog: "channel" }, false)
+    "channel-create" => App.Live.Conversations.createChannel(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"), field(entries, "team"))
+    "group-new" => (Tab { ...closed(tab), dialog: "group" }, false)
+    "group-create" => App.Live.Conversations.createGroup(user, tab, repeated(entries, "person"))
     "promote" => (Tab { ...closed(tab), dialog: "promote" }, false)
-    "promote-set" => promotedTo(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"))
+    "group-promote" => App.Live.Conversations.makeChannel(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"))
     "admit" => (Tab { ...closed(tab), dialog: "admit" }, false)
-    "admit-set" => admittedTo(user, tab, repeated(entries, "person"))
+    "channel-add" => App.Live.Conversations.addPeople(user, tab, repeated(entries, "person"))
     "team-open" => App.Live.Teams.open(user, tab, field(entries, "id"))
     "team-close" => (Tab { ...closed(tab), team: "" }, false)
     "team-new" => (Tab { ...closed(tab), dialog: "team" }, false)
@@ -206,16 +185,16 @@ foul handled(events, statuses, user, tab, entries) do
     "team-add" => App.Live.Teams.addMembers(user, tab, repeated(entries, "person"))
     "team-leave" => App.Live.Teams.removeMember(user, tab, user.id)
     "team-remove" => App.Live.Teams.removeMember(user, tab, field(entries, "user"))
-    "send" => sent(events, statuses, user, tab, field(entries, "body").trim)
-    "draft" => drafted(user, tab, field(entries, "place"), field(entries, "body"))
-    "typing" => typing(statuses, user, tab)
-    "retitle" => (Tab { ...closed(tab), retitling?: true }, false)
-    "topic" => retitled(user, tab, field(entries, "topic").trim)
-    "react" => reacted(user, tab, field(entries, "message"), field(entries, "emoji"))
-    "answer" => answered(events, user, tab, entries)
+    "send" => App.Live.Messages.send(events, statuses, user, tab, field(entries, "body").trim)
+    "draft-save" => App.Live.Messages.saveDraft(user, tab, field(entries, "place"), field(entries, "body"))
+    "typing" => App.Live.Statuses.markTyping(statuses, user, tab)
+    "topic-edit" => (Tab { ...closed(tab), retitling?: true }, false)
+    "topic-set" => App.Live.Conversations.setTopic(user, tab, field(entries, "topic").trim)
+    "react" => App.Live.Messages.react(user, tab, field(entries, "message"), field(entries, "emoji"))
+    "answer" => App.Live.Messages.answer(events, user, tab, entries)
     "cancel" => (closed(tab), false)
-    "thread" => threaded(user, tab, field(entries, "message"))
-    "unthread" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
+    "thread-open" => App.Live.Threads.open(user, tab, field(entries, "message"))
+    "thread-close" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
     "profile" => profiled(user, tab, field(entries, "user"))
     "bot-operators-set" => App.Live.Bots.setOperators(user, tab, field(entries, "bot"), repeated(entries, "operator"))
     "bot-access-set" => App.Live.Bots.setAccess(user, tab, field(entries, "access"))
@@ -225,14 +204,14 @@ foul handled(events, statuses, user, tab, entries) do
     "role-remove" => roleTaken(user, tab, field(entries, "user"))
     "unprofile" => (Tab { ...closed(tab), profile: "" }, false)
     "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
-    "share" => shared(user, tab, field(entries, "file"))
-    "share-failed" => (refusedUpload(tab, field(entries, "filename"), field(entries, "reason")), false)
-    "unshare" => (Tab { ...tab, pending: tab.pending.reject { |id| id == field(entries, "file") } }, false)
+    "file-attach" => App.Live.Messages.attach(user, tab, field(entries, "file"))
+    "file-attach-failed" => App.Live.Messages.refuseUpload(tab, field(entries, "filename"), field(entries, "reason"))
+    "file-detach" => App.Live.Messages.detach(tab, field(entries, "file"))
     "files" => (Tab { ...closed(tab), thread: "", view: "files" }, false)
     "messages" => (Tab { ...closed(tab), view: "" }, false)
     "profile-edit" => (Tab { ...closed(tab), dialog: "profile" }, false)
     "profile-set" => described(user, tab, entries)
-    "reply" => replied(events, statuses, user, tab, field(entries, "body").trim)
+    "reply" => App.Live.Messages.reply(events, statuses, user, tab, field(entries, "body").trim)
     "visit" => (arrived(user, field(entries, "path")), false)
     "organization-switch" => App.Live.Organizations.switch(user, tab, field(entries, "id"))
     "organization-new" => (Tab { ...closed(tab), dialog: "organization" }, false)
@@ -248,44 +227,6 @@ foul handled(events, statuses, user, tab, entries) do
     "bot-add" => App.Live.Bots.add(user, tab, field(entries, "id"))
     "bot-remove" => App.Live.Bots.remove(user, tab, field(entries, "id"))
     _ => (tab, false)
-  end
-end
-
-# The topic, on the statuses board, of who has a tab open. A member there is
-# "<user id> <something of the tab's own>", so that closing one of two tabs
-# does not make somebody look gone.
-let ONLINE = "online"
-
-# Somebody's tab has opened, or closed.
-arriving : Server<Presence> -> User -> String -> Void
-foul arriving(statuses, user, seat) do
-  statuses.noted(ONLINE, "${user.id} ${seat}", "", Metro.Clock.milliseconds() + 86400000)
-end
-
-leaving : Server<Presence> -> User -> String -> Void
-foul leaving(statuses, user, seat) do
-  statuses.lifted(ONLINE, "${user.id} ${seat}")
-end
-
-# How long "is typing" stands after a keystroke is heard of, in milliseconds.
-# The browser says so again every three seconds while it goes on.
-let TYPING_FOR = 6000
-
-# Says what somebody is doing in the conversation their tab is showing, for
-# `milliseconds`; "" takes it back. Whether there was a conversation to say
-# it in.
-noting : Server<Presence> -> User -> Tab -> String -> Integer -> Bool
-foul noting(statuses, user, tab, text, milliseconds) do
-  match visible(user, tab) do
-    None => return false
-    Just(conversation) => do
-      if milliseconds <= 0
-        statuses.lifted(conversation.id, user.id)
-      else
-        statuses.noted(conversation.id, user.id, text, Metro.Clock.milliseconds() + milliseconds)
-      end
-      return true
-    end
   end
 end
 
@@ -309,7 +250,7 @@ foul arrived(user, location) do
       Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
         None => return Tab {}
         Just(organization) => do
-          let (chat, _) = whispered(user, Tab { organization: organization.id }, parts.get("person").or(""))
+          let (chat, _) = App.Live.Conversations.openDirect(user, Tab { organization: organization.id }, parts.get("person").or(""))
           return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
         end
       end
@@ -441,121 +382,9 @@ private do
   # The largest text file whose start the files view shows, in bytes.
   let GLIMPSED = 65536
 
-  # The slash commands somebody can use in a conversation: those of every bot
-  # of the organization in a public channel, those of the bots taking part
-  # in a private channel or a group chat, those of the bot in a private
-  # chat with one, and none in a chat with a person.
-  offering : User -> Conversation -> [User] -> [Command]
-  foul offering(user, conversation, people) do
-    let bots = people.filter { |person| person.bot? }
-    let other = conversation.counterpart(user.id)
-    let listening = if conversation.direct?
-      bots.filter { |bot| bot.id == other }
-    else
-      bots.filter { |bot| conversation.admits?(bot.id) }
-    end
-    return [] if listening.empty?
-    return DB.Repositories.Commands.of(listening.map { |bot| bot.id }).or([])
-  end
-
-  # Whether what was sent is a slash command for a bot in reach — and if so,
-  # notes it as used, and clears the box it was written in. It is one when
-  # it starts with a command a bot here has declared: `/mode` in a bot's
-  # private chat; `@opencode /mode auto` in a channel, or `/mode` alone
-  # when only one bot here answers to it. Anything else is a message.
-  invoked : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> String -> Bool
-  foul invoked(events, user, conversation, threadId, body) do
-    let people : [User] = Users.everyone.or([])
-    let commands = offering(user, conversation, people)
-    return false if commands.empty?
-
-    let text = body.trim
-    let bots = people.filter { |person| commands.any? { |command| command.botId == person.id } }
-    let addressed = bots.find { |bot| text.startsWith?("@${bot.shown} ") }
-    let rest = addressed.map { |bot| text.drop(bot.shown.count + 1).trim }.or(text)
-    return false if !rest.startsWith?("/")
-
-    let name = rest.drop(1).split(" ").first.or("").lowerCase
-    let candidates = commands.filter do |command|
-      command.name == name && addressed.map { |bot| command.botId == bot.id }.or(true)
-    end
-    return false if candidates.count != 1
-
-    let command = candidates.first.or(Command { botId: "", name: "" })
-    let moment = Metro.Clock.milliseconds()
-    let used = Invocation {
-      id: Metro.Id.generate(prefix: "i"),
-      organizationId: conversation.organizationId,
-      conversationId: conversation.id,
-      threadId: threadId,
-      botId: command.botId,
-      userId: user.id,
-      command: command.name,
-      arguments: rest.drop(1 + name.count).trim,
-      invokedAt: moment
-    }
-    let kept : Result<Integer, String> = Harmat.Database.transaction do
-      DB.Repositories.Invocations.recorded(used).try
-      Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
-    end
-    if kept.ok?
-      happened(events, conversation, "command", "", used.threadId, used.invokedAt, command.botId, "")
-    end
-    return kept.ok?
-  end
-
-  # Notes what happened to the events bus, for the bots that are watching.
-  # Nothing is told but where: what a bot may read of it, it fetches through
-  # the API as ever. A bot "" is no bot: the event is for whoever may read
-  # the conversation. `body` is the message said, kept on the server only so
-  # the bus can tell which bots it names.
-  happened : Server<App.Live.Events.Bus> -> Conversation -> String -> String -> String -> Integer -> String -> String -> Void
-  foul happened(events, conversation, kind, messageId, threadId, at, bot, body) do
-    match Organizations.identified(conversation.organizationId) do
-      Ok(Just(organization)) => do
-        let replied = if kind == "message" && !threadId.empty?
-          Messages.botAuthors(threadId, Users.botIds().or([])).or([])
-        else
-          []
-        end
-        events.happened(App.Live.Events.Event {
-          kind: kind,
-          organizationId: conversation.organizationId,
-          organization: organization.slug,
-          conversationId: conversation.id,
-          channel: conversation.channel? then conversation.title else "",
-          group: conversation.group? then conversation.id else "",
-          first: conversation.direct? then conversation.firstUser else "",
-          second: conversation.direct? then conversation.secondUser else "",
-          thread: threadId,
-          message: messageId,
-          at: at,
-          public?: conversation.public?,
-          people: conversation.public? then [] else (conversation.direct? then [conversation.firstUser, conversation.secondUser] else conversation.participants),
-          bot: bot,
-          body: body,
-          botAccess: conversation.botAccess,
-          replied: replied
-        })
-      end
-      _ => ()
-    end
-  end
-
-  # The id of the message a thread starts with; "" for no thread.
-  opening : [Message] -> String
-  let opening(thread) = thread.first.map { |first| first.id }.or("")
-
   # When the newest of some messages was sent; 0 for none.
   newest : [Message] -> Integer
   let newest(messages) = messages.last.map { |message| message.sentAt }.or(0)
-
-  # A tab told that a file did not upload, and why.
-  refusedUpload : Tab -> String -> String -> Tab
-  let refusedUpload(tab, filename, reason) = Tab {
-    ...tab,
-    failure: "${filename} was not uploaded: ${reason}"
-  }
 
   # Whether this person follows the thread a message starts.
   followed : [Reading] -> String -> Bool
@@ -738,50 +567,6 @@ private do
     ["${label} cannot be longer than ${longest} characters."]
   end
 
-  # Somebody is typing: said for a few seconds, to everyone else there.
-  typing : Server<Presence> -> User -> Tab -> (Tab, Bool)
-  foul typing(statuses, user, tab) = (tab, noting(statuses, user, tab, "", TYPING_FOR))
-
-  # The message that starts the thread this message is in — itself, when it
-  # is not a reply — if it belongs to this conversation.
-  rooted : Conversation -> String -> Message?
-  foul rooted(conversation, id) do
-    return None if id.empty?
-
-    match Messages.single(id) do
-      Ok(Just(message)) => do
-        return None if message.conversationId != conversation.id
-        return Just(message) if message.parentId.empty?
-        return rooted(conversation, message.parentId)
-      end
-      _ => return None
-    end
-  end
-
-  # An open thread: the message that started it, then its replies. Empty
-  # when no thread is open, or the one asked for is not in this conversation.
-  unfolded : Conversation -> String -> [Message]
-  foul unfolded(conversation, id) do
-    match rooted(conversation, id) do
-      None => return []
-      Just(first) => do
-        let replies : [Message] = Messages.answering(first.id).or([])
-        return [first] + replies
-      end
-    end
-  end
-
-  threaded : User -> Tab -> String -> (Tab, Bool)
-  foul threaded(user, tab, id) do
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => match rooted(conversation, id) do
-        Just(first) => return (Tab { ...closed(tab), thread: first.id, profile: "", team: "" }, false)
-        None => return (tab, false)
-      end
-    end
-  end
-
   # Opens somebody's profile beside the conversation, in place of a thread:
   # only of somebody in the tab's organization.
   profiled : User -> Tab -> String -> (Tab, Bool)
@@ -791,349 +576,6 @@ private do
       Just(organization) => do
         return (tab, false) if !member?(organization.id, id)
         return (Tab { ...closed(tab), thread: "", profile: id, team: "" }, false)
-      end
-    end
-  end
-
-  # Keeps what is being written in one of the tab's message boxes, as it is
-  # written: `place` is "reply" for the open thread's, and anything else for
-  # the conversation's. Where it is kept is the tab's to say, not the
-  # browser's. Nobody else is shown it, so no other tab is told.
-  drafted : User -> Tab -> String -> String -> (Tab, Bool)
-  foul drafted(user, tab, place, body) do
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => do
-        let root = rooted(conversation, tab.thread).map { |first| first.id }.or("")
-        let thread = place == "reply" then root else ""
-        return (tab, false) if place == "reply" && thread.empty?
-
-        let draft = Draft {
-          conversationId: conversation.id,
-          threadId: thread,
-          personId: conversation.direct? then conversation.counterpart(user.id) else "",
-          body: body.take(App.Models.Message.LONGEST)
-        }
-        Drafts.kept(user.id, draft)
-        return (tab, false)
-      end
-    end
-  end
-
-  # A reply goes into the thread the tab has open, and nowhere else.
-  replied : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
-  foul replied(events, statuses, user, tab, body) do
-    let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
-    return (tab, false) if !problems.empty?
-
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => do
-        return (tab, false) if !App.Services.Authority.canWrite(user, conversation)
-        match rooted(conversation, tab.thread) do
-          None => return (tab, false)
-          Just(first) => do
-            # A command for a bot is used, not said.
-            if invoked(events, user, conversation, first.id, body)
-              statuses.lifted(conversation.id, user.id)
-              return (Tab { ...closed(tab), thread: first.id }, true)
-            end
-            return repliedTo(events, statuses, user, tab, conversation, first, body)
-          end
-        end
-      end
-    end
-  end
-
-  # A reply said in the thread `first` starts.
-  repliedTo : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> Conversation -> Message -> String -> (Tab, Bool)
-  foul repliedTo(events, statuses, user, tab, conversation, first, body) do
-    match Messages.said(conversation.id, user.id, body, first.id) do
-      Ok(reply) => do
-        happened(events, conversation, "message", reply.id, first.id, reply.sentAt, "", body)
-        statuses.lifted(conversation.id, user.id)
-        # Who replies in a thread follows it, and has read it so far.
-        Readings.reached(user.id, Reading {
-          conversationId: conversation.id,
-          threadId: first.id,
-          readAt: reply.sentAt
-        })
-        Drafts.kept(user.id, Draft {
-          conversationId: conversation.id,
-          threadId: first.id,
-          body: ""
-        })
-        return (Tab { ...closed(tab), thread: first.id }, true)
-      end
-      Error(reason) => return (Tab { ...closed(tab), failure: "Not sent: ${reason}" }, false)
-    end
-  end
-
-  opened : User -> Tab -> String -> (Tab, Bool)
-  foul opened(user, tab, id) do
-    return (tab, false) if id.empty?
-
-    match visible(user, Tab { organization: tab.organization, conversation: id }) do
-      Just(conversation) => return (Tab { organization: conversation.organizationId, conversation: conversation.id }, false)
-      None => return (tab, false)
-    end
-  end
-
-  # Opens the private chat with another person of the organization, starting
-  # it if need be — or with themselves: a place of their own, where nobody
-  # else looks, to keep notes in and try Slick out.
-  whispered : User -> Tab -> String -> (Tab, Bool)
-  foul whispered(user, tab, other) do
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        return (tab, false) if !member?(organization.id, other)
-
-        match Conversations.between(organization.id, user.id, other) do
-          Ok(conversation) => return (Tab { organization: organization.id, conversation: conversation.id }, false)
-          Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Not called `founded`: a function here with the name and the number of
-  # arguments of a repository method makes the call to that method lose an
-  # argument when compiled, and fail as `undef` when run (kexhq/kex#451).
-  # A channel: public, or private — to whoever made it, and to the team
-  # that owns it, if one does. Only a team somebody is in can be given a
-  # channel by them.
-  established : User -> Tab -> String -> String -> String -> (Tab, Bool)
-  foul established(user, tab, title, access, teamId) do
-    let refused = Tab { ...closed(tab), dialog: "channel" }
-    let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
-    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        if !App.Services.Authority.canCreate(user, organization.id)
-          return (Tab { ...refused, dialogProblem: "You may not make a channel in ${organization.name}." }, false)
-        end
-        let owner : Team? = match Teams.single(teamId) do
-          Ok(found) => found
-          Error(_) => None
-        end
-        let owns = owner.map { |team| team.organizationId == organization.id && team.includes?(user.id) }.or(teamId.empty?)
-        return (Tab { ...refused, dialogProblem: "A channel can only be made for a team you are in." }, false) if !owns
-
-        let kept = access == "private" then "private" else "public"
-        match Conversations.founded(organization.id, title, user.id, access: kept, teamId: teamId) do
-          Ok(channel) => return (Tab { organization: organization.id, conversation: channel.id }, true)
-          Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)
-        end
-      end
-    end
-  end
-
-  # Starts a group chat with the people picked, or opens the one they
-  # already have; with one person picked, the private chat with them.
-  gathered : User -> Tab -> [String] -> (Tab, Bool)
-  foul gathered(user, tab, picked) do
-    let refused = Tab { ...closed(tab), dialog: "group" }
-    match home(user, tab) do
-      None => return (tab, false)
-      Just(organization) => do
-        let others = picked.uniq.filter { |id| id != user.id && member?(organization.id, id) }
-        return (Tab { ...refused, dialogProblem: "Pick at least one person." }, false) if others.empty?
-        return whispered(user, closed(tab), others.first.or("")) if others.count == 1
-
-        match Conversations.among(organization.id, others, user.id) do
-          Ok(chat) => return (Tab { organization: organization.id, conversation: chat.id }, true)
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-    end
-  end
-
-  # Makes the group chat the tab shows a channel, public or private. Whoever
-  # was in it stays in it.
-  promotedTo : User -> Tab -> String -> String -> (Tab, Bool)
-  foul promotedTo(user, tab, title, access) do
-    let refused = Tab { ...closed(tab), dialog: "promote" }
-    let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
-    return (Tab { ...refused, dialogProblem: problems.first.or("") }, false) if !problems.empty?
-
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => do
-        return (closed(tab), false) if !conversation.group?
-        if !App.Services.Authority.canAdminister(user, conversation)
-          return (Tab { ...refused, dialogProblem: "Only an administrator can make this a channel." }, false)
-        end
-
-        let kept = access == "public" then "public" else "private"
-        match Conversations.promoted(conversation.id, title, kept) do
-          Ok(channel) => return (Tab { organization: channel.organizationId, conversation: channel.id }, true)
-          Error(_) => return (Tab { ...refused, dialogProblem: "There is already a channel called ${title}." }, false)
-        end
-      end
-    end
-  end
-
-  # Lets people of the organization into the private channel the tab shows.
-  admittedTo : User -> Tab -> [String] -> (Tab, Bool)
-  foul admittedTo(user, tab, picked) do
-    let refused = Tab { ...closed(tab), dialog: "admit" }
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => do
-        return (closed(tab), false) if !conversation.channel? || conversation.public?
-        if !App.Services.Authority.canAdminister(user, conversation)
-          return (Tab { ...refused, dialogProblem: "Only an administrator of this channel can add people." }, false)
-        end
-
-        let newcomers = picked.uniq.filter do |id|
-          !conversation.admits?(id) && member?(conversation.organizationId, id)
-        end
-        return (Tab { ...refused, dialogProblem: "Pick at least one person who is not in it yet." }, false) if newcomers.empty?
-
-        match Conversations.admitted(conversation.id, newcomers) do
-          Ok(count) => return (Tab { ...closed(tab), notice: count == 1 then "Added one person." else "Added ${count} people." }, true)
-          Error(reason) => return (Tab { ...refused, dialogProblem: reason }, false)
-        end
-      end
-    end
-  end
-
-  # A file somebody has uploaded waits in the tab's message box, to go with
-  # the next message: only one of theirs that has not been sent.
-  shared : User -> Tab -> String -> (Tab, Bool)
-  foul shared(user, tab, id) do
-    match Attachments.single(id) do
-      Ok(Just(file)) => do
-        return (tab, false) if file.userId != user.id || file.sent? || tab.pending.contains?(id)
-        return (Tab { ...tab, pending: (tab.pending + [id]).take(PENDING) }, false)
-      end
-      _ => return (tab, false)
-    end
-  end
-
-  # How many files can go with one message.
-  let PENDING = 10
-
-  sent : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> String -> (Tab, Bool)
-  foul sent(events, statuses, user, tab, body) do
-    # A message needs words, unless files go with it.
-    let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
-    let unfit = tab.pending.empty? || body.chars.count > App.Models.Message.LONGEST
-    return (tab, false) if !problems.empty? && unfit
-
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => do
-        return (tab, false) if !App.Services.Authority.canWrite(user, conversation)
-        # A command for a bot is used, not said; the files waiting stay.
-        if invoked(events, user, conversation, "", body)
-          statuses.lifted(conversation.id, user.id)
-          return (closed(tab), true)
-        end
-        return postedTo(events, statuses, user, tab, conversation, body)
-      end
-    end
-  end
-
-  # A message said in the conversation, with the files waiting in its box.
-  postedTo : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> Conversation -> String -> (Tab, Bool)
-  foul postedTo(events, statuses, user, tab, conversation, body) do
-    match posting(events, user, conversation, body, tab.pending) do
-      Ok(message) => do
-        # Whatever they were said to be doing, they have done.
-        statuses.lifted(conversation.id, user.id)
-        return (Tab { ...closed(tab), pending: [] }, true)
-      end
-      Error(reason) => return (Tab { ...closed(tab), failure: "Not sent: ${reason}" }, false)
-    end
-  end
-
-  # A message, with what goes with it, all or nothing: whoever starts a
-  # thread follows it, the files waiting in the box go with it, and the
-  # draft it was is gone.
-  posting : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> [String] -> Result<Message, String>
-  foul posting(events, user, conversation, body, pending) do
-    let posted : Result<Message, String> = Harmat.Database.transaction do
-      let message : Message = Messages.said(conversation.id, user.id, body, "").try
-      Readings.reached(user.id, Reading {
-        conversationId: conversation.id,
-        threadId: message.id,
-        readAt: message.sentAt
-      }).try
-      Attachments.sent(user.id, pending, conversation.id, message.id).try
-      Drafts.kept(user.id, Draft { conversationId: conversation.id, body: "" }).try
-      Ok(message)
-    end
-    match posted do
-      Ok(message) => happened(events, conversation, "message", message.id, "", message.sentAt, "", body)
-      Error(_) => ()
-    end
-    return posted
-  end
-
-  # Answers a form a message asks. The answer is kept with that message —
-  # it is not a message of its own — and replaces an earlier one this person
-  # gave to the same form. The tab stays as it is.
-  answered : Server<App.Live.Events.Bus> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
-  foul answered(events, user, tab, entries) do
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => match Messages.single(field(entries, "message")) do
-        Ok(Just(message)) => do
-          return (tab, false) if message.conversationId != conversation.id
-
-          match App.Helpers.RichText.answer(message.body, entries) do
-            None => return (tab, false)
-            Just((form, said)) => match Answers.recorded(conversation.organizationId, message, form, user.id, said) do
-              Ok(given) => do
-                # Only the bot whose form it was is told, and it is told only
-                # where to look.
-                happened(events, conversation, "answer", message.id, message.parentId, given.answeredAt, message.userId, "")
-                return (tab, true)
-              end
-              Error(reason) => return (Tab { ...tab, failure: "Not answered: ${reason}" }, false)
-            end
-          end
-        end
-        _ => return (tab, false)
-      end
-    end
-  end
-
-  retitled : User -> Tab -> String -> (Tab, Bool)
-  foul retitled(user, tab, topic) do
-    let problems = Metro.Validation.checked(topicRules, {"topic": topic}).messages
-    return (Tab { ...closed(tab), retitling?: true, failure: problems.first.or("") }, false) if !problems.empty?
-
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => match Conversations.retitled(conversation.id, topic) do
-        Ok(changed) => return (closed(tab), changed)
-        Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
-      end
-    end
-  end
-
-  # A reaction goes on a message of the conversation the tab is showing, and
-  # nowhere else: the message is looked up, and has to belong to it.
-  reacted : User -> Tab -> String -> String -> (Tab, Bool)
-  foul reacted(user, tab, messageId, emoji) do
-    return (tab, false) if !App.Models.Emoji.reaction?(emoji)
-
-    match visible(user, tab) do
-      None => return (tab, false)
-      Just(conversation) => match Messages.single(messageId) do
-        Ok(Just(message)) => do
-          return (tab, false) if message.conversationId != conversation.id
-          match Reactions.flipped(message, user.id, emoji) do
-            Ok(_) => return (tab, true)
-            Error(reason) => return (Tab { ...closed(tab), failure: reason }, false)
-          end
-        end
-        _ => return (tab, false)
       end
     end
   end

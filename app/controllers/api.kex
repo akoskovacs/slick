@@ -305,7 +305,7 @@ foul statusSet(request) do
   let text = request.field("text").or("").trim.replace("\n", " ").take(STATUS_LONGEST)
   let asked = request.field("seconds").or("").to(Integer).or(STATUS_SECONDS)
   let seconds = asked < 1 || asked > STATUS_SECONDS then STATUS_SECONDS else asked
-  App.Live.Chat.noting(statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
+  App.Live.Statuses.say(statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
   hubFor(request).changed("api", "everyone")
   let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
   return request.json(answer)

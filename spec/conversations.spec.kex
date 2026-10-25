@@ -1,0 +1,263 @@
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using Spec.Support, only: [World, stepped, shown, fresh, populated]
+
+# Conversations from a tab. Each example starts from a world of its own
+# (Spec.Support).
+
+# A channel Ada makes in Acme Corp, and the tab showing it.
+foul createChannel(world: World, title: String, access: String) -> Tab do
+  let (made, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", title), ("access", access)])
+  made
+end
+
+# The group chat of Ada, Bob and Eve, from a tab of Ada's.
+foul createTrio(world: World) -> Tab do
+  let (trio, _) = stepped(world, world.ada, Tab {}, [("event", "group-create"), ("person", world.bob.id), ("person", world.eve.id)])
+  trio
+end
+
+describe("App.Live.Conversations, channels") do
+  it("makes a public channel that everyone in the organization sees") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, changed) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      Assert.truthy(changed)
+      Assert.truthy(!random.conversation.empty?)
+      Assert.truthy(shown(world, world.bob, Tab {}).contains?("# random"))
+    end
+  end
+
+  it("refuses a malformed or taken name, with the dialog left open") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (asking, _) = stepped(world, world.ada, Tab {}, [("event", "channel-new")])
+      Assert.truthy(shown(world, world.ada, asking).contains?("aria-label=\"Create a channel\""))
+      let (malformed, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "Bad Name!")])
+      Assert.equal(malformed.dialog, "channel")
+      Assert.truthy(!malformed.dialogProblem.empty?)
+      Assert.truthy(shown(world, world.ada, malformed).contains?("role=\"alert\""))
+      createChannel(world, "random", "public")
+      let (taken, changed) = stepped(world, world.bob, Tab {}, [("event", "channel-create"), ("title", "random")])
+      Assert.falsy(changed)
+      Assert.truthy(taken.dialogProblem.contains?("already"))
+    end
+  end
+
+  it("keeps a private channel to whoever made it, until they add people") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let secret = createChannel(world, "secret", "private")
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?("🔒 secret"))
+      Assert.truthy(shown(world, world.ada, secret).contains?("Private: only its 1 person can read this."))
+      Assert.falsy(shown(world, world.bob, Tab {}).contains?("secret"))
+      Assert.equal(App.Live.Places.visible(world.bob, secret), None)
+      let (bobOpens, _) = stepped(world, world.bob, Tab {}, [("event", "conversation-open"), ("id", secret.conversation)])
+      Assert.truthy(bobOpens.conversation != secret.conversation)
+      let (_, bobSent) = stepped(world, world.bob, secret, [("event", "send"), ("body", "let me in")])
+      Assert.falsy(bobSent)
+    end
+  end
+
+  it("adds people of the organization to a private channel, and nobody to a public one") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let secret = createChannel(world, "secret", "private")
+      let admitting = shown(world, world.ada, Tab { ...secret, dialog: "admit" })
+      Assert.truthy(admitting.contains?("value=\"${world.bob.id}\""))
+      Assert.falsy(admitting.contains?("value=\"${world.ada.id}\""))
+      let (added, changed) = stepped(world, world.ada, secret, [("event", "channel-add"), ("person", world.bob.id), ("person", world.mal.id)])
+      Assert.truthy(changed)
+      Assert.truthy(added.notice.contains?("Added one person."))
+      Assert.truthy(App.Live.Places.visible(world.bob, secret).set?)
+      Assert.truthy(shown(world, world.bob, Tab {}).contains?("🔒 secret"))
+      Assert.equal(App.Live.Places.visible(world.mal, Tab { conversation: secret.conversation }), None)
+      Assert.equal(App.Live.Places.visible(world.eve, secret), None)
+      let (_, publicAdded) = stepped(world, world.ada, Tab {}, [("event", "channel-add"), ("person", world.eve.id)])
+      Assert.falsy(publicAdded)
+    end
+  end
+
+  it("lets only an administrator of a private channel add people to it") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let secret = createChannel(world, "secret", "private")
+      stepped(world, world.ada, secret, [("event", "channel-add"), ("person", world.bob.id)])
+      let (bobTries, changed) = stepped(world, world.bob, secret, [("event", "channel-add"), ("person", world.eve.id)])
+      Assert.falsy(changed)
+      Assert.truthy(bobTries.dialogProblem.contains?("Only an administrator"))
+      Assert.equal(App.Live.Places.visible(world.eve, secret), None)
+    end
+  end
+end
+
+describe("App.Live.Conversations, private chats") do
+  it("opens the same private chat from either side") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (adas, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      let (bobs, _) = stepped(world, world.bob, Tab {}, [("event", "direct-open"), ("user", world.ada.id)])
+      Assert.truthy(!adas.conversation.empty?)
+      Assert.equal(adas.conversation, bobs.conversation)
+      stepped(world, world.ada, adas, [("event", "send"), ("body", "between us")])
+      Assert.truthy(shown(world, world.bob, bobs).contains?("between us"))
+      Assert.truthy(shown(world, world.ada, adas).contains?("only the two of you"))
+    end
+  end
+
+  it("keeps a private chat from anybody else, its id in hand") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (adas, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      stepped(world, world.ada, adas, [("event", "send"), ("body", "between us")])
+      let eveTries = Tab { conversation: adas.conversation }
+      Assert.equal(App.Live.Places.visible(world.eve, eveTries), None)
+      Assert.falsy(shown(world, world.eve, eveTries).contains?("between us"))
+      let (eveOpened, _) = stepped(world, world.eve, Tab {}, [("event", "conversation-open"), ("id", adas.conversation)])
+      Assert.equal(eveOpened.conversation, "")
+      let (_, eveSent) = stepped(world, world.eve, eveTries, [("event", "send"), ("body", "let me in")])
+      Assert.falsy(eveSent)
+      Assert.falsy(shown(world, world.ada, adas).contains?("let me in"))
+    end
+  end
+
+  it("gives somebody a space of their own, that nobody else reads") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (alone, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.ada.id)])
+      Assert.truthy(!alone.conversation.empty?)
+      let (_, sent) = stepped(world, world.ada, alone, [("event", "send"), ("body", "a note to self")])
+      Assert.truthy(sent)
+      let own = shown(world, world.ada, alone)
+      Assert.truthy(own.contains?("This is your space"))
+      Assert.truthy(own.contains?("a note to self"))
+      Assert.truthy(own.contains?("Ada (you)"))
+      Assert.truthy(own.contains?("data-live-path=\"/acmecorp/dm/${world.ada.id}\""))
+      Assert.equal(App.Live.Chat.arrived(world.ada, "/acmecorp/dm/${world.ada.id}").conversation, alone.conversation)
+      Assert.equal(App.Live.Places.visible(world.bob, alone), None)
+      Assert.falsy(shown(world, world.ada, Tab {}).contains?("This is your space"))
+    end
+  end
+
+  it("opens no private chat with somebody outside the organization") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      Assert.equal(malTries.conversation, "")
+    end
+  end
+end
+
+describe("App.Live.Conversations, group chats") do
+  it("starts one with the people picked, the same one for the same people") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (nobody, nobodyChanged) = stepped(world, world.ada, Tab {}, [("event", "group-create")])
+      Assert.falsy(nobodyChanged)
+      Assert.truthy(nobody.dialogProblem.contains?("Pick at least one person"))
+      let (trio, changed) = stepped(world, world.ada, Tab {}, [("event", "group-create"), ("person", world.bob.id), ("person", world.eve.id), ("person", world.mal.id)])
+      Assert.truthy(changed)
+      let (again, _) = stepped(world, world.bob, Tab {}, [("event", "group-create"), ("person", world.eve.id), ("person", world.ada.id)])
+      Assert.equal(again.conversation, trio.conversation)
+      Assert.equal(App.Live.Places.visible(world.mal, Tab { conversation: trio.conversation }), None)
+    end
+  end
+
+  it("opens the private chat when only one person is picked") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (pair, _) = stepped(world, world.ada, Tab {}, [("event", "group-create"), ("person", world.bob.id)])
+      Assert.truthy(App.Live.Places.visible(world.ada, pair).map { |chat| chat.direct? }.or(false))
+    end
+  end
+
+  it("shows one to its people only, at an address of its own") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let trio = createTrio(world)
+      stepped(world, world.bob, trio, [("event", "send"), ("body", "the three of us")])
+      Assert.truthy(shown(world, world.ada, Tab {}).contains?(">Bob, Eve"))
+      let evesSidebar = shown(world, world.eve, Tab {})
+      Assert.truthy(evesSidebar.contains?(">Ada, Bob"))
+      Assert.truthy(evesSidebar.contains?("aria-label=\"1 unread\""))
+      let evesView = shown(world, world.eve, trio)
+      Assert.truthy(evesView.contains?("the three of us"))
+      Assert.truthy(evesView.contains?("Private: only the 3 of you can read this."))
+      let address = "/acmecorp/groups/${trio.conversation}"
+      Assert.truthy(evesView.contains?("data-live-path=\"${address}\""))
+      Assert.equal(App.Live.Chat.arrived(world.eve, address).conversation, trio.conversation)
+      Assert.equal(App.Live.Chat.arrived(world.mal, address).conversation, "")
+    end
+  end
+
+  it("makes one a channel, keeping its people and what was said") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      createChannel(world, "secret", "private")
+      let trio = createTrio(world)
+      stepped(world, world.bob, trio, [("event", "send"), ("body", "the three of us")])
+      let (_, malformed) = stepped(world, world.ada, trio, [("event", "group-promote"), ("title", "Bad Name!")])
+      Assert.falsy(malformed)
+      let (_, taken) = stepped(world, world.ada, trio, [("event", "group-promote"), ("title", "secret"), ("access", "private")])
+      Assert.falsy(taken)
+      let (promoted, changed) = stepped(world, world.ada, trio, [("event", "group-promote"), ("title", "trio"), ("access", "private")])
+      Assert.truthy(changed)
+      Assert.equal(promoted.conversation, trio.conversation)
+      let channel = shown(world, world.bob, promoted)
+      Assert.truthy(channel.contains?("🔒 trio"))
+      Assert.truthy(channel.contains?("the three of us"))
+      Assert.truthy(channel.contains?("data-live-path=\"/acmecorp/channels/trio\""))
+      Assert.falsy(shown(world, world.ada, Tab {}).contains?(">Bob, Eve"))
+      let (_, twice) = stepped(world, world.ada, promoted, [("event", "group-promote"), ("title", "trio-two")])
+      Assert.falsy(twice)
+    end
+  end
+end
+
+describe("App.Live.Conversations, topics") do
+  it("says what a channel is about") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let random = createChannel(world, "random", "public")
+      let (_, changed) = stepped(world, world.bob, random, [("event", "topic-set"), ("topic", "Anything goes :tada:")])
+      Assert.truthy(changed)
+      Assert.truthy(shown(world, world.ada, random).contains?("Anything goes 🎉"))
+    end
+  end
+
+  it("sets no topic on a private chat, nor from outside a conversation") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (adas, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      let (_, ownTopic) = stepped(world, world.ada, adas, [("event", "topic-set"), ("topic", "x")])
+      Assert.falsy(ownTopic)
+      let (_, eveTopic) = stepped(world, world.eve, Tab { conversation: adas.conversation }, [("event", "topic-set"), ("topic", "mine now")])
+      Assert.falsy(eveTopic)
+    end
+  end
+end
+
+describe("App.Live.Conversations, other organizations") do
+  it("opens nothing of an organization somebody is not in, id in hand") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let random = createChannel(world, "random", "public")
+      stepped(world, world.bob, random, [("event", "topic-set"), ("topic", "Anything goes")])
+      let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
+      Assert.equal(App.Live.Places.visible(world.mal, forged), None)
+      Assert.falsy(shown(world, world.mal, forged).contains?("Anything goes"))
+      let (malOpened, _) = stepped(world, world.mal, Tab {}, [("event", "conversation-open"), ("id", random.conversation)])
+      Assert.equal(malOpened.conversation, "")
+    end
+  end
+
+  it("keeps a channel name to its organization") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let acmes = createChannel(world, "random", "public")
+      let (others, changed) = stepped(world, world.ada, world.other, [("event", "channel-create"), ("title", "random")])
+      Assert.truthy(changed)
+      Assert.truthy(others.conversation != acmes.conversation)
+    end
+  end
+end

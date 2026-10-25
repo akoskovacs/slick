@@ -1,0 +1,74 @@
+# Slash commands: what the bots of a conversation answer to, and using one
+# from a message box.
+module App.Live.Commands
+
+using App.Models.Command, only: [Command]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Draft, only: [Draft]
+using App.Models.Invocation, only: [Invocation]
+using App.Models.User, only: [User]
+using DB.Repositories.Drafts, as: Drafts
+using DB.Repositories.Users, as: Users
+
+# The slash commands somebody can use in a conversation: those of every bot
+# of the organization in a public channel, those of the bots taking part
+# in a private channel or a group chat, those of the bot in a private
+# chat with one, and none in a chat with a person.
+available : User -> Conversation -> [User] -> [Command]
+foul available(user, conversation, people) do
+  let bots = people.filter { |person| person.bot? }
+  let other = conversation.counterpart(user.id)
+  let listening = if conversation.direct?
+    bots.filter { |bot| bot.id == other }
+  else
+    bots.filter { |bot| conversation.admits?(bot.id) }
+  end
+  return [] if listening.empty?
+  return DB.Repositories.Commands.of(listening.map { |bot| bot.id }).or([])
+end
+
+# Whether what was sent is a slash command for a bot in reach — and if so,
+# notes it as used, and clears the box it was written in. It is one when
+# it starts with a command a bot here has declared: `/mode` in a bot's
+# private chat; `@opencode /mode auto` in a channel, or `/mode` alone
+# when only one bot here answers to it. Anything else is a message.
+run : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> String -> Bool
+foul run(events, user, conversation, threadId, body) do
+  let people : [User] = Users.everyone.or([])
+  let commands = available(user, conversation, people)
+  return false if commands.empty?
+
+  let text = body.trim
+  let bots = people.filter { |person| commands.any? { |command| command.botId == person.id } }
+  let addressed = bots.find { |bot| text.startsWith?("@${bot.shown} ") }
+  let rest = addressed.map { |bot| text.drop(bot.shown.count + 1).trim }.or(text)
+  return false if !rest.startsWith?("/")
+
+  let name = rest.drop(1).split(" ").first.or("").lowerCase
+  let candidates = commands.filter do |command|
+    command.name == name && addressed.map { |bot| command.botId == bot.id }.or(true)
+  end
+  return false if candidates.count != 1
+
+  let command = candidates.first.or(Command { botId: "", name: "" })
+  let moment = Metro.Clock.milliseconds()
+  let used = Invocation {
+    id: Metro.Id.generate(prefix: "i"),
+    organizationId: conversation.organizationId,
+    conversationId: conversation.id,
+    threadId: threadId,
+    botId: command.botId,
+    userId: user.id,
+    command: command.name,
+    arguments: rest.drop(1 + name.count).trim,
+    invokedAt: moment
+  }
+  let kept : Integer or! String = Harmat.Database.transaction do
+    DB.Repositories.Invocations.recorded(used).try
+    Drafts.kept(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
+  end
+  if kept.ok?
+    App.Live.Events.publish(events, conversation, "command", "", used.threadId, used.invokedAt, command.botId, "")
+  end
+  return kept.ok?
+end

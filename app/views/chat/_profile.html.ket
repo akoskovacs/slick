@@ -35,7 +35,7 @@ params: [card: Card]
       <button type="button" data-event="status">Set a status…</button>
     <% else %>
       <button type="button" class="primary"
-        data-event="direct" data-user="<%= card.key %>">Message</button>
+        data-event="direct-open" data-user="<%= card.key %>">Message</button>
     <% end %>
     </div>
     <% if card.manageable? %>

@@ -27,12 +27,12 @@ params: [bubble: Bubble, chips: String, offers: String, attached: String]
   <% end %>
   <div class="reactions"><%== chips %></div>
   <% if !bubble.answers.empty? %>
-    <button type="button" class="answers" data-event="thread" data-message="<%= bubble.key %>"><%= bubble.answers %></button>
+    <button type="button" class="answers" data-event="thread-open" data-message="<%= bubble.key %>"><%= bubble.answers %></button>
   <% end %>
   </div>
   <div class="offers"><%== offers %>
     <% if bubble.threadable? %>
-      <button type="button" class="chip" data-event="thread" data-message="<%= bubble.key %>" title="Reply in thread">💬</button>
+      <button type="button" class="chip" data-event="thread-open" data-message="<%= bubble.key %>" title="Reply in thread">💬</button>
     <% end %>
   </div>
 </article>

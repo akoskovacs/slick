@@ -274,7 +274,7 @@ describe("Slick") do
       # It is told which private chats it has, once somebody has opened one.
       let before = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, ""))
       Assert.equal(before.payload.to(String).or(""), "[]")
-      stepped(statuses, ada, Tab {}, [("event", "direct"), ("user", claude.id)])
+      stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", claude.id)])
       let chats = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, "")).payload.to(String).or("")
       Assert.truthy(chats.contains?("\"person\":\"${ada.id}\"") && chats.contains?("\"name\":\"Ada\""))
 
@@ -294,7 +294,7 @@ describe("Slick") do
       end
       let bob = seeded("bob@example.com")
       let eve = seeded("eve@example.com")
-      let (huddle, _) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id), ("person", claude.id)])
+      let (huddle, _) = stepped(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", claude.id)])
       let groups = site.call(Metro.WebRequest.asked("GET", "/api/acme/groups", asBot, "")).payload.to(String).or("")
       Assert.truthy(groups.contains?("\"id\":\"${huddle.conversation}\"") && groups.contains?("\"Ada\"") && groups.contains?("\"Bob\""))
       let groupMessages = "/api/acme/groups/${huddle.conversation}/messages"
@@ -303,97 +303,8 @@ describe("Slick") do
       stepped(statuses, ada, huddle, [("event", "send"), ("body", "@claude /mode quick")])
       let huddled = site.call(Metro.WebRequest.asked("GET", "/api/acme/invocations?after=0", asBot, "")).payload.to(String).or("")
       Assert.truthy(huddled.contains?("\"group\":\"${huddle.conversation}\""))
-      let (aside, _) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id), ("person", eve.id)])
+      let (aside, _) = stepped(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", eve.id)])
       Assert.equal(site.call(Metro.WebRequest.asked("GET", "/api/acme/groups/${aside.conversation}/messages", asBot, "")).code, 404)
-    end
-    FS.File.delete(file)
-  end
-
-  it("keeps private channels, group chats and teams to the people in them") do
-    let file = "db/spec_${Metro.Clock.milliseconds()}.sqlite3"
-    let store = DB.Store.started(Config.Database.sqlite(file)).try
-    DB.Store.migrate(store).try
-    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
-      let statuses = Process.spawn(Metro.Live.Presence.Presence {})
-      let member = do |name, email|
-        let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
-        let user : User = App.Services.Authentication.current(Just(token)).try
-        user
-      end
-      let ada = member("Ada", "ada@example.com")
-      let bob = member("Bob", "bob@example.com")
-      let eve = member("Eve", "eve@example.com")
-      let mal = member("Mallory", "mal@example.com")
-      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "organization-create"), ("name", "Acme")])
-      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
-      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
-      stepped(statuses, mal, Tab {}, [("event", "organization-create"), ("name", "Other")])
-
-      # A private channel: only whoever made it, until they add people.
-      let (secret, made) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "secret"), ("access", "private")])
-      Assert.truthy(made)
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("🔒 secret"))
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("secret"))
-      Assert.equal(App.Live.Places.visible(bob, secret), None)
-      let (bobOpens, _) = stepped(statuses, bob, Tab {}, [("event", "open"), ("id", secret.conversation)])
-      Assert.truthy(bobOpens.conversation != secret.conversation)
-      let (_, bobSent) = stepped(statuses, bob, secret, [("event", "send"), ("body", "let me in")])
-      Assert.falsy(bobSent)
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, secret).contains?("Private: only its 1 person can read this."))
-      let admitting = App.Live.Chat.markup(statuses, ada, Tab { ...secret, dialog: "admit" })
-      Assert.truthy(admitting.contains?("value=\"${bob.id}\""))
-      Assert.falsy(admitting.contains?("value=\"${ada.id}\""))
-      let (_, bobAdded) = stepped(statuses, ada, secret, [("event", "admit-set"), ("person", bob.id), ("person", mal.id)])
-      Assert.truthy(bobAdded)
-      Assert.truthy(App.Live.Places.visible(bob, secret).set?)
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("🔒 secret"))
-      Assert.equal(App.Live.Places.visible(mal, Tab { conversation: secret.conversation }), None)
-      Assert.equal(App.Live.Places.visible(eve, secret), None)
-      # A public channel has nobody to add: everyone is in it.
-      let (_, publicAdded) = stepped(statuses, ada, Tab {}, [("event", "admit-set"), ("person", eve.id)])
-      Assert.falsy(publicAdded)
-
-      # A group chat: the people picked and whoever picked them. The same
-      # people have one; picking one person is a private chat.
-      let (_, nobody) = stepped(statuses, ada, Tab {}, [("event", "gather")])
-      Assert.falsy(nobody)
-      let (trio, started) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id), ("person", eve.id), ("person", mal.id)])
-      Assert.truthy(started)
-      let (again, _) = stepped(statuses, bob, Tab {}, [("event", "gather"), ("person", eve.id), ("person", ada.id)])
-      Assert.equal(again.conversation, trio.conversation)
-      let (pair, _) = stepped(statuses, ada, Tab {}, [("event", "gather"), ("person", bob.id)])
-      Assert.truthy(App.Live.Places.visible(ada, pair).map { |chat| chat.direct? }.or(false))
-      stepped(statuses, bob, trio, [("event", "send"), ("body", "the three of us")])
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?(">Bob, Eve"))
-      let eveSees = App.Live.Chat.markup(statuses, eve, Tab {})
-      Assert.truthy(eveSees.contains?(">Ada, Bob"))
-      Assert.truthy(eveSees.contains?("aria-label=\"1 unread\""))
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("the three of us"))
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("Private: only the 3 of you can read this."))
-      Assert.equal(App.Live.Places.visible(mal, Tab { conversation: trio.conversation }), None)
-      # It has an address, of its own organization, for the people in it.
-      let address = "/acme/groups/${trio.conversation}"
-      Assert.equal(App.Live.Chat.arrived(eve, address).conversation, trio.conversation)
-      Assert.equal(App.Live.Chat.arrived(mal, address).conversation, "")
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, trio).contains?("data-live-path=\"${address}\""))
-
-      # A group chat becomes a channel, and keeps its people and what was said.
-      let (_, badName) = stepped(statuses, ada, trio, [("event", "promote-set"), ("title", "Bad Name!")])
-      Assert.falsy(badName)
-      let (_, taken) = stepped(statuses, ada, trio, [("event", "promote-set"), ("title", "secret"), ("access", "private")])
-      Assert.falsy(taken)
-      let (promoted, changed) = stepped(statuses, ada, trio, [("event", "promote-set"), ("title", "trio"), ("access", "private")])
-      Assert.truthy(changed)
-      Assert.equal(promoted.conversation, trio.conversation)
-      let channel = App.Live.Chat.markup(statuses, bob, promoted)
-      Assert.truthy(channel.contains?("🔒 trio"))
-      Assert.truthy(channel.contains?("the three of us"))
-      Assert.truthy(channel.contains?("data-live-path=\"/acme/channels/trio\""))
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?(">Bob, Eve"))
-      let (_, twice) = stepped(statuses, ada, promoted, [("event", "promote-set"), ("title", "trio-two")])
-      Assert.falsy(twice)
-
-      Assert.truthy(acme.organization != "")
     end
     FS.File.delete(file)
   end
@@ -429,7 +340,7 @@ describe("Slick") do
       # Mallory is registered, in an organization of her own, and not in Acme.
       let malToken = App.Services.Authentication.register("Mallory", "mal@example.com", "a fourth long phrase").try
       let mal : User = App.Services.Authentication.current(Just(malToken)).try
-      let (inOther, _) = stepped(statuses, mal, Tab {}, [("event", "organization-create"), ("name", "Other")])
+      stepped(statuses, mal, Tab {}, [("event", "organization-create"), ("name", "Other")])
 
       # Everyone starts in their organization's #general.
       let first = App.Live.Chat.markup(statuses, ada, Tab {})
@@ -463,9 +374,9 @@ describe("Slick") do
       Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("is typing…"))
       stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "typed and sent")])
       Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("is typing…"))
-      Assert.truthy(App.Live.Chat.noting(statuses, eve, Tab {}, "Deploying <now>", 30000))
+      Assert.truthy(App.Live.Statuses.say(statuses, eve, Tab {}, "Deploying <now>", 30000))
       Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("<strong>Eve</strong> Deploying &lt;now&gt;…"))
-      App.Live.Chat.noting(statuses, eve, Tab {}, "", 0)
+      App.Live.Statuses.say(statuses, eve, Tab {}, "", 0)
       Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("Deploying"))
       # A note that has lapsed is not shown.
       statuses.noted("general", "nobody", "old news", 1)
@@ -484,12 +395,12 @@ describe("Slick") do
           .or("")
       end
       Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("entry online"))
-      App.Live.Chat.arriving(statuses, ada, "one")
-      App.Live.Chat.arriving(statuses, ada, "two")
+      App.Live.Statuses.arrive(statuses, ada, "one")
+      App.Live.Statuses.arrive(statuses, ada, "two")
       Assert.truthy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
-      App.Live.Chat.leaving(statuses, ada, "one")
+      App.Live.Statuses.leave(statuses, ada, "one")
       Assert.truthy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
-      App.Live.Chat.leaving(statuses, ada, "two")
+      App.Live.Statuses.leave(statuses, ada, "two")
       Assert.falsy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
 
       # A status: an emoji Slick offers and a few words, beside the name.
@@ -505,19 +416,9 @@ describe("Slick") do
       Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("🌴"))
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("<p class=\"menu-status\">No status set</p>"))
 
-      # A channel: created, refused when malformed or taken, visible to all.
-      let (refused, _) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "Bad Name!")])
-      Assert.equal(refused.dialog, "channel")
-      Assert.truthy(!refused.dialogProblem.empty?)
-      let (asking, _) = stepped(statuses, ada, Tab {}, [("event", "found")])
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, asking).contains?("aria-label=\"Create a channel\""))
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, refused).contains?("role=\"alert\""))
-      let (inRandom, created) = stepped(statuses, ada, Tab {}, [("event", "create"), ("title", "random")])
-      Assert.truthy(created)
-      Assert.truthy(inRandom.conversation != "general")
-      let (taken, _) = stepped(statuses, bob, Tab {}, [("event", "create"), ("title", "random")])
-      Assert.truthy(taken.dialogProblem.contains?("already"))
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("# random"))
+      # #random, for what follows; spec/conversations.spec.kex has channels,
+      # private chats, group chats and topics.
+      let (inRandom, _) = stepped(statuses, ada, Tab {}, [("event", "channel-create"), ("title", "random")])
 
       # A form in a message is answered by using it. The answer is kept with
       # the message and shown under its form: it is not a message, and
@@ -547,35 +448,11 @@ describe("Slick") do
       stepped(statuses, eve, inRandom, [("event", "send"), ("body", "Lunch: soup")])
       Assert.falsy(App.Live.Chat.markup(statuses, bob, inRandom).contains?("<strong>Eve</strong> <span>soup</span>"))
 
-      # A topic, on a channel.
-      let (_, topicChanged) = stepped(statuses, bob, inRandom, [("event", "topic"), ("topic", "Anything goes :tada:")])
-      Assert.truthy(topicChanged)
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("Anything goes 🎉"))
+      stepped(statuses, bob, inRandom, [("event", "topic-set"), ("topic", "Anything goes :tada:")])
 
-      # A private chat between Ada and Bob: the same one from either side.
-      let (adaPrivate, _) = stepped(statuses, ada, Tab {}, [("event", "direct"), ("user", bob.id)])
-      let (bobPrivate, _) = stepped(statuses, bob, Tab {}, [("event", "direct"), ("user", ada.id)])
-      Assert.equal(adaPrivate.conversation, bobPrivate.conversation)
-      Assert.truthy(adaPrivate.conversation != "general")
+      # A private chat between Ada and Bob.
+      let (adaPrivate, _) = stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", bob.id)])
       stepped(statuses, ada, adaPrivate, [("event", "send"), ("body", "between us")])
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, bobPrivate).contains?("between us"))
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, adaPrivate).contains?("only the two of you"))
-
-      # Eve cannot read it, open it, write into it or change it, id in hand.
-      let eveTries = Tab { conversation: adaPrivate.conversation }
-      Assert.falsy(App.Live.Chat.markup(statuses, eve, eveTries).contains?("between us"))
-      let (eveOpened, _) = stepped(statuses, eve, Tab {}, [("event", "open"), ("id", adaPrivate.conversation)])
-      Assert.equal(eveOpened.conversation, "")
-      let (_, eveSent) = stepped(statuses, eve, eveTries, [("event", "send"), ("body", "let me in")])
-      Assert.falsy(eveSent)
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, adaPrivate).contains?("let me in"))
-      let (_, eveTopic) = stepped(statuses, eve, eveTries, [("event", "topic"), ("topic", "mine now")])
-      Assert.falsy(eveTopic)
-      Assert.equal(App.Live.Places.visible(eve, eveTries), None)
-
-      # A private chat has no topic to set, even for its own people.
-      let (_, privateTopic) = stepped(statuses, ada, adaPrivate, [("event", "topic"), ("topic", "x")])
-      Assert.falsy(privateTopic)
 
       # Reactions: on, counted, off again; not from outside the conversation.
       let general = App.Live.Chat.markup(statuses, bob, Tab {})
@@ -593,7 +470,7 @@ describe("Slick") do
       Assert.falsy(wrongPlace)
 
       # Threads: replies stay out of the conversation, which counts them.
-      let (bobThread, _) = stepped(statuses, bob, Tab {}, [("event", "thread"), ("message", messageId)])
+      let (bobThread, _) = stepped(statuses, bob, Tab {}, [("event", "thread-open"), ("message", messageId)])
       Assert.equal(bobThread.thread, messageId)
       Assert.truthy(App.Live.Chat.markup(statuses, bob, bobThread).contains?("No replies yet"))
       let (_, replySent) = stepped(statuses, bob, bobThread, [("event", "reply"), ("body", "a reply in the thread")])
@@ -611,7 +488,7 @@ describe("Slick") do
       # conversation does not open here.
       let (_, stray) = stepped(statuses, bob, Tab {}, [("event", "reply"), ("body", "lost")])
       Assert.falsy(stray)
-      let (elsewhere, _) = stepped(statuses, bob, inRandom, [("event", "thread"), ("message", messageId)])
+      let (elsewhere, _) = stepped(statuses, bob, inRandom, [("event", "thread-open"), ("message", messageId)])
       Assert.equal(elsewhere.thread, "")
       # Sending in the conversation leaves the thread open beside it.
       let (stillOpen, _) = stepped(statuses, bob, bobThread, [("event", "send"), ("body", "back in the channel")])
@@ -644,24 +521,14 @@ describe("Slick") do
       Assert.equal(malSwitched.organization, "")
       let malForged = Tab { organization: inAcme.organization, conversation: inRandom.conversation }
       Assert.equal(App.Live.Places.visible(mal, malForged), None)
-      Assert.falsy(App.Live.Chat.markup(statuses, mal, malForged).contains?("Anything goes"))
       let (_, malSent) = stepped(statuses, mal, malForged, [("event", "send"), ("body", "mallory was here")])
       Assert.falsy(malSent)
-      let (malOpened, _) = stepped(statuses, mal, Tab {}, [("event", "open"), ("id", inRandom.conversation)])
-      Assert.equal(malOpened.conversation, "")
-      let (malDirect, _) = stepped(statuses, mal, Tab {}, [("event", "direct"), ("user", ada.id)])
-      Assert.equal(malDirect.conversation, "")
       let (_, malReacted) = stepped(statuses, mal, malForged, [("event", "react"), ("message", messageId), ("emoji", "🎉")])
       Assert.falsy(malReacted)
       Assert.falsy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("mallory was here"))
 
-      # Ada is in Mallory's organization too, where the same channel name is
-      # a different channel.
+      # Ada is in Mallory's organization too.
       stepped(statuses, mal, Tab {}, [("event", "invite-send"), ("email", "ada@example.com")])
-      let (adaInOther, _) = stepped(statuses, ada, Tab {}, [("event", "organization-switch"), ("id", inOther.organization)])
-      let (otherRandom, otherMade) = stepped(statuses, ada, adaInOther, [("event", "create"), ("title", "random")])
-      Assert.truthy(otherMade)
-      Assert.truthy(otherRandom.conversation != inRandom.conversation)
 
       # A bot of Bob's, for his profile below, and its message in #general,
       # which the unread counts below include; spec/bots.spec.kex has the rest.
@@ -669,21 +536,9 @@ describe("Slick") do
       let deployBot : User = App.Services.Bots.bearer(Just("Bearer ${botTab.secret}")).try
       stepped(statuses, deployBot, Tab {}, [("event", "send"), ("body", "deployed :rocket:")])
 
-      # Somebody can write to themselves, to try things out; nobody else
-      # can read it, and it is explained to them.
-      let (adaAlone, _) = stepped(statuses, ada, Tab {}, [("event", "direct"), ("user", ada.id)])
-      Assert.truthy(!adaAlone.conversation.empty?)
-      let (_, aloneSent) = stepped(statuses, ada, adaAlone, [("event", "send"), ("body", "a note to self")])
-      Assert.truthy(aloneSent)
-      let ownSpace = App.Live.Chat.markup(statuses, ada, adaAlone)
-      Assert.truthy(ownSpace.contains?("This is your space"))
-      Assert.truthy(ownSpace.contains?("a note to self"))
-      Assert.truthy(ownSpace.contains?("Ada (you)"))
-      Assert.truthy(ownSpace.contains?("data-live-path=\"/acmecorp/dm/${ada.id}\""))
-      Assert.equal(App.Live.Chat.arrived(ada, "/acmecorp/dm/${ada.id}").conversation, adaAlone.conversation)
-      Assert.equal(App.Live.Places.visible(bob, adaAlone), None)
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, adaAlone).contains?("a note to self"))
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("This is your space"))
+      # A note Ada keeps for herself.
+      let (adaAlone, _) = stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", ada.id)])
+      stepped(statuses, ada, adaAlone, [("event", "send"), ("body", "a note to self")])
 
       # Unread: what came since somebody last looked is counted beside the
       # place, in the title, and in the rail for another organization; looking
@@ -720,7 +575,7 @@ describe("Slick") do
       App.Live.Chat.markup(statuses, eve, bobThread)
       Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
       # A private chat is counted by the person it is with.
-      let (bobToEve, _) = stepped(statuses, bob, Tab {}, [("event", "direct"), ("user", eve.id)])
+      let (bobToEve, _) = stepped(statuses, bob, Tab {}, [("event", "direct-open"), ("user", eve.id)])
       stepped(statuses, bob, bobToEve, [("event", "send"), ("body", "psst, eve")])
       Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"count\""))
 
@@ -741,29 +596,29 @@ describe("Slick") do
 
       # Drafts: what is written and not sent is kept, for its writer alone,
       # until it is sent; a conversation with one is marked in the sidebar.
-      stepped(statuses, ada, Tab {}, [("event", "draft"), ("place", "send"), ("body", "half a <tho")])
+      stepped(statuses, ada, Tab {}, [("event", "draft-save"), ("place", "send"), ("body", "half a <tho")])
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("autofocus>half a &lt;tho</textarea>"))
       Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("half a"))
       Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("# general\n      <span class=\"drafted\""))
       Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("class=\"drafted\""))
-      stepped(statuses, ada, Tab {}, [("event", "draft"), ("place", "send"), ("body", "half a thought")])
+      stepped(statuses, ada, Tab {}, [("event", "draft-save"), ("place", "send"), ("body", "half a thought")])
       Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]).count, 1)
       # A thread's box keeps its own.
       let adaThread = Tab { ...bobThread }
-      stepped(statuses, ada, adaThread, [("event", "draft"), ("place", "reply"), ("body", "a reply, later")])
+      stepped(statuses, ada, adaThread, [("event", "draft-save"), ("place", "reply"), ("body", "a reply, later")])
       let bothBoxes = App.Live.Chat.markup(statuses, ada, adaThread)
       Assert.truthy(bothBoxes.contains?(">a reply, later</textarea>"))
       Assert.truthy(bothBoxes.contains?(">half a thought</textarea>"))
       stepped(statuses, ada, adaThread, [("event", "reply"), ("body", "a reply, now")])
       Assert.falsy(App.Live.Chat.markup(statuses, ada, adaThread).contains?("a reply, later"))
       # A private chat is marked by the person it is with.
-      stepped(statuses, ada, adaPrivate, [("event", "draft"), ("place", "send"), ("body", "psst")])
+      stepped(statuses, ada, adaPrivate, [("event", "draft-save"), ("place", "send"), ("body", "psst")])
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"drafted\""))
-      stepped(statuses, ada, adaPrivate, [("event", "draft"), ("place", "send"), ("body", "  ")])
+      stepped(statuses, ada, adaPrivate, [("event", "draft-save"), ("place", "send"), ("body", "  ")])
       # Sending takes it away; nobody keeps a draft where they cannot write.
       stepped(statuses, ada, Tab {}, [("event", "send"), ("body", "half a thought, finished")])
       Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]), [])
-      stepped(statuses, mal, malForged, [("event", "draft"), ("place", "send"), ("body", "sneaky")])
+      stepped(statuses, mal, malForged, [("event", "draft-save"), ("place", "send"), ("body", "sneaky")])
       Assert.equal(DB.Repositories.Drafts.pending(mal.id).or([]), [])
 
       # Files: uploaded, waiting in the message box, sent with a message,
@@ -792,9 +647,9 @@ describe("Slick") do
           .or("")
         Assert.truthy(fileId.startsWith?("f"))
         # Nobody shares a file that is not theirs.
-        let (bobTakes, _) = stepped(statuses, bob, Tab {}, [("event", "share"), ("file", fileId)])
+        let (bobTakes, _) = stepped(statuses, bob, Tab {}, [("event", "file-attach"), ("file", fileId)])
         Assert.equal(bobTakes.pending, [])
-        let (adaShares, _) = stepped(statuses, ada, Tab {}, [("event", "share"), ("file", fileId)])
+        let (adaShares, _) = stepped(statuses, ada, Tab {}, [("event", "file-attach"), ("file", fileId)])
         Assert.equal(adaShares.pending, [fileId])
         Assert.truthy(App.Live.Chat.markup(statuses, ada, adaShares).contains?("<strong>notes.txt</strong>"))
         # Before it is sent, only its uploader can fetch it.
@@ -825,7 +680,7 @@ describe("Slick") do
         end
         Assert.equal([28, 4312, 1536000, 2500000000].map { |count| sizedAs(count) }, ["28 B", "4.3 KB", "1.5 MB", "2.5 GB"])
         # A file once sent cannot be sent again.
-        let (again, _) = stepped(statuses, ada, Tab {}, [("event", "share"), ("file", fileId)])
+        let (again, _) = stepped(statuses, ada, Tab {}, [("event", "file-attach"), ("file", fileId)])
         Assert.equal(again.pending, [])
       end
       FS.Directory.deleteAll(files)
@@ -837,7 +692,7 @@ describe("Slick") do
       let bobCard = App.Live.Chat.markup(statuses, ada, bobProfile)
       Assert.truthy(bobCard.contains?("aria-label=\"Profile of Bob\""))
       Assert.truthy(bobCard.contains?("mailto:bob@example.com"))
-      Assert.truthy(bobCard.contains?("data-event=\"direct\" data-user=\"${bob.id}\""))
+      Assert.truthy(bobCard.contains?("data-event=\"direct-open\" data-user=\"${bob.id}\""))
       Assert.truthy(bobCard.contains?("data-event=\"profile\" data-user=\"${deployBot.id}\""))
       let (botProfile, _) = stepped(statuses, ada, Tab {}, [("event", "profile"), ("user", deployBot.id)])
       let botCard = App.Live.Chat.markup(statuses, ada, botProfile)
@@ -847,7 +702,7 @@ describe("Slick") do
       # It stays open over other events, and a thread takes its place.
       let (stillProfiled, _) = stepped(statuses, ada, bobProfile, [("event", "cancel")])
       Assert.equal(stillProfiled.profile, bob.id)
-      let (threadInstead, _) = stepped(statuses, ada, bobProfile, [("event", "thread"), ("message", messageId)])
+      let (threadInstead, _) = stepped(statuses, ada, bobProfile, [("event", "thread-open"), ("message", messageId)])
       Assert.equal(threadInstead.profile, "")
       Assert.equal(threadInstead.thread, messageId)
       let (closed, _) = stepped(statuses, ada, bobProfile, [("event", "unprofile")])

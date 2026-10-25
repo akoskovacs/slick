@@ -23,6 +23,7 @@ module App.Live.Events
 
 using Net.HTTP.WebSocket, only: [Text]
 using JSON
+using App.Models.Conversation, only: [Conversation]
 
 # One thing that happened. `kind` is "message", "answer" or "command".
 record Event do
@@ -173,4 +174,42 @@ let placed(event, bot) do
   return "dm/${event.first == bot then event.second else event.first}" if event.first != ""
   return "channels/${event.channel}" if event.channel != ""
   return "groups/${event.group}"
+end
+
+# Notes what happened to the events bus, for the bots that are watching.
+# Nothing is told but where: what a bot may read of it, it fetches through
+# the API as ever. A bot "" is no bot: the event is for whoever may read
+# the conversation. `body` is the message said, kept on the server only so
+# the bus can tell which bots it names.
+publish : Server<Bus> -> Conversation -> String -> String -> String -> Integer -> String -> String -> Void
+foul publish(events, conversation, kind, messageId, threadId, at, bot, body) do
+  match DB.Repositories.Organizations.identified(conversation.organizationId) do
+    Ok(Just(organization)) => do
+      let replied = if kind == "message" && !threadId.empty?
+        DB.Repositories.Messages.botAuthors(threadId, DB.Repositories.Users.botIds().or([])).or([])
+      else
+        []
+      end
+      events.happened(Event {
+        kind: kind,
+        organizationId: conversation.organizationId,
+        organization: organization.slug,
+        conversationId: conversation.id,
+        channel: conversation.channel? then conversation.title else "",
+        group: conversation.group? then conversation.id else "",
+        first: conversation.direct? then conversation.firstUser else "",
+        second: conversation.direct? then conversation.secondUser else "",
+        thread: threadId,
+        message: messageId,
+        at: at,
+        public?: conversation.public?,
+        people: conversation.public? then [] else (conversation.direct? then [conversation.firstUser, conversation.secondUser] else conversation.participants),
+        bot: bot,
+        body: body,
+        botAccess: conversation.botAccess,
+        replied: replied
+      })
+    end
+    _ => ()
+  end
 end

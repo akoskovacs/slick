@@ -20,12 +20,12 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
     </div>
     <div class="sidebar-head">
       <h2>Channels</h2>
-      <button type="button" class="quiet" data-event="found" title="New channel">+</button>
+      <button type="button" class="quiet" data-event="channel-new" title="New channel">+</button>
     </div>
     <ul class="entries"><%== channels %></ul>
     <div class="sidebar-head">
       <h2>Direct messages</h2>
-      <button type="button" class="quiet" data-event="group" title="New group chat">+</button>
+      <button type="button" class="quiet" data-event="group-new" title="New group chat">+</button>
     </div>
     <ul class="entries people"><%== people %></ul>
     <div class="sidebar-head">
