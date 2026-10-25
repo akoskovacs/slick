@@ -13,7 +13,7 @@ let PREFIX = "slick_bot_"
 
 # Makes a bot: an organization's when `organizationId` names one, and
 # otherwise this person's own. The bot, and its token.
-built : User -> OrganizationId -> String -> Result<(User, String), String>
+built : User -> OrganizationId -> String -> (User, String) or! String
 foul built(maker, organizationId, name) do
   let id = Metro.Id.generate(prefix: "b")
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
@@ -27,7 +27,7 @@ end
 # Gives a bot a new token; the old one stops working. The bot has to be
 # this person's own, or belong to `organizationId` — which the caller has
 # already made sure this person is in.
-renewed : User -> OrganizationId -> String -> Result<String, String>
+renewed : User -> OrganizationId -> String -> String or! String
 foul renewed(asker, organizationId, botId) do
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
   let digest = Metro.Auth.Token.digest(token)
@@ -44,7 +44,7 @@ end
 # Deletes a bot, taking away its access with it: the bot has to be this
 # person's own, or belong to `organizationId` — which the caller has
 # already made sure this person is in.
-removed : User -> OrganizationId -> String -> Result<Bool, String>
+removed : User -> OrganizationId -> String -> Bool or! String
 foul removed(asker, organizationId, botId) do
   let own = Users.removeBot(botId, asker.id).or(false)
   return Ok(true) if own

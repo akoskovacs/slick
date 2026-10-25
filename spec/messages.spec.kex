@@ -1,22 +1,9 @@
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
-using Spec.Support, only: [World, stepped, shown, fresh, populated]
+using Spec.Support, only: [World, stepped, shown, fresh, populated, said]
 
 # Messages and threads from a tab. Each example starts from a world of its
 # own (Spec.Support).
-
-# Says something in Acme Corp's #general, as `user`; the id of the newest
-# message there afterwards.
-foul said(world: World, user: User, body: String) -> String do
-  stepped(world, user, Tab {}, [("event", "message-send"), ("body", body)])
-  shown(world, user, Tab {})
-    .split("id=\"message-")
-    .drop(1)
-    .map { |rest| rest.split("\"").first.or("") }
-    .filter { |each| each.startsWith?("m") }
-    .last
-    .or("")
-end
 
 describe("App.Live.Messages, saying something") do
   it("says a message, with its emoji, to the others there") do

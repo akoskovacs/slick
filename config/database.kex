@@ -17,7 +17,7 @@ using Metro.Environment, only: [Development, Test, Production]
 let SQLITE_DRIVER = "/opt/homebrew/lib/libsqlite3odbc.dylib"
 
 # The request string, or why there is none.
-dsn : Result<String, String>
+dsn : String or! String
 foul dsn do
   match (ENV.get("DATABASE_DSN"), Metro.Environment.current()) do
     (Just(configured), _) => Ok(configured)

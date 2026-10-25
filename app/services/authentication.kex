@@ -18,12 +18,12 @@ let LIFETIME = 2592000
 let REFUSED = "That email and password do not match an account."
 
 # Creates an account and signs it in. The session token, or what was wrong.
-register : String -> String -> String -> Result<String, [String]>
+register : String -> String -> String -> String or! [String]
 foul register(name, email, password) = signedUp(name, email, password, None)
 
 # The same, from the registration form: the password has to have been typed
 # the same twice.
-signedUp : String -> String -> String -> String? -> Result<String, [String]>
+signedUp : String -> String -> String -> String? -> String or! [String]
 foul signedUp(name, email, password, confirmation) do
   let problems = App.Forms.Credentials.problems(name, email, password, confirmation)
   return Error(problems) if !problems.empty?
@@ -38,7 +38,7 @@ end
 
 # Signs in. The session token, or `REFUSED` — the same words and about the
 # same time whether the email is unknown or the password wrong.
-signIn : String -> String -> Result<String, [String]>
+signIn : String -> String -> String or! [String]
 foul signIn(email, password) do
   match Users.credentials(App.Forms.Credentials.normalized(email)) do
     Error(reason) => Error([reason])
@@ -82,7 +82,7 @@ end
 
 private do
   # Stores the account and signs it in.
-  foul enrolled(user: User, password: String) -> Result<String, [String]> do
+  foul enrolled(user: User, password: String) -> String or! [String] do
     match Users.enroll(user, Metro.Auth.Password.hashed(password)) do
       Error(_) => Error(["An account with that email already exists. Sign in instead."])
       Ok(_) => admitted(user.id)
@@ -93,7 +93,7 @@ private do
     return Metro.Clock.seconds()
   end
 
-  foul admitted(userId: String) -> Result<String, [String]> do
+  foul admitted(userId: String) -> String or! [String] do
     let token = Metro.Auth.Token.fresh()
     match Sessions.admit(Metro.Auth.Token.digest(token), userId, now() + LIFETIME) do
       Ok(_) => Ok(token)

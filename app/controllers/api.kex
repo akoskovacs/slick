@@ -424,7 +424,7 @@ private do
 
   # The organization a request's address names, as the bot is in it — or the
   # 404 that says it is not.
-  organizationFor : WebRequest -> Result<String, WebRequest>
+  organizationFor : WebRequest -> String or! WebRequest
   foul organizationFor(request) do
     let slug = request.param("organization").or("")
     let tab = App.Live.Addresses.tabFor(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
@@ -435,7 +435,7 @@ private do
   # The conversation the address names, and a tab showing it — if the bot
   # may read it. A route with `:person` is the private chat with them; one
   # with `:group` a group chat; one with `:name` a channel.
-  placed : WebRequest -> String -> Result<(Tab, Conversation), WebRequest>
+  placed : WebRequest -> String -> (Tab, Conversation) or! WebRequest
   foul placed(request, thread) do
     let bot = userFor(request)
     let slug = request.param("organization").or("")

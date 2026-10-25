@@ -5,13 +5,17 @@ using App.Services.Authority
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Grant, only: [Grant]
 using App.Models.User, only: [User]
+using Spec.Support, only: [World, stepped, shown, fresh, populated, said]
 
 # Slick as it is linked for serving: the routes are built, so Rodolfo and
 # Net.HTTP are part of the program, and the live view is driven the way a
 # browser drives it — one event at a time. Some names only stop resolving
 # once the HTTP stack is linked in (kexhq/kex#451); this is the tripwire.
+#
+# What has a part of Slick of its own has a spec of its own beside this one;
+# here is the rest.
 
-foul stepped(statuses: Server<Presence>, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
+foul step(statuses: Server<Presence>, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
   App.Live.Chat.handled(Config.Live.routes(), Process.spawn(App.Live.Events.Bus {}), statuses, user, tab, fields.map { |pair| match pair do (key, value) => (key, Just(value)) end })
 end
 
@@ -128,10 +132,7 @@ describe("Slick") do
   end
 
   it("answers over HTTP: pages for people, JSON for bots, and neither for the wrong one") do
-    let file = "db/spec_routes_${Metro.Clock.milliseconds()}.sqlite3"
-    let store = DB.Store.started(Config.Database.sqlite(file)).try
-    DB.Store.migrate(store).try
-    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    with Harmat.Connection = fresh() do
       let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
       let here = [("Host", "slick.test"), ("Origin", "http://slick.test")]
 
@@ -184,14 +185,10 @@ describe("Slick") do
       Assert.equal(site.call(Metro.WebRequest.asked("GET", "/app.css")).code, 200)
       Assert.equal(site.call(Metro.WebRequest.asked("GET", "/../package.kex")).code, 404)
     end
-    FS.File.delete(file)
   end
 
   it("seeds development with somewhere to sign in, once, and nothing elsewhere") do
-    let file = "db/spec_seeds_${Metro.Clock.milliseconds()}.sqlite3"
-    let store = DB.Store.started(Config.Database.sqlite(file)).try
-    DB.Store.migrate(store).try
-    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    with Harmat.Connection = fresh() do
       Assert.equal(DB.Seeds.planted(Test), Ok([]))
       Assert.equal(DB.Seeds.planted(Production), Ok([]))
       Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(5))
@@ -245,7 +242,7 @@ describe("Slick") do
 
       # Using one is not a message: it is a line in the conversation, and
       # what the bot is told. A command nobody declared is a message.
-      let (_, used) = stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "@claude /model fast")])
+      let (_, used) = step(statuses, ada, Tab {}, [("event", "message-send"), ("body", "@claude /model fast")])
       Assert.truthy(used)
       let withUse = App.Live.Chat.markup(statuses, ada, Tab {})
       Assert.truthy(withUse.contains?("class=\"used\""))
@@ -255,15 +252,15 @@ describe("Slick") do
       Assert.truthy(told.contains?("\"command\":\"model\""))
       Assert.truthy(told.contains?("\"arguments\":\"fast\""))
       Assert.truthy(told.contains?("\"channel\":\"general\""))
-      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "/unknown thing")])
+      step(statuses, ada, Tab {}, [("event", "message-send"), ("body", "/unknown thing")])
       Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("/unknown thing"))
 
       let question = site.call(Metro.WebRequest.asked("POST", "/api/acme/channels/general/messages", asBotJson, "{\"body\":\"[?] Ship it: yes | no\"}"))
       Assert.equal(question.code, 201)
       let questionId = question.payload.to(String).or("").split("\"id\":\"").second.or("").split("\"").first.or("")
       let inGeneral = App.Live.Addresses.tabFor(ada, "/acme/channels/general")
-      stepped(statuses, ada, inGeneral, [("event", "message-answer"), ("message", questionId), ("form", "0"), ("label", "Ship it"), ("value", "yes")])
-      stepped(statuses, ada, inGeneral, [("event", "message-send"), ("body", "[?] Ship it: yes | no")])
+      step(statuses, ada, inGeneral, [("event", "message-answer"), ("message", questionId), ("form", "0"), ("label", "Ship it"), ("value", "yes")])
+      step(statuses, ada, inGeneral, [("event", "message-send"), ("body", "[?] Ship it: yes | no")])
       let answers = site.call(Metro.WebRequest.asked("GET", "/api/acme/answers", asBot, "")).payload.to(String).or("")
       Assert.truthy(answers.contains?("\"answer\":\"Ship it: yes\"") && answers.contains?("\"channel\":\"general\""))
       Assert.truthy(answers.contains?("\"user\":\"${ada.id}\"") && answers.contains?("\"message\":\"${questionId}\""))
@@ -274,7 +271,7 @@ describe("Slick") do
       # It is told which private chats it has, once somebody has opened one.
       let before = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, ""))
       Assert.equal(before.payload.to(String).or(""), "[]")
-      stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", claude.id)])
+      step(statuses, ada, Tab {}, [("event", "direct-open"), ("user", claude.id)])
       let chats = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, "")).payload.to(String).or("")
       Assert.truthy(chats.contains?("\"person\":\"${ada.id}\"") && chats.contains?("\"name\":\"Ada\""))
 
@@ -294,96 +291,85 @@ describe("Slick") do
       end
       let bob = seeded("bob@example.com")
       let eve = seeded("eve@example.com")
-      let (huddle, _) = stepped(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", claude.id)])
+      let (huddle, _) = step(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", claude.id)])
       let groups = site.call(Metro.WebRequest.asked("GET", "/api/acme/groups", asBot, "")).payload.to(String).or("")
       Assert.truthy(groups.contains?("\"id\":\"${huddle.conversation}\"") && groups.contains?("\"Ada\"") && groups.contains?("\"Bob\""))
       let groupMessages = "/api/acme/groups/${huddle.conversation}/messages"
       Assert.equal(site.call(Metro.WebRequest.asked("POST", groupMessages, asBotJson, "{\"body\":\"hello, both\"}")).code, 201)
       Assert.truthy(App.Live.Chat.markup(statuses, bob, huddle).contains?("hello, both"))
-      stepped(statuses, ada, huddle, [("event", "message-send"), ("body", "@claude /mode quick")])
+      step(statuses, ada, huddle, [("event", "message-send"), ("body", "@claude /mode quick")])
       let huddled = site.call(Metro.WebRequest.asked("GET", "/api/acme/invocations?after=0", asBot, "")).payload.to(String).or("")
       Assert.truthy(huddled.contains?("\"group\":\"${huddle.conversation}\""))
-      let (aside, _) = stepped(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", eve.id)])
+      let (aside, _) = step(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", eve.id)])
       Assert.equal(site.call(Metro.WebRequest.asked("GET", "/api/acme/groups/${aside.conversation}/messages", asBot, "")).code, 404)
     end
-    FS.File.delete(file)
   end
 
-  it("lets people register, chat in channels and in private, react and set topics") do
-    let file = "db/spec_${Metro.Clock.milliseconds()}.sqlite3"
-    let store = DB.Store.started(Config.Database.sqlite(file)).try
-    DB.Store.migrate(store).try
-    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
-      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
-      Assert.truthy(site.table.count > 0)
-      let statuses = Process.spawn(Metro.Live.Presence.Presence {})
+end
 
-      # Registration needs a name; sign-in works afterwards.
+describe("App.Services.Authentication") do
+  it("registers somebody with a name and a long enough password, who can then sign in") do
+    with Harmat.Connection = fresh() do
       Assert.truthy(App.Services.Authentication.register("", "ada@example.com", "correct horse battery").error?)
       Assert.truthy(App.Services.Authentication.register("Ada", "ada@example.com", "7 chars").error?)
       Assert.truthy(App.Services.Authentication.register("Zed", "zed@example.com", "8 chars!").ok?)
-      let adaToken = App.Services.Authentication.register("Ada", "ada@example.com", "correct horse battery").try
-      let bobToken = App.Services.Authentication.register("Bob", "bob@example.com", "another long phrase").try
-      let eveToken = App.Services.Authentication.register("Eve", "eve@example.com", "a third long phrase").try
-      let ada : User = App.Services.Authentication.current(Just(adaToken)).try
-      let bob : User = App.Services.Authentication.current(Just(bobToken)).try
-      let eve : User = App.Services.Authentication.current(Just(eveToken)).try
+      let token = App.Services.Authentication.register("Ada", "ada@example.com", "correct horse battery").try
+      let ada : User = App.Services.Authentication.current(Just(token)).try
       Assert.equal(ada.shown, "Ada")
       Assert.truthy(App.Services.Authentication.signIn("ada@example.com", "correct horse battery").ok?)
+      Assert.truthy(App.Services.Authentication.signIn("ada@example.com", "wrong horse battery").error?)
+    end
+  end
 
-      # Acme Corp, with Bob and Eve in it; spec/organizations.spec.kex has
-      # how organizations are made and joined.
-      let (inAcme, _) = stepped(statuses, ada, Tab {}, [("event", "organization-create"), ("name", "Acme Corp")])
-      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
-      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
+  it("signs somebody out, and their token stops working") do
+    with Harmat.Connection = fresh() do
+      let token = App.Services.Authentication.register("Ada", "ada@example.com", "correct horse battery").try
+      App.Services.Authentication.signOut(Just(token))
+      Assert.equal(App.Services.Authentication.current(Just(token)), None)
+    end
+  end
+end
 
-      # Mallory is registered, in an organization of her own, and not in Acme.
-      let malToken = App.Services.Authentication.register("Mallory", "mal@example.com", "a fourth long phrase").try
-      let mal : User = App.Services.Authentication.current(Just(malToken)).try
-      stepped(statuses, mal, Tab {}, [("event", "organization-create"), ("name", "Other")])
-
-      # Everyone starts in their organization's #general.
-      let first = App.Live.Chat.markup(statuses, ada, Tab {})
+describe("App.Live.Chat, a tab's page") do
+  it("starts everyone in their organization's #general") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let first = shown(world, world.ada, Tab {})
       Assert.truthy(first.contains?("# general"))
       Assert.truthy(first.contains?("Company-wide announcements"))
       Assert.truthy(first.contains?("Bob"))
+    end
+  end
+end
 
-      # A message, with an emoji, seen by somebody else.
-      let (afterSend, sendChanged) = stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "hello <b>world</b> :wave:")])
-      Assert.truthy(sendChanged)
-      let bobSees = App.Live.Chat.markup(statuses, bob, Tab {})
-      Assert.truthy(bobSees.contains?("hello &lt;b&gt;world&lt;/b&gt; 👋"))
-      Assert.truthy(bobSees.contains?("<strong>Ada</strong>"))
-      let (_, emptyChanged) = stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "   ")])
-      Assert.falsy(emptyChanged)
+describe("App.Live.Statuses") do
+  it("shows somebody typing to the others there, until the message is sent") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (_, heard) = stepped(world, world.ada, Tab {}, [("event", "typing")])
+      Assert.truthy(heard)
+      Assert.truthy(shown(world, world.bob, Tab {}).contains?("<strong>Ada</strong> is typing…"))
+      Assert.falsy(shown(world, world.ada, Tab {}).contains?("is typing…"))
+      said(world, world.ada, "typed and sent")
+      Assert.falsy(shown(world, world.bob, Tab {}).contains?("is typing…"))
+    end
+  end
 
-      # Consecutive messages of one person are one block: the name is there once.
-      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "and one more thing")])
-      let block = App.Live.Chat.markup(statuses, bob, Tab {})
-      Assert.equal(block.split("<strong>Ada</strong>").count, 2)
-      Assert.truthy(block.contains?("class=\"message continued\""))
-      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "bob cuts in")])
-      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "ada again")])
-      Assert.equal(App.Live.Chat.markup(statuses, eve, Tab {}).split("<strong>Ada</strong>").count, 3)
+  it("shows what somebody says they are doing, until they take it back or it lapses") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      Assert.truthy(App.Live.Statuses.say(world.statuses, world.eve, Tab {}, "Deploying <now>", 30000))
+      Assert.truthy(shown(world, world.bob, Tab {}).contains?("<strong>Eve</strong> Deploying &lt;now&gt;…"))
+      App.Live.Statuses.say(world.statuses, world.eve, Tab {}, "", 0)
+      Assert.falsy(shown(world, world.bob, Tab {}).contains?("Deploying"))
+      world.statuses.noted("general", "nobody", "old news", 1)
+      Assert.equal(Metro.Live.Presence.standing(world.statuses, "general", 2), [])
+    end
+  end
 
-      # Typing is shown to the others there, not to the one typing, and is
-      # over once the message is sent. A bot can say what it is doing instead.
-      let (_, typingHeard) = stepped(statuses, ada, Tab {}, [("event", "typing")])
-      Assert.truthy(typingHeard)
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("<strong>Ada</strong> is typing…"))
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("is typing…"))
-      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "typed and sent")])
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("is typing…"))
-      Assert.truthy(App.Live.Statuses.say(statuses, eve, Tab {}, "Deploying <now>", 30000))
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("<strong>Eve</strong> Deploying &lt;now&gt;…"))
-      App.Live.Statuses.say(statuses, eve, Tab {}, "", 0)
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("Deploying"))
-      # A note that has lapsed is not shown.
-      statuses.noted("general", "nobody", "old news", 1)
-      Assert.equal(Metro.Live.Presence.standing(statuses, "general", 2), [])
-
-      # Being here: somebody with a tab open is shown as online, until the
-      # last of their tabs closes.
+  it("shows somebody online until the last of their tabs closes") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
       # The sidebar line for somebody: its <button> tag, up to their id.
       let lineFor = do |markup, id|
         markup
@@ -394,223 +380,171 @@ describe("Slick") do
           .last
           .or("")
       end
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("entry online"))
-      App.Live.Statuses.arrive(statuses, ada, "one")
-      App.Live.Statuses.arrive(statuses, ada, "two")
-      Assert.truthy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
-      App.Live.Statuses.leave(statuses, ada, "one")
-      Assert.truthy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
-      App.Live.Statuses.leave(statuses, ada, "two")
-      Assert.falsy(lineFor(App.Live.Chat.markup(statuses, bob, Tab {}), ada.id).contains?("entry online"))
+      let online? = do |user|
+        lineFor(shown(world, world.bob, Tab {}), user.id).contains?("entry online")
+      end
+      Assert.falsy(online?(world.ada))
+      App.Live.Statuses.arrive(world.statuses, world.ada, "one")
+      App.Live.Statuses.arrive(world.statuses, world.ada, "two")
+      Assert.truthy(online?(world.ada))
+      App.Live.Statuses.leave(world.statuses, world.ada, "one")
+      Assert.truthy(online?(world.ada))
+      App.Live.Statuses.leave(world.statuses, world.ada, "two")
+      Assert.falsy(online?(world.ada))
+    end
+  end
+end
 
+describe("App.Live.Addresses, the tab an address stands for") do
+  it("takes an organization, then a channel by name, a private chat by person, or a thread") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let id = said(world, world.ada, "a thread")
+      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/channels/random").conversation, random.conversation)
+      Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/channels/general?thread=${id}").thread, id)
+      Assert.equal(App.Live.Addresses.tabFor(world.ada, "/acmecorp/dm/${world.bob.id}").conversation, chat.conversation)
+      Assert.truthy(shown(world, world.ada, chat).contains?("data-live-path=\"/acmecorp/dm/${world.bob.id}\""))
+      Assert.truthy(shown(world, world.ada, random).contains?("# random · Acme Corp\">"))
+    end
+  end
 
-      # #random, for what follows; spec/conversations.spec.kex has channels,
-      # private chats, group chats and topics.
-      let (inRandom, _) = stepped(statuses, ada, Tab {}, [("event", "channel-create"), ("title", "random")])
-
-      # A form in a message is answered by using it. The answer is kept with
-      # the message and shown under its form: it is not a message, and
-      # typing what an answer says is not an answer.
-      stepped(statuses, bob, inRandom, [("event", "message-send"), ("body", "[?] Lunch: pizza | soup")])
-      let asking = App.Live.Chat.markup(statuses, ada, inRandom)
-      Assert.truthy(asking.contains?("data-label=\"Lunch\"") && asking.contains?("data-value=\"soup\""))
-      let lunchId = asking.split("data-label=\"Lunch\" data-message=\"").drop(1).first.or("").split("\"").first.or("")
-      let lunch = [("event", "message-answer"), ("message", lunchId), ("form", "0"), ("label", "Lunch")]
-      let (afterAnswer, answerGiven) = stepped(statuses, ada, inRandom, lunch + [("value", "soup")])
-      Assert.truthy(answerGiven)
-      Assert.equal(afterAnswer.conversation, inRandom.conversation)
-      let answered = App.Live.Chat.markup(statuses, bob, inRandom)
-      Assert.truthy(answered.contains?("<li class=\"response\"><strong>Ada</strong> <span>soup</span></li>"))
-      Assert.falsy(answered.contains?("<p>Lunch: soup</p>"))
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("<li class=\"response mine\"><strong>Ada</strong> <span>soup</span></li>"))
-      # Answering again replaces the answer; she has one.
-      stepped(statuses, ada, inRandom, lunch + [("value", "pizza")])
-      let changed = App.Live.Chat.markup(statuses, bob, inRandom)
-      Assert.truthy(changed.contains?("<strong>Ada</strong> <span>pizza</span>") && !changed.contains?("<span>soup</span>"))
-      let (_, wrongAnswer) = stepped(statuses, ada, inRandom, lunch + [("value", "cake")])
-      Assert.falsy(wrongAnswer)
-      # Not from another conversation, where the message is not.
-      let (_, answeredElsewhere) = stepped(statuses, ada, Tab {}, lunch + [("value", "soup")])
-      Assert.falsy(answeredElsewhere)
-      # Saying it is only saying it.
-      stepped(statuses, eve, inRandom, [("event", "message-send"), ("body", "Lunch: soup")])
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, inRandom).contains?("<strong>Eve</strong> <span>soup</span>"))
-
-      stepped(statuses, bob, inRandom, [("event", "topic-set"), ("topic", "Anything goes :tada:")])
-
-      # A private chat between Ada and Bob.
-      let (adaPrivate, _) = stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", bob.id)])
-      stepped(statuses, ada, adaPrivate, [("event", "message-send"), ("body", "between us")])
-
-      # Reactions: on, counted, off again; not from outside the conversation.
-      let general = App.Live.Chat.markup(statuses, bob, Tab {})
-      let messageId = general.split("id=\"message-").drop(1).first.or("").split("\"").first.or("")
-      Assert.truthy(!messageId.empty?)
-      let (_, reacted) = stepped(statuses, bob, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
-      Assert.truthy(reacted)
-      stepped(statuses, ada, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("🎉 <span>2</span>"))
-      stepped(statuses, bob, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("🎉 <span>1</span>"))
-      let (_, wrongEmoji) = stepped(statuses, bob, Tab {}, [("event", "message-react"), ("message", messageId), ("emoji", "<script>")])
-      Assert.falsy(wrongEmoji)
-      let (_, wrongPlace) = stepped(statuses, bob, inRandom, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
-      Assert.falsy(wrongPlace)
-
-      # Threads: replies stay out of the conversation, which counts them.
-      let (bobThread, _) = stepped(statuses, bob, Tab {}, [("event", "thread-open"), ("message", messageId)])
-      Assert.equal(bobThread.thread, messageId)
-      Assert.truthy(App.Live.Chat.markup(statuses, bob, bobThread).contains?("No replies yet"))
-      let (_, replySent) = stepped(statuses, bob, bobThread, [("event", "message-reply"), ("body", "a reply in the thread")])
-      Assert.truthy(replySent)
-      stepped(statuses, ada, bobThread, [("event", "message-reply"), ("body", "and another")])
-      let outside = App.Live.Chat.markup(statuses, eve, Tab {})
-      Assert.falsy(outside.contains?("a reply in the thread"))
-      Assert.truthy(outside.contains?("2 replies"))
-      let inside = App.Live.Chat.markup(statuses, eve, bobThread)
-      Assert.truthy(inside.contains?("a reply in the thread"))
-      Assert.truthy(inside.contains?("and another"))
-      Assert.truthy(inside.contains?("id=\"thread-${messageId}\""))
-      Assert.truthy(inside.contains?("data-live-path=\"/acmecorp/channels/general?thread=${messageId}\""))
-      # A reply with no thread open goes nowhere; a thread from another
-      # conversation does not open here.
-      let (_, stray) = stepped(statuses, bob, Tab {}, [("event", "message-reply"), ("body", "lost")])
-      Assert.falsy(stray)
-      let (elsewhere, _) = stepped(statuses, bob, inRandom, [("event", "thread-open"), ("message", messageId)])
-      Assert.equal(elsewhere.thread, "")
-      # Sending in the conversation leaves the thread open beside it.
-      let (stillOpen, _) = stepped(statuses, bob, bobThread, [("event", "message-send"), ("body", "back in the channel")])
-      Assert.equal(stillOpen.thread, messageId)
-
-      # Addresses: an organization, then a channel by name, a private chat by
-      # person, a thread.
-      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/channels/random").conversation, inRandom.conversation)
-      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/channels/general?thread=${messageId}").thread, messageId)
-      Assert.equal(App.Live.Addresses.tabFor(ada, "/acmecorp/dm/${bob.id}").conversation, adaPrivate.conversation)
-      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/channels/nowhere").conversation, "")
-      Assert.equal(App.Live.Addresses.tabFor(eve, "/acmecorp/dm/nobody").conversation, "")
-      Assert.equal(App.Live.Addresses.tabFor(eve, "/nowhere/channels/general").organization, "")
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, adaPrivate).contains?("data-live-path=\"/acmecorp/dm/${bob.id}\""))
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("# random · Acme Corp\">"))
+  it("takes nobody anywhere that is not there, or not theirs") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/channels/nowhere").conversation, "")
+      Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/dm/nobody").conversation, "")
+      Assert.equal(App.Live.Addresses.tabFor(world.eve, "/nowhere/channels/general").organization, "")
       # Eve going to her own chat with Bob gets hers, not Ada's.
-      Assert.truthy(App.Live.Addresses.tabFor(eve, "/acmecorp/dm/${bob.id}").conversation != adaPrivate.conversation)
+      Assert.truthy(App.Live.Addresses.tabFor(world.eve, "/acmecorp/dm/${world.bob.id}").conversation != chat.conversation)
+    end
+  end
+end
 
-      # Organizations are apart. Mallory, not in Acme, gets none of it: not by
-      # address, not by naming the organization or a channel's id, not by
-      # writing to somebody in it.
-      let malSees = App.Live.Chat.markup(statuses, mal, Tab {})
-      Assert.truthy(malSees.contains?("<strong>Other</strong>"))
-      Assert.falsy(malSees.contains?("Acme"))
-      Assert.falsy(malSees.contains?("# random"))
-      Assert.falsy(malSees.contains?("Ada"))
-      Assert.falsy(malSees.contains?("hello"))
-      Assert.equal(App.Live.Addresses.tabFor(mal, "/acmecorp/channels/random"), Tab {})
-      let (malSwitched, _) = stepped(statuses, mal, Tab {}, [("event", "organization-switch"), ("id", inAcme.organization)])
-      Assert.equal(malSwitched.organization, "")
-      let malForged = Tab { organization: inAcme.organization, conversation: inRandom.conversation }
-      Assert.equal(App.Live.Places.visible(mal, malForged), None)
-      let (_, malSent) = stepped(statuses, mal, malForged, [("event", "message-send"), ("body", "mallory was here")])
-      Assert.falsy(malSent)
-      let (_, malReacted) = stepped(statuses, mal, malForged, [("event", "message-react"), ("message", messageId), ("emoji", "🎉")])
-      Assert.falsy(malReacted)
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("mallory was here"))
+describe("Organizations, kept apart") do
+  it("shows somebody nothing of an organization they are not in, however they ask") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let id = said(world, world.ada, "hello")
+      let theirs = shown(world, world.mal, Tab {})
+      Assert.truthy(theirs.contains?("<strong>Other</strong>"))
+      Assert.falsy(theirs.contains?("Acme"))
+      Assert.falsy(theirs.contains?("# random"))
+      Assert.falsy(theirs.contains?("hello"))
+      Assert.equal(App.Live.Addresses.tabFor(world.mal, "/acmecorp/channels/random"), Tab {})
+      let (switched, _) = stepped(world, world.mal, Tab {}, [("event", "organization-switch"), ("id", world.acme.organization)])
+      Assert.equal(switched.organization, "")
+      let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
+      Assert.equal(App.Live.Places.visible(world.mal, forged), None)
+      let (_, sent) = stepped(world, world.mal, forged, [("event", "message-send"), ("body", "mallory was here")])
+      Assert.falsy(sent)
+      let (_, reacted) = stepped(world, world.mal, forged, [("event", "message-react"), ("message", id), ("emoji", "🎉")])
+      Assert.falsy(reacted)
+      Assert.falsy(shown(world, world.ada, random).contains?("mallory was here"))
+    end
+  end
+end
 
-      # Ada is in Mallory's organization too.
-      stepped(statuses, mal, Tab {}, [("event", "invite-send"), ("email", "ada@example.com")])
+describe("App.Live.Unread") do
+  it("counts what came since somebody last looked, beside the place and in the title") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      shown(world, world.eve, Tab {})
+      Assert.falsy(shown(world, world.eve, random).contains?("# general\n      <span class=\"count\""))
+      said(world, world.bob, "one for later")
+      said(world, world.bob, "and another")
+      let away = shown(world, world.eve, random)
+      Assert.truthy(away.contains?("# general\n      <span class=\"count\" aria-label=\"2 unread\">2</span>"))
+      Assert.truthy(away.contains?("data-live-title=\"(2) # random"))
+      Assert.truthy(away.contains?("class=\"entry unread\""))
+      # Looking reads it.
+      shown(world, world.eve, Tab {})
+      Assert.falsy(shown(world, world.eve, random).contains?("# general\n      <span class=\"count\""))
+    end
+  end
 
-      # A bot of Bob's, and its message in #general, which the unread counts
-      # below include; spec/bots.spec.kex has the rest.
-      let (botTab, _) = stepped(statuses, bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot"), ("owner", "me")])
-      let deployBot : User = App.Services.Bots.bearer(Just("Bearer ${botTab.secret}")).try
-      stepped(statuses, deployBot, Tab {}, [("event", "message-send"), ("body", "deployed :rocket:")])
+  it("does not count replies in a thread somebody does not follow") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let id = said(world, world.bob, "a thread")
+      let (thread, _) = stepped(world, world.bob, Tab {}, [("event", "thread-open"), ("message", id)])
+      shown(world, world.eve, Tab {})
+      stepped(world, world.bob, thread, [("event", "message-reply"), ("body", "a quiet reply")])
+      Assert.falsy(shown(world, world.eve, random).contains?("# general\n      <span class=\"count\""))
+    end
+  end
 
-      # A note Ada keeps for herself.
-      let (adaAlone, _) = stepped(statuses, ada, Tab {}, [("event", "direct-open"), ("user", ada.id)])
-      stepped(statuses, ada, adaAlone, [("event", "message-send"), ("body", "a note to self")])
+  it("counts what arrives in a tab nobody is looking at, until they look again") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let away = Tab { attentive?: false }
+      shown(world, world.eve, Tab {})
+      said(world, world.bob, "while eve is away")
+      Assert.truthy(shown(world, world.eve, away).contains?("data-live-title=\"(1) # general"))
+      let (back, _) = stepped(world, world.eve, away, [("event", "attention"), ("on", "true")])
+      shown(world, world.eve, back)
+      Assert.falsy(shown(world, world.eve, away).contains?("data-live-title=\"(1)"))
+    end
+  end
 
-      # Unread: what came since somebody last looked is counted beside the
-      # place, in the title, and in the rail for another organization; looking
-      # reads it.
-      App.Live.Chat.markup(statuses, eve, Tab {})
-      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
-      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "one for later")])
-      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "and another")])
-      let eveAway = App.Live.Chat.markup(statuses, eve, inRandom)
-      Assert.truthy(eveAway.contains?("# general\n      <span class=\"count\" aria-label=\"2 unread\">2</span>"))
-      Assert.truthy(eveAway.contains?("data-live-title=\"(2) # random"))
-      Assert.truthy(eveAway.contains?("class=\"entry unread\""))
-      App.Live.Chat.markup(statuses, eve, Tab {})
-      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
-      # Replies are read in their thread, and do not count.
-      stepped(statuses, bob, bobThread, [("event", "message-reply"), ("body", "a quiet reply")])
-      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
-      # A conversation open in a tab nobody is looking at is not read: what
-      # arrives counts, in the title, until they look again.
-      let eveAway = Tab { attentive?: false }
-      let (eveBack, _) = stepped(statuses, eve, eveAway, [("event", "attention"), ("on", "true")])
-      Assert.truthy(eveBack.attentive?)
-      stepped(statuses, bob, Tab {}, [("event", "message-send"), ("body", "while eve is away")])
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1) # general"))
-      App.Live.Chat.markup(statuses, eve, eveBack)
-      Assert.falsy(App.Live.Chat.markup(statuses, eve, eveAway).contains?("data-live-title=\"(1)"))
-      # Replying in a thread follows it: other people's replies there count
-      # on its channel until the thread is read.
-      stepped(statuses, eve, bobThread, [("event", "message-reply"), ("body", "count me in")])
-      stepped(statuses, bob, bobThread, [("event", "message-reply"), ("body", "eve, look")])
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\" aria-label=\"1 unread\">1</span>"))
+  it("counts other people's replies in a thread somebody replied in, until they read it") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let id = said(world, world.bob, "a thread")
+      let (thread, _) = stepped(world, world.bob, Tab {}, [("event", "thread-open"), ("message", id)])
+      stepped(world, world.eve, thread, [("event", "message-reply"), ("body", "count me in")])
+      shown(world, world.eve, Tab {})
+      stepped(world, world.bob, thread, [("event", "message-reply"), ("body", "eve, look")])
+      Assert.truthy(shown(world, world.eve, random).contains?("# general\n      <span class=\"count\" aria-label=\"1 unread\">1</span>"))
       # Reading the channel is not reading the thread.
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, Tab {}).contains?("data-live-title=\"(1) # general"))
-      App.Live.Chat.markup(statuses, eve, bobThread)
-      Assert.falsy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("# general\n      <span class=\"count\""))
-      # A private chat is counted by the person it is with.
-      let (bobToEve, _) = stepped(statuses, bob, Tab {}, [("event", "direct-open"), ("user", eve.id)])
-      stepped(statuses, bob, bobToEve, [("event", "message-send"), ("body", "psst, eve")])
-      Assert.truthy(App.Live.Chat.markup(statuses, eve, inRandom).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"count\""))
+      Assert.truthy(shown(world, world.eve, Tab {}).contains?("data-live-title=\"(1) # general"))
+      shown(world, world.eve, thread)
+      Assert.falsy(shown(world, world.eve, random).contains?("# general\n      <span class=\"count\""))
+    end
+  end
 
-      # Transactions go through the store as one: an Error answered from
-      # one undoes what it did; Ok keeps it.
+  it("counts a private chat by the person it is with") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
+      let (chat, _) = stepped(world, world.bob, Tab {}, [("event", "direct-open"), ("user", world.eve.id)])
+      stepped(world, world.bob, chat, [("event", "message-send"), ("body", "psst, eve")])
+      Assert.truthy(shown(world, world.eve, random).contains?("data-user=\"${world.bob.id}\">Bob\n      <span class=\"count\""))
+    end
+  end
+end
+
+describe("DB.Store, transactions") do
+  it("undoes what a transaction did when it answers an Error, and keeps it on Ok") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let draft = do |body| App.Models.Draft.Draft { conversationId: "c-nowhere", body: body } end
       let undone = Harmat.Database.transaction do
-        DB.Repositories.Drafts.save(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "undone" }).try
+        DB.Repositories.Drafts.save(world.ada.id, draft("undone")).try
         Error("changed my mind")
       end
       Assert.equal(undone, Error("changed my mind"))
-      Assert.falsy(DB.Repositories.Drafts.pending(ada.id).or([]).any? { |draft| draft.body == "undone" })
+      Assert.falsy(DB.Repositories.Drafts.pending(world.ada.id).or([]).any? { |each| each.body == "undone" })
       let done = Harmat.Database.transaction do
-        DB.Repositories.Drafts.save(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "done" }).try
-        DB.Repositories.Drafts.save(ada.id, App.Models.Draft.Draft { conversationId: "c-nowhere", body: "" })
+        DB.Repositories.Drafts.save(world.ada.id, draft("done")).try
+        DB.Repositories.Drafts.save(world.ada.id, draft(""))
       end
       Assert.truthy(done.ok?)
-      Assert.falsy(DB.Repositories.Drafts.pending(ada.id).or([]).any? { |draft| draft.conversationId == "c-nowhere" })
+      Assert.falsy(DB.Repositories.Drafts.pending(world.ada.id).or([]).any? { |each| each.conversationId == "c-nowhere" })
+    end
+  end
+end
 
-      # Drafts: what is written and not sent is kept, for its writer alone,
-      # until it is sent; a conversation with one is marked in the sidebar.
-      stepped(statuses, ada, Tab {}, [("event", "draft-save"), ("place", "send"), ("body", "half a <tho")])
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("autofocus>half a &lt;tho</textarea>"))
-      Assert.falsy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("half a"))
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, inRandom).contains?("# general\n      <span class=\"drafted\""))
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("class=\"drafted\""))
-      stepped(statuses, ada, Tab {}, [("event", "draft-save"), ("place", "send"), ("body", "half a thought")])
-      Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]).count, 1)
-      # A thread's box keeps its own.
-      let adaThread = Tab { ...bobThread }
-      stepped(statuses, ada, adaThread, [("event", "draft-save"), ("place", "reply"), ("body", "a reply, later")])
-      let bothBoxes = App.Live.Chat.markup(statuses, ada, adaThread)
-      Assert.truthy(bothBoxes.contains?(">a reply, later</textarea>"))
-      Assert.truthy(bothBoxes.contains?(">half a thought</textarea>"))
-      stepped(statuses, ada, adaThread, [("event", "message-reply"), ("body", "a reply, now")])
-      Assert.falsy(App.Live.Chat.markup(statuses, ada, adaThread).contains?("a reply, later"))
-      # A private chat is marked by the person it is with.
-      stepped(statuses, ada, adaPrivate, [("event", "draft-save"), ("place", "send"), ("body", "psst")])
-      Assert.truthy(App.Live.Chat.markup(statuses, ada, Tab {}).contains?("data-user=\"${bob.id}\">Bob\n      <span class=\"drafted\""))
-      stepped(statuses, ada, adaPrivate, [("event", "draft-save"), ("place", "send"), ("body", "  ")])
-      # Sending takes it away; nobody keeps a draft where they cannot write.
-      stepped(statuses, ada, Tab {}, [("event", "message-send"), ("body", "half a thought, finished")])
-      Assert.equal(DB.Repositories.Drafts.pending(ada.id).or([]), [])
-      stepped(statuses, mal, malForged, [("event", "draft-save"), ("place", "send"), ("body", "sneaky")])
-      Assert.equal(DB.Repositories.Drafts.pending(mal.id).or([]), [])
-
-      # Files: uploaded, waiting in the message box, sent with a message,
-      # then listed in the files view and served only to who may read them.
+describe("App.Controllers.Files") do
+  it("keeps a file waiting for its uploader, then serves it to whoever may read it") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
       let files = "storage_spec_${Metro.Clock.milliseconds()}"
       with Metro.Storage = Metro.Storage.Disk { root: files } do
         let upload = Metro.Wire.made(
@@ -621,7 +555,7 @@ describe("Slick") do
         )
         let uploaded = App.Controllers.Files.uploaded(Metro.WebRequest.WebRequest {
           incoming: upload,
-          assigns: {user: ada}
+          assigns: {user: world.ada}
         })
         Assert.equal(uploaded.code, 200)
         let fileId = uploaded.payload
@@ -635,11 +569,11 @@ describe("Slick") do
           .or("")
         Assert.truthy(fileId.startsWith?("f"))
         # Nobody shares a file that is not theirs.
-        let (bobTakes, _) = stepped(statuses, bob, Tab {}, [("event", "file-attach"), ("file", fileId)])
+        let (bobTakes, _) = stepped(world, world.bob, Tab {}, [("event", "file-attach"), ("file", fileId)])
         Assert.equal(bobTakes.pending, [])
-        let (adaShares, _) = stepped(statuses, ada, Tab {}, [("event", "file-attach"), ("file", fileId)])
-        Assert.equal(adaShares.pending, [fileId])
-        Assert.truthy(App.Live.Chat.markup(statuses, ada, adaShares).contains?("<strong>notes.txt</strong>"))
+        let (shares, _) = stepped(world, world.ada, Tab {}, [("event", "file-attach"), ("file", fileId)])
+        Assert.equal(shares.pending, [fileId])
+        Assert.truthy(shown(world, world.ada, shares).contains?("<strong>notes.txt</strong>"))
         # Before it is sent, only its uploader can fetch it.
         let asking = do |who|
           App.Controllers.Files.fetched(Metro.WebRequest.WebRequest {
@@ -648,35 +582,33 @@ describe("Slick") do
             assigns: {user: who}
           })
         end
-        Assert.equal(asking(bob).code, 404)
-        Assert.equal(asking(ada).code, 200)
+        Assert.equal(asking(world.bob).code, 404)
+        Assert.equal(asking(world.ada).code, 200)
         # A file goes without words.
-        let (afterFile, fileSent) = stepped(statuses, ada, adaShares, [("event", "message-send"), ("body", "")])
-        Assert.truthy(fileSent)
-        Assert.equal(afterFile.pending, [])
-        Assert.truthy(App.Live.Chat.markup(statuses, bob, Tab {}).contains?("href=\"/files/${fileId}\""))
-        Assert.equal(asking(bob).code, 200)
-        Assert.equal(asking(mal).code, 404)
-        Assert.equal(asking(bob).outgoing.get("X-Content-Type-Options"), Just("nosniff"))
+        let (after, sent) = stepped(world, world.ada, shares, [("event", "message-send"), ("body", "")])
+        Assert.truthy(sent)
+        Assert.equal(after.pending, [])
+        Assert.truthy(shown(world, world.bob, Tab {}).contains?("href=\"/files/${fileId}\""))
+        Assert.equal(asking(world.bob).code, 200)
+        Assert.equal(asking(world.mal).code, 404)
+        Assert.equal(asking(world.bob).outgoing.get("X-Content-Type-Options"), Just("nosniff"))
         # The files view lists it, with the start of what it says.
-        let filesView = App.Live.Chat.markup(statuses, bob, Tab { view: "files" })
-        Assert.truthy(filesView.contains?("<pre>first line\nsecond &lt;line&gt;</pre>"))
-        Assert.truthy(filesView.contains?("Files <span class=\"tally\">1</span>"))
-        # Sizes are said to a tenth, in decimal units.
-        let sizedAs = do |count|
-          App.Models.Attachment.Attachment { id: "f", userId: "u", filename: "x", contentType: "", byteSize: count }.sized
-        end
-        Assert.equal([28, 4312, 1536000, 2500000000].map { |count| sizedAs(count) }, ["28 B", "4.3 KB", "1.5 MB", "2.5 GB"])
+        let view = shown(world, world.bob, Tab { view: "files" })
+        Assert.truthy(view.contains?("<pre>first line\nsecond &lt;line&gt;</pre>"))
+        Assert.truthy(view.contains?("Files <span class=\"tally\">1</span>"))
         # A file once sent cannot be sent again.
-        let (again, _) = stepped(statuses, ada, Tab {}, [("event", "file-attach"), ("file", fileId)])
+        let (again, _) = stepped(world, world.ada, Tab {}, [("event", "file-attach"), ("file", fileId)])
         Assert.equal(again.pending, [])
       end
       FS.Directory.deleteAll(files)
-
-      App.Services.Authentication.signOut(Just(adaToken))
-      Assert.equal(App.Services.Authentication.current(Just(adaToken)), None)
     end
-    FS.File.delete(file)
+  end
+
+  it("says sizes to a tenth, in decimal units") do
+    let sizedAs = do |count|
+      App.Models.Attachment.Attachment { id: "f", userId: "u", filename: "x", contentType: "", byteSize: count }.sized
+    end
+    Assert.equal([28, 4312, 1536000, 2500000000].map { |count| sizedAs(count) }, ["28 B", "4.3 KB", "1.5 MB", "2.5 GB"])
   end
 end
 
@@ -748,10 +680,7 @@ end
 
 describe("App.Authority, deciding from grants") do
   it("gives roles from grants, with teams carrying their roles to members") do
-    let file = "db/spec_authority_${Metro.Clock.milliseconds()}.sqlite3"
-    let store = DB.Store.started(Config.Database.sqlite(file)).try
-    DB.Store.migrate(store).try
-    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    with Harmat.Connection = fresh() do
       let ada = User { id: "u1", email: "ada@x", name: "Ada" }
       let bob = User { id: "u2", email: "bob@x", name: "Bob" }
       let carl = User { id: "u3", email: "carl@x", name: "Carl" }
@@ -806,16 +735,12 @@ describe("App.Authority, deciding from grants") do
       Assert.truthy(App.Services.Authority.canRead(bot, general))
       Assert.truthy(App.Services.Authority.canWrite(bot, general))
     end
-    FS.File.delete(file)
   end
 end
 
 describe("App.Authority, roles an administrator gives") do
   it("promotes, demotes and removes members, but not the last administrator") do
-    let file = "db/spec_roles_${Metro.Clock.milliseconds()}.sqlite3"
-    let store = DB.Store.started(Config.Database.sqlite(file)).try
-    DB.Store.migrate(store).try
-    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    with Harmat.Connection = fresh() do
       let statuses = Process.spawn(Metro.Live.Presence.Presence {})
       let member = do |name, email|
         let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
@@ -825,51 +750,47 @@ describe("App.Authority, roles an administrator gives") do
       let ada = member("Ada", "ada@example.com")
       let bob = member("Bob", "bob@example.com")
       let eve = member("Eve", "eve@example.com")
-      let (acme, _) = stepped(statuses, ada, Tab {}, [("event", "organization-create"), ("name", "Acme")])
-      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
-      stepped(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
+      let (acme, _) = step(statuses, ada, Tab {}, [("event", "organization-create"), ("name", "Acme")])
+      step(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
+      step(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
 
       Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
       Assert.falsy(App.Services.Authority.canManage(bob, acme.organization))
 
       # A member cannot change roles; an administrator can.
-      let (_, bobTries) = stepped(statuses, bob, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
+      let (_, bobTries) = step(statuses, bob, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
       Assert.falsy(bobTries)
       Assert.falsy(App.Services.Authority.canManage(eve, acme.organization))
 
-      let (_, promoted) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
+      let (_, promoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
       Assert.truthy(promoted)
       Assert.truthy(App.Services.Authority.canManage(eve, acme.organization))
 
       # Read-only: still in the organization, but cannot write.
-      let (_, muted) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read-only")])
+      let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read-only")])
       Assert.truthy(muted)
       Assert.truthy(App.Services.Authority.canRead(bob, Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
       Assert.falsy(App.Services.Authority.canWrite(bob, Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
 
       # The last administrator cannot be demoted or removed.
-      let (_, demoted) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
+      let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
       Assert.truthy(demoted)
       Assert.equal(App.Services.Authority.admins(acme.organization).count, 1)
 
-      let (_, selfDemote) = stepped(statuses, ada, Tab {}, [("event", "role-set"), ("user", ada.id), ("role", "member")])
+      let (_, selfDemote) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", ada.id), ("role", "member")])
       Assert.falsy(selfDemote)
       Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
 
-      let (_, removedLast) = stepped(statuses, ada, Tab {}, [("event", "member-remove"), ("user", ada.id)])
+      let (_, removedLast) = step(statuses, ada, Tab {}, [("event", "member-remove"), ("user", ada.id)])
       Assert.falsy(removedLast)
       Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
     end
-    FS.File.delete(file)
   end
 end
 
 describe("App.Authority, what a channel lets its bots read") do
   it("gates a bot by the setting, and by whether it is named or in the thread") do
-    let file = "db/spec_botscope_${Metro.Clock.milliseconds()}.sqlite3"
-    let store = DB.Store.started(Config.Database.sqlite(file)).try
-    DB.Store.migrate(store).try
-    with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    with Harmat.Connection = fresh() do
       let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
       let channel = Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: "o1", access: "public", botAccess: "mentions" }
       DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
@@ -892,6 +813,5 @@ describe("App.Authority, what a channel lets its bots read") do
       let none = Conversation { ...channel, botAccess: "none" }
       Assert.falsy(App.Services.Authority.botMayRead(bot, none, named.id))
     end
-    FS.File.delete(file)
   end
 end

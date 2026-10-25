@@ -70,3 +70,16 @@ foul registered(name: String, email: String) -> User do
   let user : User = App.Services.Authentication.current(Just(token)).try
   user
 end
+
+# Says something in Acme Corp's #general, as `user`; the id of the newest
+# message there afterwards.
+foul said(world: World, user: User, body: String) -> String do
+  stepped(world, user, Tab {}, [("event", "message-send"), ("body", body)])
+  shown(world, user, Tab {})
+    .split("id=\"message-")
+    .drop(1)
+    .map { |rest| rest.split("\"").first.or("") }
+    .filter { |each| each.startsWith?("m") }
+    .last
+    .or("")
+end

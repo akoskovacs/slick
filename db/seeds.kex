@@ -37,13 +37,13 @@ let BOTS = ["claude", "muse", "opencode"]
 
 # Plants an environment's seeds. What was planted, in words: nothing when it
 # was all there already.
-planted : Environment -> Result<[String], String>
+planted : Environment -> [String] or! String
 foul planted(Development) = demo()
 foul planted(environment) = Ok([])
 
 private do
   # Acme, and enough in it to try every part of the application on.
-  foul demo() -> Result<[String], String> do
+  foul demo() -> [String] or! String do
     let existing = Organizations.findBySlug("acme").try
     return Ok([]) if existing.set?
 
@@ -105,7 +105,7 @@ private do
   let token(name) = "slick_bot_development_${name}"
 
   # An organization's bot, known by its development token.
-  foul bot(name: String, organizationId: String) -> Result<User, String> do
+  foul bot(name: String, organizationId: String) -> User or! String do
     let id = Metro.Id.generate(prefix: "b")
     let made = User {
       id: id,
@@ -118,7 +118,7 @@ private do
   end
 
   # The person registered under an email, made if there is none.
-  foul person(name: String, email: String) -> Result<User, String> do
+  foul person(name: String, email: String) -> User or! String do
     match Users.credentials(email).try do
       Just((found, _)) => return Ok(found)
       None => do
