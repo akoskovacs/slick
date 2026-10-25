@@ -119,7 +119,10 @@ application in Kex's REPL, queries logged. What it meets in Kex:
 - **The REPL completes no qualified name from a `--source-root`**:
   `/complete DB.Repositories.Users.ev` and `Metro.Environment.cu` find
   nothing, while `"abc".upperC` completes, and `ever` does after `using
-  DB.Repositories.Users`.
+  DB.Repositories.Users`. Fixed in a local Kex change (2026-10-25, not yet
+  a PR): the REPL loads the module a dotted name names from the source
+  roots into its completion index, and offers the next part of every
+  module there (`DB.` → `Migrate`, `Migrations`, `Repositories`, …).
 - **A REPL binding of a record type breaks every later input** when the
   REPL has `--source-root`s. `let users = DB.Repositories.Users.everyone`
   answers, and then any input — even `1 + 1` — fails with `this file is
