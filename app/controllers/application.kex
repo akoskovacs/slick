@@ -36,6 +36,13 @@ foul eventsFor(request) do
   return found
 end
 
+# Which part of Slick answers an event from a tab (config/live.kex).
+liveFor : WebRequest -> App.Live.Event.Routes
+foul liveFor(request) do
+  let found : App.Live.Event.Routes = request.assigned(:live).try
+  return found
+end
+
 # The person signed in, behind `signedIn`; the bot asking, behind `bearer`.
 userFor : WebRequest -> User
 foul userFor(request) do

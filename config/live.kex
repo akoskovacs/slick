@@ -1,37 +1,27 @@
 # Which part of Slick answers an event from a tab, by the first word of its
-# name: "bot-create" is the bots'. Each part answers its own events by
-# their whole names (`on`), and does nothing with any other.
+# name: "bot-create" is the bots'. Each part answers its own events by their
+# whole names (`on`), and does nothing with any other; an event no route
+# has — `refresh`, from Metro's live.js, among them — leaves the tab as it
+# is, to be shown again as things are stored now.
+#
+# config/routes.kex hands these to the live page's socket (`Router.live`),
+# and to the bot API, which says things the way a tab does.
 module Config.Live
 
-using App.Live.Event, only: [Event]
+using App.Live.Event, only: [Routes]
+using Metro.Live.Router, as: Live
 
-routed : App.Live.Event.Event -> (App.Live.Tab.Tab, Bool)
-foul routed(event) = to(Metro.Live.Socket.resource(event.name), event)
-
-to : String -> App.Live.Event.Event -> (App.Live.Tab.Tab, Bool)
-foul to("conversation", event) = App.Live.Conversations.on(event.name, event)
-foul to("direct", event) = App.Live.Conversations.on(event.name, event)
-foul to("channel", event) = App.Live.Conversations.on(event.name, event)
-foul to("group", event) = App.Live.Conversations.on(event.name, event)
-foul to("topic", event) = App.Live.Conversations.on(event.name, event)
-foul to("message", event) = App.Live.Messages.on(event.name, event)
-foul to("draft", event) = App.Live.Messages.on(event.name, event)
-foul to("file", event) = App.Live.Messages.on(event.name, event)
-foul to("thread", event) = App.Live.Threads.on(event.name, event)
-foul to("typing", event) = App.Live.Statuses.on(event.name, event)
-foul to("team", event) = App.Live.Teams.on(event.name, event)
-foul to("organization", event) = App.Live.Organizations.on(event.name, event)
-foul to("invite", event) = App.Live.Organizations.on(event.name, event)
-foul to("role", event) = App.Live.Organizations.on(event.name, event)
-foul to("member", event) = App.Live.Organizations.on(event.name, event)
-foul to("profile", event) = App.Live.Profiles.on(event.name, event)
-foul to("status", event) = App.Live.Profiles.on(event.name, event)
-foul to("bot", event) = App.Live.Bots.on(event.name, event)
-foul to("dialog", event) = App.Live.Navigation.on(event.name, event)
-foul to("cancel", event) = App.Live.Navigation.on(event.name, event)
-foul to("view", event) = App.Live.Navigation.on(event.name, event)
-foul to("attention", event) = App.Live.Navigation.on(event.name, event)
-foul to("visit", event) = App.Live.Addresses.on(event.name, event)
-# Anything else, `refresh` from Metro's live.js among it, leaves the tab as
-# it is, to be shown again as things are stored now.
-foul to(_, event) = (event.tab, false)
+# Built where the routes are (config/routes.kex): a handler reaches the
+# `Harmat.Connection` in force when it was written.
+foul routes() -> Routes = Live.define do
+  Live.on(["conversation", "direct", "channel", "group", "topic"]) { |name, event| App.Live.Conversations.on(name, event) }
+  Live.on(["message", "draft", "file"]) { |name, event| App.Live.Messages.on(name, event) }
+  Live.on(["thread"]) { |name, event| App.Live.Threads.on(name, event) }
+  Live.on(["typing"]) { |name, event| App.Live.Statuses.on(name, event) }
+  Live.on(["team"]) { |name, event| App.Live.Teams.on(name, event) }
+  Live.on(["organization", "invite", "role", "member"]) { |name, event| App.Live.Organizations.on(name, event) }
+  Live.on(["profile", "status"]) { |name, event| App.Live.Profiles.on(name, event) }
+  Live.on(["bot"]) { |name, event| App.Live.Bots.on(name, event) }
+  Live.on(["dialog", "cancel", "view", "attention"]) { |name, event| App.Live.Navigation.on(name, event) }
+  Live.on(["visit"]) { |name, event| App.Live.Addresses.on(name, event) }
+end

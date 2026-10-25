@@ -22,7 +22,7 @@ end
 
 foul stepped(world: World, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
   let entries = fields.map { |pair| match pair do (key, value) => (key, Just(value)) end }
-  App.Live.Chat.handled(Process.spawn(App.Live.Events.Bus {}), world.statuses, user, tab, entries)
+  App.Live.Chat.handled(Config.Live.routes(), Process.spawn(App.Live.Events.Bus {}), world.statuses, user, tab, entries)
 end
 
 foul shown(world: World, user: User, tab: Tab) -> String do

@@ -62,7 +62,7 @@ module App.Controllers.Api
 
 using Metro.WebRequest, only: [WebRequest]
 using Net.HTTP.WebSocket, only: [Connection, Text, CloseMessage]
-using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, userFor]
+using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, liveFor, userFor]
 using App.Live.Tab, only: [Tab]
 using App.Models.Command, only: [Command]
 using App.Models.Conversation, only: [Conversation]
@@ -270,7 +270,7 @@ foul posted(request) do
     return failed(request, 403, "Bots may not write in this conversation.")
   end
   let event = thread.empty? then "message-send" else "message-reply"
-  let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
+  let (_, changed) = App.Live.Chat.handled(liveFor(request), eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
   return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
   hubFor(request).changed("api", "everyone")
@@ -289,7 +289,7 @@ reacting : WebRequest -> WebRequest
 foul reacting(request) do
   let (tab, _) = placed(request, "").try
   let fields = [("event", Just("message-react")), ("message", request.field("message")), ("emoji", request.field("emoji"))]
-  let (_, changed) = App.Live.Chat.handled(eventsFor(request), statusesFor(request), userFor(request), tab, fields)
+  let (_, changed) = App.Live.Chat.handled(liveFor(request), eventsFor(request), statusesFor(request), userFor(request), tab, fields)
   return failed(request, 422, "Not done: the message has to be one of this conversation, and the emoji one of the reactions Slick offers.") if !changed
 
   hubFor(request).changed("api", "everyone")

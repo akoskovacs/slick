@@ -15,7 +15,7 @@ module App.Live.Chat
 using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field, repeated]
 using App.Live.Places, only: [home, visible, organizations, memberOrganization]
-using App.Live.Event, only: [Event]
+using App.Live.Event, only: [Event, Routes]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
@@ -141,13 +141,19 @@ end
 # Applies one event: the tab's next state, and whether something other tabs
 # show was changed — in which case they are told to refresh. What changed in
 # what a bot could see is noted to the events bus on the way (`bus`). Which
-# part of Slick answers it is config/live.kex's to say.
-handled : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
-foul handled(bus, statuses, user, tab, entries) = Config.Live.routed(Event {
-  name: Metro.Live.Socket.named(entries),
-  bus: bus,
-  statuses: statuses,
-  user: user,
-  tab: tab,
-  entries: entries
-})
+# part of Slick answers it is `routes`' to say (config/live.kex).
+handled : Routes -> Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
+foul handled(routes, bus, statuses, user, tab, entries) do
+  let name = Metro.Live.Socket.named(entries)
+  let event = Event {
+    name: name,
+    bus: bus,
+    statuses: statuses,
+    user: user,
+    tab: tab,
+    entries: entries
+  }
+  return Metro.Live.Router.answering(routes, name)
+    .map { |answer| answer(name, event) }
+    .or((tab, false))
+end

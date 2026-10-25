@@ -16,7 +16,8 @@ foul show(request) do
   return page(request, 200, App.Views.Chat.page { live })
 end
 
-# A tab's socket: events in, markup out, until it closes.
+# A tab's socket: events in, markup out, until it closes. Which part of
+# Slick answers each event is `routes`' to say (config/live.kex).
 #
 # Every tab is in one group: a message anywhere is news to every sidebar.
 # What a tab is then shown is still only what its person may read. The
@@ -25,8 +26,8 @@ end
 #
 # Having a tab open is being here: said on the way in, taken back on the way
 # out, and the others' pages are told both times.
-joined : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
-foul joined(request, socket) do
+joined : WebRequest -> Net.HTTP.WebSocket.Connection -> App.Live.Event.Routes -> Void
+foul joined(request, socket, routes) do
   let hub = hubFor(request)
   let statuses = statusesFor(request)
   let events = eventsFor(request)
@@ -36,7 +37,7 @@ foul joined(request, socket) do
   hub.changed(seat, "everyone")
   Metro.Live.Socket.attached(
     socket, hub, "everyone", App.Live.Addresses.tabFor(user, request.query("at").or("/")),
-    { |tab, event| App.Live.Chat.handled(events, statuses, user, tab, event) },
+    { |tab, event| App.Live.Chat.handled(routes, events, statuses, user, tab, event) },
     { |tab| App.Live.Chat.markup(statuses, user, tab) }
   )
   App.Live.Statuses.leave(statuses, user, seat)

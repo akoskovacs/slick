@@ -1,7 +1,7 @@
 # Every address the application answers, and who gets as far as answering.
 #
-#   :application   the hub, the statuses board and the events bus, on every
-#                  request
+#   :application   the hub, the statuses board, the events bus and the live
+#                  routes, on every request
 #   :browser       no request from another site; nothing kept by a cache
 #   :members       signed in, or sent to sign in
 #   :guests        signed out, or sent home
@@ -35,8 +35,10 @@ foul routes(hub, events) do
   # What people are in the middle of — typing, or what a bot says it is
   # doing. Remembered here and not in the database: it is only true for now.
   let statuses = Process.spawn(Metro.Live.Presence.Presence {})
+  # Which part of Slick answers an event from a tab (config/live.kex).
+  let live = Config.Live.routes()
   Router.define do
-    Router.pipeline(:application, [providing(:hub, hub), providing(:statuses, statuses), providing(:events, events)])
+    Router.pipeline(:application, [providing(:hub, hub), providing(:statuses, statuses), providing(:events, events), providing(:live, live)])
     Router.pipeline(:browser, [Metro.Plugs.sameOrigin, Metro.Plugs.unstored])
     Router.pipeline(:members, [App.Controllers.Application.signedIn()])
     Router.pipeline(:guests, [App.Controllers.Application.signedOut()])
@@ -88,9 +90,12 @@ foul routes(hub, events) do
       # it there (App.Controllers.Files).
       Router.post("/uploads", ~uploaded)
       Router.get("/files/:id", ~fetched)
-      # The chat kept current: events in, markup out. Behind the same plugs
+      # The chat kept current: events in, markup out, each event answered by
+      # the part of Slick config/live.kex routes it to. Behind the same plugs
       # as the page, so a socket from another site, or from nobody, is refused.
-      Router.live "/live" do |request, socket| App.Controllers.Chat.joined(request, socket) end
+      Router.live "/live", live do |request, socket, routes|
+        App.Controllers.Chat.joined(request, socket, routes)
+      end
     end
 
     Metro.Live.Client.route()
