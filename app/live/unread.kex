@@ -3,6 +3,17 @@
 # to its end.
 module App.Live.Unread
 
+using App.Live.Places, only: [readable]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Message, only: [Message]
+using App.Models.Organization, only: [Organization]
+using App.Models.Reading, only: [Reading]
+using App.Models.User, only: [User]
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Memberships, as: Memberships
+using DB.Repositories.Messages, as: Messages
+using DB.Repositories.Readings, as: Readings
+
 record Unread do
   # Each channel of the organization the tab is in, by id.
   channels : {String: Integer} = {}
@@ -14,4 +25,128 @@ record Unread do
   organizations : {String: Integer} = {}
   # Everywhere.
   total : Integer = 0
+end
+
+# How much somebody has not read: in the organization the tab is in, by
+# channel and by private chat, and in each of the others altogether.
+# `marks` are how far they have read (`Readings.marks`); `open` and
+# `openThread` are what the tab shows them right now, if they are looking.
+counts : User -> Organization -> [Organization] -> [Reading] -> String -> String -> Unread
+foul counts(user, current, mine, marks, open, openThread) do
+  let (channels, people, groups) = countsIn(user, current, marks, open, openThread)
+  let others = mine.reject { |each| each.id == current.id }
+  let elsewhere = others.reduce({}) do |found, other|
+    let (theirChannels, theirPeople, theirGroups) = countsIn(user, other, marks, "", "")
+    found.put(other.id, sum(theirChannels) + sum(theirPeople) + sum(theirGroups))
+  end
+  return Unread {
+    channels: channels,
+    people: people,
+    groups: groups,
+    organizations: elsewhere,
+    total: sum(channels) + sum(people) + sum(groups) + sum(elsewhere)
+  }
+end
+
+# Somebody looking at a conversation reads it as far as its newest message,
+# and the thread open beside it, if they follow it, as far as its newest
+# reply. What they are reading — the conversation, and the thread — or ""
+# for each when they are not looking.
+markRead : User -> [Reading] -> Conversation -> [Message] -> [Message] -> Bool -> (String, String)
+foul markRead(user, marks, conversation, messages, thread, looking?) do
+  return ("", "") if !looking?
+
+  let threadId = thread.first.map { |first| first.id }.or("")
+  advance(user, marks, Reading {
+    conversationId: conversation.id,
+    readAt: newest(messages)
+  })
+  if following?(marks, threadId)
+    advance(user, marks, Reading {
+      conversationId: conversation.id,
+      threadId: threadId,
+      readAt: newest(thread)
+    })
+  end
+  return (conversation.id, threadId)
+end
+
+private do
+  # What is new in each channel of an organization this person may read, by
+  # id, in each of their private chats there, by the person it is with, and
+  # in each of their group chats, by id: messages
+  # since they last read there — since they joined, where they never have —
+  # and other people's replies in the threads they follow since they last
+  # read those.
+  foul countsIn(
+    user: User,
+    organization: Organization,
+    marks: [Reading],
+    open: String,
+    openThread: String
+  ) -> ({String: Integer}, {String: Integer}, {String: Integer}) do
+    let since = Memberships.joined(organization.id, user.id)
+    let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
+    let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
+    let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
+    let places = (channels + chats + groups).map { |conversation| conversation.id }
+    let follows = marks.filter do |mark|
+      !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId)
+    end
+    let roots = follows.map { |mark| mark.threadId }
+    let oldest = follows.map { |mark| mark.readAt }.min.or(0)
+    let replies : [Message] = follows.empty? then [] else Messages.replyingTo(roots, oldest).or([])
+    let answered = replies.filter do |reply|
+      reply.userId != user.id && follows.any? do |mark|
+        mark.threadId == reply.parentId && reply.sentAt > mark.readAt
+      end
+    end
+    let counted = do |conversation|
+      let replied = answered.count { |reply| reply.conversationId == conversation.id }
+      unreadCount(conversation, marks, since, open) + replied
+    end
+    let byChannel = channels.reduce({}) do |found, channel|
+      found.put(channel.id, counted(channel))
+    end
+    let byPerson = chats.reduce({}) do |found, chat|
+      found.put(chat.counterpart(user.id), counted(chat))
+    end
+    let byGroup = groups.reduce({}) do |found, group|
+      found.put(group.id, counted(group))
+    end
+    return (byChannel, byPerson, byGroup)
+  end
+
+  # The messages of a conversation newer than how far this person has read
+  # there; none in the one they are reading.
+  unreadCount : Conversation -> [Reading] -> Integer -> String -> Integer
+  foul unreadCount(conversation, marks, since, open) do
+    return 0 if conversation.id == open
+    let mark = marks.find { |each| each.conversationId == conversation.id && each.threadId.empty? }
+    let read = mark.map { |each| each.readAt }.or(since)
+    return Messages.newer(conversation.id, read).or(0)
+  end
+
+  # When the newest of some messages was sent; 0 for none.
+  newest : [Message] -> Integer
+  let newest(messages) = messages.last.map { |message| message.sentAt }.or(0)
+
+  # Whether this person follows the thread a message starts.
+  following? : [Reading] -> String -> Bool
+  let following?(marks, threadId) = !threadId.empty? && marks.any? do |mark|
+    mark.threadId == threadId
+  end
+
+  # Notes how far somebody has read, if it is further than before.
+  advance : User -> [Reading] -> Reading -> Void
+  foul advance(user, marks, reading) do
+    let before = marks
+      .find { |mark| mark.conversationId == reading.conversationId && mark.threadId == reading.threadId }
+      .map { |mark| mark.readAt }
+      .or(0)
+    Readings.reached(user.id, reading) if reading.readAt > before
+  end
+
+  sum : {String: Integer} -> Integer
+  let sum(byPlace) = byPlace.values.reduce(0) { |total, count| total + count }
 end

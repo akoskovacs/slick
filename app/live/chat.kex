@@ -14,10 +14,8 @@ module App.Live.Chat
 
 using Metro.Live.Presence, only: [Presence, Note]
 using Metro.Live.Socket, only: [field, repeated]
-using App.Live.Places, only: [home, visible, organizations, memberOrganization, member?]
+using App.Live.Places, only: [home, visible, organizations, memberOrganization]
 using App.Live.Tab, only: [Tab, closed]
-using App.Live.Unread, only: [Unread]
-using App.Models.Attachment, only: [Attachment]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message]
@@ -25,7 +23,6 @@ using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
-using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Drafts, as: Drafts
 using DB.Repositories.Memberships, as: Memberships
@@ -53,7 +50,7 @@ foul markup(statuses, user, tab) do
       let roster : [String] = Memberships.roster(organization.id).or([])
       let everyone : [User] = Users.everyone.or([])
       let people = everyone.filter { |person| roster.contains?(person.id) }
-      let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
+      let channels : [Conversation] = App.Live.Places.readable(user, Conversations.channels(organization.id).or([]))
       let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
       let teams : [Team] = Teams.ofOrganization(organization.id).or([])
       let now = Metro.Clock.milliseconds()
@@ -71,7 +68,7 @@ foul markup(statuses, user, tab) do
       let marks : [Reading] = Readings.marks(user.id).or([])
       match visible(user, tab) do
         None => do
-          let unread = tallied(user, organization, mine, marks, "", "")
+          let unread = App.Live.Unread.counts(user, organization, mine, marks, "", "")
           return App.Views.Chat.index(
             tab,
             user,
@@ -102,27 +99,10 @@ foul markup(statuses, user, tab) do
         Just(conversation) => do
           let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
           let thread = App.Live.Threads.messages(conversation, tab.thread)
-          # Somebody looking at a conversation reads it as far as its newest
-          # message, and the thread open beside it, if they follow it, as
-          # far as its newest reply.
-          let reading = tab.attentive? then conversation.id else ""
-          let readingThread = tab.attentive? then App.Live.Threads.firstId(thread) else ""
-          if tab.attentive?
-            noted(user, marks, Reading {
-              conversationId: conversation.id,
-              readAt: newest(messages)
-            })
-            if followed(marks, readingThread)
-              noted(user, marks, Reading {
-                conversationId: conversation.id,
-                threadId: readingThread,
-                readAt: newest(thread)
-              })
-            end
-          end
-          let unread = tallied(user, organization, mine, marks, reading, readingThread)
+          let (reading, readingThread) = App.Live.Unread.markRead(user, marks, conversation, messages, thread, tab.attentive?)
+          let unread = App.Live.Unread.counts(user, organization, mine, marks, reading, readingThread)
           let reactions = Reactions.throughout(conversation.id).or([])
-          let cabinet = filedIn(user, tab, conversation)
+          let cabinet = App.Live.Files.cabinet(user, tab, conversation)
           let responses = Answers.collected(conversation.id).or([])
           let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
           return App.Views.Chat.index(
@@ -159,73 +139,125 @@ end
 
 # Applies one event: the tab's next state, and whether something other tabs
 # show was changed — in which case they are told to refresh. What changed in
-# what a bot could see is noted to the events bus on the way (`events`).
+# what a bot could see is noted to the events bus on the way (`bus`).
 handled : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> [(String, String?)] -> (Tab, Bool)
-foul handled(events, statuses, user, tab, entries) do
-  match field(entries, "event") do
-    "conversation-open" => App.Live.Conversations.open(user, tab, field(entries, "id"))
-    "direct-open" => App.Live.Conversations.openDirect(user, tab, field(entries, "user"))
-    "channel-new" => (Tab { ...closed(tab), dialog: "channel" }, false)
-    "channel-create" => App.Live.Conversations.createChannel(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"), field(entries, "team"))
-    "group-new" => (Tab { ...closed(tab), dialog: "group" }, false)
-    "group-create" => App.Live.Conversations.createGroup(user, tab, repeated(entries, "person"))
-    "promote" => (Tab { ...closed(tab), dialog: "promote" }, false)
-    "group-promote" => App.Live.Conversations.makeChannel(user, tab, field(entries, "title").trim.lowerCase, field(entries, "access"))
-    "admit" => (Tab { ...closed(tab), dialog: "admit" }, false)
-    "channel-add" => App.Live.Conversations.addPeople(user, tab, repeated(entries, "person"))
-    "team-open" => App.Live.Teams.open(user, tab, field(entries, "id"))
-    "team-close" => (Tab { ...closed(tab), team: "" }, false)
-    "team-new" => (Tab { ...closed(tab), dialog: "team" }, false)
-    "team-create" => App.Live.Teams.create(user, tab, field(entries, "name").trim, field(entries, "description").trim, field(entries, "handle").trim.lowerCase)
-    "team-edit" => (Tab { ...closed(tab), dialog: "team-edit" }, false)
-    "team-update" => App.Live.Teams.update(user, tab, field(entries, "name").trim, field(entries, "description").trim)
-    "team-join" => App.Live.Teams.addMembers(user, tab, [user.id])
-    "team-add" => App.Live.Teams.addMembers(user, tab, repeated(entries, "person"))
-    "team-leave" => App.Live.Teams.removeMember(user, tab, user.id)
-    "team-remove" => App.Live.Teams.removeMember(user, tab, field(entries, "user"))
-    "send" => App.Live.Messages.send(events, statuses, user, tab, field(entries, "body").trim)
-    "draft-save" => App.Live.Messages.saveDraft(user, tab, field(entries, "place"), field(entries, "body"))
-    "typing" => App.Live.Statuses.markTyping(statuses, user, tab)
-    "topic-edit" => (Tab { ...closed(tab), retitling?: true }, false)
-    "topic-set" => App.Live.Conversations.setTopic(user, tab, field(entries, "topic").trim)
-    "react" => App.Live.Messages.react(user, tab, field(entries, "message"), field(entries, "emoji"))
-    "answer" => App.Live.Messages.answer(events, user, tab, entries)
-    "cancel" => (closed(tab), false)
-    "thread-open" => App.Live.Threads.open(user, tab, field(entries, "message"))
-    "thread-close" => (Tab { organization: tab.organization, conversation: tab.conversation }, false)
-    "profile-open" => App.Live.Profiles.open(user, tab, field(entries, "user"))
-    "bot-operators-set" => App.Live.Bots.setOperators(user, tab, field(entries, "bot"), repeated(entries, "operator"))
-    "bot-access-set" => App.Live.Bots.setAccess(user, tab, field(entries, "access"))
-    "settings" => (Tab { ...closed(tab), thread: "", profile: "", team: "", view: "settings" }, false)
-    "channel-configure" => App.Live.Conversations.configure(user, tab, field(entries, "access"), field(entries, "team"), field(entries, "bot-access"))
-    "role-set" => App.Live.Organizations.setRole(user, tab, field(entries, "user"), field(entries, "role"))
-    "member-remove" => App.Live.Organizations.removeMember(user, tab, field(entries, "user"))
-    "profile-close" => (Tab { ...closed(tab), profile: "" }, false)
-    "attention" => (Tab { ...tab, attentive?: field(entries, "on") != "false" }, false)
-    "file-attach" => App.Live.Messages.attach(user, tab, field(entries, "file"))
-    "file-attach-failed" => App.Live.Messages.refuseUpload(tab, field(entries, "filename"), field(entries, "reason"))
-    "file-detach" => App.Live.Messages.detach(tab, field(entries, "file"))
-    "files" => (Tab { ...closed(tab), thread: "", view: "files" }, false)
-    "messages" => (Tab { ...closed(tab), view: "" }, false)
-    "profile-edit" => (Tab { ...closed(tab), dialog: "profile" }, false)
-    "profile-update" => App.Live.Profiles.update(user, tab, entries)
-    "reply" => App.Live.Messages.reply(events, statuses, user, tab, field(entries, "body").trim)
-    "visit" => (arrived(user, field(entries, "path")), false)
-    "organization-switch" => App.Live.Organizations.switch(user, tab, field(entries, "id"))
-    "organization-new" => (Tab { ...closed(tab), dialog: "organization" }, false)
-    "organization-create" => App.Live.Organizations.create(user, tab, field(entries, "name").trim)
-    "invite" => (Tab { ...closed(tab), dialog: "invite" }, false)
-    "invite-send" => App.Live.Organizations.invite(user, tab, field(entries, "email").trim.lowerCase)
-    "status" => (Tab { ...closed(tab), dialog: "status" }, false)
-    "status-set" => App.Live.Profiles.setStatus(user, tab, field(entries, "emoji").trim, field(entries, "text").trim)
-    "status-clear" => App.Live.Profiles.setStatus(user, tab, "", "")
-    "bots" => (Tab { ...closed(tab), dialog: "bots" }, false)
-    "bot-create" => App.Live.Bots.create(user, tab, field(entries, "name").trim, field(entries, "owner"))
-    "bot-rotate" => App.Live.Bots.rotateToken(user, tab, field(entries, "id"))
-    "bot-add" => App.Live.Bots.add(user, tab, field(entries, "id"))
-    "bot-remove" => App.Live.Bots.remove(user, tab, field(entries, "id"))
-    _ => (tab, false)
-  end
+foul handled(bus, statuses, user, tab, entries) = on(field(entries, "event"), Event {
+  bus: bus,
+  statuses: statuses,
+  user: user,
+  tab: tab,
+  entries: entries
+})
+
+# One event from a tab, and whose tab it is.
+record Event do
+  bus : Server<App.Live.Events.Bus>
+  statuses : Server<Presence>
+  user : User
+  tab : Tab
+  # What the browser sent with it.
+  entries : [(String, String?)]
+end
+
+# The dialogs a tab opens by name, with nothing else open over the
+# conversation: the event that opens each, and the dialog.
+let DIALOGS = {
+  "channel-new": "channel",
+  "group-new": "group",
+  "promote": "promote",
+  "admit": "admit",
+  "team-new": "team",
+  "team-edit": "team-edit",
+  "organization-new": "organization",
+  "invite": "invite",
+  "status": "status",
+  "profile-edit": "profile",
+  "bots": "bots"
+}
+
+private do
+  # What came with an event: as sent, trimmed, and every value sent for it.
+  given : Event -> String -> String
+  let given(event, key) = field(event.entries, key)
+
+  typed : Event -> String -> String
+  let typed(event, key) = field(event.entries, key).trim
+
+  picked : Event -> String -> [String]
+  let picked(event, key) = repeated(event.entries, key)
+
+  # What each event does, by its name.
+  on : String -> Event -> (Tab, Bool)
+
+  # Conversations.
+  foul on("conversation-open", event) = App.Live.Conversations.open(event.user, event.tab, given(event, "id"))
+  foul on("direct-open", event) = App.Live.Conversations.openDirect(event.user, event.tab, given(event, "user"))
+  foul on("channel-create", event) = App.Live.Conversations.createChannel(event.user, event.tab, typed(event, "title").lowerCase, given(event, "access"), given(event, "team"))
+  foul on("channel-add", event) = App.Live.Conversations.addPeople(event.user, event.tab, picked(event, "person"))
+  foul on("channel-configure", event) = App.Live.Conversations.configure(event.user, event.tab, given(event, "access"), given(event, "team"), given(event, "bot-access"))
+  foul on("group-create", event) = App.Live.Conversations.createGroup(event.user, event.tab, picked(event, "person"))
+  foul on("group-promote", event) = App.Live.Conversations.makeChannel(event.user, event.tab, typed(event, "title").lowerCase, given(event, "access"))
+  foul on("topic-edit", event) = (Tab { ...closed(event.tab), retitling?: true }, false)
+  foul on("topic-set", event) = App.Live.Conversations.setTopic(event.user, event.tab, typed(event, "topic"))
+  foul on("settings", event) = (Tab { ...closed(event.tab), thread: "", profile: "", team: "", view: "settings" }, false)
+  foul on("files", event) = (Tab { ...closed(event.tab), thread: "", view: "files" }, false)
+  foul on("messages", event) = (Tab { ...closed(event.tab), view: "" }, false)
+
+  # Messages and threads.
+  foul on("send", event) = App.Live.Messages.send(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
+  foul on("reply", event) = App.Live.Messages.reply(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
+  foul on("draft-save", event) = App.Live.Messages.saveDraft(event.user, event.tab, given(event, "place"), given(event, "body"))
+  foul on("react", event) = App.Live.Messages.react(event.user, event.tab, given(event, "message"), given(event, "emoji"))
+  foul on("answer", event) = App.Live.Messages.answer(event.bus, event.user, event.tab, event.entries)
+  foul on("file-attach", event) = App.Live.Messages.attach(event.user, event.tab, given(event, "file"))
+  foul on("file-attach-failed", event) = App.Live.Messages.refuseUpload(event.tab, given(event, "filename"), given(event, "reason"))
+  foul on("file-detach", event) = App.Live.Messages.detach(event.tab, given(event, "file"))
+  foul on("thread-open", event) = App.Live.Threads.open(event.user, event.tab, given(event, "message"))
+  foul on("thread-close", event) = (Tab { organization: event.tab.organization, conversation: event.tab.conversation }, false)
+  foul on("typing", event) = App.Live.Statuses.markTyping(event.statuses, event.user, event.tab)
+
+  # Teams.
+  foul on("team-open", event) = App.Live.Teams.open(event.user, event.tab, given(event, "id"))
+  foul on("team-close", event) = (Tab { ...closed(event.tab), team: "" }, false)
+  foul on("team-create", event) = App.Live.Teams.create(event.user, event.tab, typed(event, "name"), typed(event, "description"), typed(event, "handle").lowerCase)
+  foul on("team-update", event) = App.Live.Teams.update(event.user, event.tab, typed(event, "name"), typed(event, "description"))
+  foul on("team-join", event) = App.Live.Teams.addMembers(event.user, event.tab, [event.user.id])
+  foul on("team-add", event) = App.Live.Teams.addMembers(event.user, event.tab, picked(event, "person"))
+  foul on("team-leave", event) = App.Live.Teams.removeMember(event.user, event.tab, event.user.id)
+  foul on("team-remove", event) = App.Live.Teams.removeMember(event.user, event.tab, given(event, "user"))
+
+  # Organizations, and who is in them.
+  foul on("organization-switch", event) = App.Live.Organizations.switch(event.user, event.tab, given(event, "id"))
+  foul on("organization-create", event) = App.Live.Organizations.create(event.user, event.tab, typed(event, "name"))
+  foul on("invite-send", event) = App.Live.Organizations.invite(event.user, event.tab, typed(event, "email").lowerCase)
+  foul on("role-set", event) = App.Live.Organizations.setRole(event.user, event.tab, given(event, "user"), given(event, "role"))
+  foul on("member-remove", event) = App.Live.Organizations.removeMember(event.user, event.tab, given(event, "user"))
+
+  # Profiles.
+  foul on("profile-open", event) = App.Live.Profiles.open(event.user, event.tab, given(event, "user"))
+  foul on("profile-close", event) = (Tab { ...closed(event.tab), profile: "" }, false)
+  foul on("profile-update", event) = App.Live.Profiles.update(event.user, event.tab, event.entries)
+  foul on("status-set", event) = App.Live.Profiles.setStatus(event.user, event.tab, typed(event, "emoji"), typed(event, "text"))
+  foul on("status-clear", event) = App.Live.Profiles.setStatus(event.user, event.tab, "", "")
+
+  # Bots.
+  foul on("bot-create", event) = App.Live.Bots.create(event.user, event.tab, typed(event, "name"), given(event, "owner"))
+  foul on("bot-rotate", event) = App.Live.Bots.rotateToken(event.user, event.tab, given(event, "id"))
+  foul on("bot-add", event) = App.Live.Bots.add(event.user, event.tab, given(event, "id"))
+  foul on("bot-remove", event) = App.Live.Bots.remove(event.user, event.tab, given(event, "id"))
+  foul on("bot-operators-set", event) = App.Live.Bots.setOperators(event.user, event.tab, given(event, "bot"), picked(event, "operator"))
+  foul on("bot-access-set", event) = App.Live.Bots.setAccess(event.user, event.tab, given(event, "access"))
+
+  # The tab itself: what its person is looking at, and where it is.
+  foul on("cancel", event) = (closed(event.tab), false)
+  foul on("attention", event) = (Tab { ...event.tab, attentive?: given(event, "on") != "false" }, false)
+  foul on("visit", event) = (arrived(event.user, given(event, "path")), false)
+
+  # A dialog, by the event that opens it; any other event does nothing.
+  foul on(name, event) = DIALOGS
+    .get(name)
+    .map { |dialog| (Tab { ...closed(event.tab), dialog: dialog }, false) }
+    .or((event.tab, false))
 end
 
 # The tab for an address (App.Paths): a channel, a private chat or a group
@@ -272,134 +304,4 @@ foul grouped(user, location, thread) do
       end
     end
   end
-end
-
-private do
-  # How much somebody has not read: in the organization the tab is in, by
-  # channel and by private chat, and in each of the others altogether.
-  # `marks` are how far they have read (`Readings.marks`); `open` and
-  # `openThread` are what the tab shows them right now, if they are looking.
-  tallied : User -> Organization -> [Organization] -> [Reading] -> String -> String -> Unread
-  foul tallied(user, current, mine, marks, open, openThread) do
-    let (channels, people, groups) = unreadIn(user, current, marks, open, openThread)
-    let others = mine.reject { |each| each.id == current.id }
-    let elsewhere = others.reduce({}) do |found, other|
-      let (theirChannels, theirPeople, theirGroups) = unreadIn(user, other, marks, "", "")
-      found.put(other.id, summed(theirChannels) + summed(theirPeople) + summed(theirGroups))
-    end
-    return Unread {
-      channels: channels,
-      people: people,
-      groups: groups,
-      organizations: elsewhere,
-      total: summed(channels) + summed(people) + summed(groups) + summed(elsewhere)
-    }
-  end
-
-  # What is new in each channel of an organization this person may read, by
-  # id, in each of their private chats there, by the person it is with, and
-  # in each of their group chats, by id: messages
-  # since they last read there — since they joined, where they never have —
-  # and other people's replies in the threads they follow since they last
-  # read those.
-  foul unreadIn(
-    user: User,
-    organization: Organization,
-    marks: [Reading],
-    open: String,
-    openThread: String
-  ) -> ({String: Integer}, {String: Integer}, {String: Integer}) do
-    let since = Memberships.joined(organization.id, user.id)
-    let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
-    let chats : [Conversation] = Conversations.directsOf(organization.id, user.id).or([])
-    let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
-    let places = (channels + chats + groups).map { |conversation| conversation.id }
-    let follows = marks.filter do |mark|
-      !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId)
-    end
-    let roots = follows.map { |mark| mark.threadId }
-    let oldest = follows.map { |mark| mark.readAt }.min.or(0)
-    let replies : [Message] = follows.empty? then [] else Messages.replyingTo(roots, oldest).or([])
-    let answered = replies.filter do |reply|
-      reply.userId != user.id && follows.any? do |mark|
-        mark.threadId == reply.parentId && reply.sentAt > mark.readAt
-      end
-    end
-    let counted = do |conversation|
-      let replied = answered.count { |reply| reply.conversationId == conversation.id }
-      unseen(conversation, marks, since, open) + replied
-    end
-    let byChannel = channels.reduce({}) do |found, channel|
-      found.put(channel.id, counted(channel))
-    end
-    let byPerson = chats.reduce({}) do |found, chat|
-      found.put(chat.counterpart(user.id), counted(chat))
-    end
-    let byGroup = groups.reduce({}) do |found, group|
-      found.put(group.id, counted(group))
-    end
-    return (byChannel, byPerson, byGroup)
-  end
-
-  # The channels of these that this person may read.
-  readable : User -> [Conversation] -> [Conversation]
-  foul readable(user, channels) = channels.filter { |channel| App.Services.Authority.canRead(user, channel) }
-
-  # The messages of a conversation newer than how far this person has read
-  # there; none in the one they are reading.
-  unseen : Conversation -> [Reading] -> Integer -> String -> Integer
-  foul unseen(conversation, marks, since, open) do
-    return 0 if conversation.id == open
-    let mark = marks.find { |each| each.conversationId == conversation.id && each.threadId.empty? }
-    let read = mark.map { |each| each.readAt }.or(since)
-    return Messages.newer(conversation.id, read).or(0)
-  end
-
-  # The files of a conversation: what was sent into it, what this person
-  # has waiting to send there, and — while the files view is open — the
-  # start of each small text file.
-  filedIn : User -> Tab -> Conversation -> App.Views.Chat.Cabinet
-  foul filedIn(user, tab, conversation) do
-    let stored : [Attachment] = Attachments.inside(conversation.id).or([])
-    let waiting : [Attachment] = tab.pending.empty? then [] else Attachments.among(tab.pending).or([])
-    let queued = waiting.filter { |file| file.userId == user.id && !file.sent? }
-    let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
-    let glimpsed = tab.view == "files" then small else []
-    let glimpses = glimpsed.reduce({}) do |found, file|
-      let content : Result<Binary, String> = Metro.Storage.get(file.id)
-      let text = content.map { |bytes| bytes.to(String).or("") }.or("")
-      found.put(file.id, text.take(400))
-    end
-    return App.Views.Chat.Cabinet {
-      stored: stored,
-      queued: queued,
-      glimpses: glimpses
-    }
-  end
-
-  # The largest text file whose start the files view shows, in bytes.
-  let GLIMPSED = 65536
-
-  # When the newest of some messages was sent; 0 for none.
-  newest : [Message] -> Integer
-  let newest(messages) = messages.last.map { |message| message.sentAt }.or(0)
-
-  # Whether this person follows the thread a message starts.
-  followed : [Reading] -> String -> Bool
-  let followed(marks, threadId) = !threadId.empty? && marks.any? do |mark|
-    mark.threadId == threadId
-  end
-
-  # Notes how far somebody has read, if it is further than before.
-  noted : User -> [Reading] -> Reading -> Void
-  foul noted(user, marks, reading) do
-    let before = marks
-      .find { |mark| mark.conversationId == reading.conversationId && mark.threadId == reading.threadId }
-      .map { |mark| mark.readAt }
-      .or(0)
-    Readings.reached(user.id, reading) if reading.readAt > before
-  end
-
-  summed : {String: Integer} -> Integer
-  let summed(counts) = counts.values.reduce(0) { |sum, count| sum + count }
 end

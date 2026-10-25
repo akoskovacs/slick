@@ -71,3 +71,7 @@ member? : String -> String -> Bool
 foul member?(organizationId, userId) = Grants.organizationsOf(userId)
   .or([])
   .contains?(organizationId)
+
+# The channels of these that this person may read.
+readable : User -> [Conversation] -> [Conversation]
+foul readable(user, channels) = channels.filter { |channel| App.Services.Authority.canRead(user, channel) }

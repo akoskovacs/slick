@@ -1,0 +1,33 @@
+# The files view of a conversation, as a tab shows it.
+module App.Live.Files
+
+using App.Live.Tab, only: [Tab]
+using App.Models.Attachment, only: [Attachment]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.User, only: [User]
+using DB.Repositories.Attachments, as: Attachments
+
+# The files of a conversation: what was sent into it, what this person
+# has waiting to send there, and — while the files view is open — the
+# start of each small text file.
+cabinet : User -> Tab -> Conversation -> App.Views.Chat.Cabinet
+foul cabinet(user, tab, conversation) do
+  let stored : [Attachment] = Attachments.inside(conversation.id).or([])
+  let waiting : [Attachment] = tab.pending.empty? then [] else Attachments.among(tab.pending).or([])
+  let queued = waiting.filter { |file| file.userId == user.id && !file.sent? }
+  let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
+  let glimpsed = tab.view == "files" then small else []
+  let glimpses = glimpsed.reduce({}) do |found, file|
+    let content : Binary or! String = Metro.Storage.get(file.id)
+    let text = content.map { |bytes| bytes.to(String).or("") }.or("")
+    found.put(file.id, text.take(400))
+  end
+  return App.Views.Chat.Cabinet {
+    stored: stored,
+    queued: queued,
+    glimpses: glimpses
+  }
+end
+
+# The largest text file whose start the files view shows, in bytes.
+let GLIMPSED = 65536
