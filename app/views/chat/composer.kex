@@ -1,0 +1,59 @@
+# What goes with a message box: whom it can mention, the slash commands it
+# offers, and the emoji it types.
+module App.Views.Chat.Composer
+
+using App.Views.Chat.Names, only: [shownAs]
+using App.Views.Chat.Messages, only: [Room]
+
+# The emoji buttons that type into one message box.
+picked : String -> String
+let picked(target) do
+  App.Models.Emoji.KNOWN
+    .map do |code, glyph|
+      [
+        "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\"",
+        " data-target=\"${target}\" title=\":${code}:\">${glyph}</button>"
+      ].join("")
+    end
+    .join("")
+end
+
+# Who the composer offers to mention, as JSON for its hook: everyone here
+# but whoever is writing, then the teams.
+mentionable : Room -> String
+let mentionable(room) do
+  let people : [Any] = room.people
+    .reject { |person| person.id == room.viewer.id }
+    .map do |person|
+      let entry : {String: Any} = {"name": person.shown, "detail": person.bot? then "bot" else ""}
+      entry
+    end
+  let teams : [Any] = room.teams.map do |team|
+    let count = team.members.count
+    let entry : {String: Any} = {
+      "name": team.handle,
+      "detail": "team · ${team.name} · ${count == 1 then "1 person" else "${count} people"}"
+    }
+    entry
+  end
+  JSON.stringify(people + teams)
+end
+
+# The commands the composer offers, as JSON for its hook: each with what
+# choosing it types — in a channel the bot's name first, since a bot there
+# only hears what mentions it.
+offered : Room -> String
+let offered(room) do
+  let listed : [Any] = room.commands.map do |command|
+    let bot = shownAs(room.people, command.botId, "")
+    let typed = room.channel? then "@${bot} /${command.name} " else "/${command.name} "
+    let entry : {String: Any} = {
+      "name": command.name,
+      "description": command.description,
+      "bot": bot,
+      "insert": typed
+    }
+    entry
+  end
+  JSON.stringify(listed)
+end

@@ -1,0 +1,78 @@
+# What a tab's page is drawn from (App.Views.Chat.index): the organization
+# around the conversation, and the conversation itself. App.Live.Chat
+# gathers them, as things are stored right now.
+module App.Views.Chat.Page
+
+using App.Live.Unread, only: [Unread]
+using App.Models.Answer, only: [Answer]
+using App.Models.Attachment, only: [Attachment]
+using App.Models.Command, only: [Command]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Draft, only: [Draft]
+using App.Models.Invocation, only: [Invocation]
+using App.Models.Message, only: [Message]
+using App.Models.Organization, only: [Organization]
+using App.Models.Reaction, only: [Reaction]
+using App.Models.Team, only: [Team]
+using App.Models.User, only: [User]
+using Metro.Live.Presence, only: [Note]
+
+# What a tab's organization shows around the conversation: the rail of
+# this person's organizations, the sidebar, and the dialogs.
+#
+# `organizations` are the ones this person is in; `organization` is the one
+# the tab is in, and the channels, group chats, teams and people are its —
+# the channels and group chats this person may read. `online` are the ids
+# of the people with a tab open.
+#
+# `bots` are the ones this person may look after here — the organization's
+# and their own — and only asked for while their dialog is open;
+# `operators` the ids of each one's operators, by its id.
+#
+# `drafts` are what this person has written and not sent, anywhere, and
+# `unread` how much they have not read. `roles` are each member's role, by
+# their id, and `administrator` whether this person is one.
+record Sidebar do
+  organizations : [Organization] = []
+  organization : Organization
+  channels : [Conversation] = []
+  groups : [Conversation] = []
+  teams : [Team] = []
+  people : [User] = []
+  online : [String] = []
+  bots : [User] = []
+  operators : {String: [String]} = {}
+  drafts : [Draft] = []
+  unread : Unread = Unread {}
+  roles : {String: String} = {}
+  administrator : Bool = false
+end
+
+# The conversation a tab shows, and what is beside it; `Pane {}` when it
+# shows none.
+#
+# `thread` is the open thread — the message that started it, then the
+# replies — or empty. `cabinet` is the conversation's files, `commands` the
+# slash commands its bots answer to and `invocations` the ones used there.
+# `doing` is what other people there are in the middle of right now.
+record Pane do
+  conversation : Conversation? = None
+  messages : [Message] = []
+  reactions : [Reaction] = []
+  responses : [Answer] = []
+  thread : [Message] = []
+  cabinet : Cabinet = Cabinet {}
+  commands : [Command] = []
+  invocations : [Invocation] = []
+  doing : [Note] = []
+end
+
+# The files of the conversation a tab shows: those sent into it, newest
+# first, and this person's waiting in the message box. `glimpses` are the
+# starts of text files, by id, read only while the files view is open.
+record Cabinet do
+  stored : [Attachment] = []
+  queued : [Attachment] = []
+  glimpses : {String: String} = {}
+end
+

@@ -49,6 +49,20 @@ Still 0.4.0-rc.3, still untagged.
   form failed only when used. The same call in a lone file is caught
   (`Undefined function`). Not reduced yet; the call is gone (it is
   `App.Live.Bots.setOperators`, calling `home`).
+- **A template bound in one module cannot be called from another.**
+  `let composerPartial = Template.html(Kex.embed("_composer.html.ket"))`
+  in `App.Views.Chat.Composer`, imported by name into `App.Views.Chat.Threads`
+  and called there, checks, and then fails to compile:
+  `undefined function 'App.Views.Chat.Composer.composerPartial'/10 in pane/3`
+  — the value is called as a remote function of the template's arity. Each
+  module that calls a template binds it itself (`_composer.html.ket` is
+  bound in Threads and in Conversation).
+- **A template is checked in the module that binds it,** so a record it
+  prints must be imported there: `_attachment.html.ket` bound in
+  `App.Views.Chat.Messages` printing an `Enclosure` of
+  `App.Views.Chat.Files` read `file.link` as a call of `link` (`expects
+  argument 1 to be Pid`) until `Enclosure` was imported. Expected, but the
+  error does not say which record is missing.
 - **The REPL binding that breaks every later input** (under 2026-10-24) is
   now [#574](https://github.com/kexhq/kex/issues/574). `using` the
   record's module before the `let` avoids it as well.
@@ -551,5 +565,5 @@ one `Metro.Storage.Service` and `_label, _longest`. What is left is below.
 | opencode-bot `local.kex` | `failureOf` | #494; fixed by kexhq/kex#557 | `failed` |
 | Harmat | `Database.ongoing`, `begun`, `ended` | 4 | private to Harmat, if the store's connection can be given the transaction another way |
 | Slick `app/views/chat.kex` | `Detail.key` | `slot` is a keyword | `slot` or `column` |
-| Slick `app/views/chat.kex` | `let open = pane(…)` | `main` is a keyword | `main` |
+| Slick `app/views/chat.kex` | `let open = conversationPane(…)` | `main` is a keyword | `main` |
 | Slick `config/routes.kex` | imported `uploaded`, `fetched` | 6 (works on 286c026) | either way |

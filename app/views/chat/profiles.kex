@@ -1,0 +1,91 @@
+# Somebody's profile, open beside the conversation.
+module App.Views.Chat.Profiles
+
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using App.Views.Chat.Page, only: [Sidebar]
+
+# Somebody's profile, beside the conversation.
+record Card do
+  key : String
+  caption : String
+  initial : String
+  tint : String
+  badged : String = ""
+  emblem : String = ""
+  statusText : String = ""
+  # "Active" or "Away".
+  presence : String
+  active? : Bool
+  # Their email; "" for a bot, whose address is nobody's to write to.
+  mail : String = ""
+  # Who a bot belongs to, and the id of that person to open their profile
+  # with; "" for a person, and a key of "" for an organization's bot.
+  keeper : String = ""
+  keeperKey : String = ""
+  # What else their profile says, as they gave it; "" for what it does not.
+  # `name` is their full name when they go by their nickname.
+  name : String = ""
+  title : String = ""
+  department : String = ""
+  bio : String = ""
+  phone : String = ""
+  timeZone : String = ""
+  # Whether it is whoever is looking.
+  own? : Bool
+  # Their role in the organization: "admin", "member" or "read-only"; ""
+  # for a bot, whose role nobody changes here.
+  role : String = ""
+  # The same, in words for a person to read.
+  roleShown : String = ""
+  # Whether whoever is looking may change their role.
+  manageable? : Bool = false
+end
+
+let profilePartial = Template.html(Kex.embed("_profile.html.ket"))
+
+# The profile a tab has open, if it is of somebody in the organization.
+# A bot's says whose it is: a person's, or the organization's. Whether the
+# viewer may change their role is the sidebar's `administrator`.
+pane : Tab -> User -> Sidebar -> String
+let pane(tab, user, sidebar) do
+  match sidebar.people.find { |person| person.id == tab.profile } do
+    None => ""
+    Just(person) => do
+      let active = person.bot? || sidebar.online.contains?(person.id)
+      let owner = sidebar.people.find { |each| each.id == person.ownerId }
+      let keeper = if person.ownerOrganizationId.empty?
+        owner.map { |each| each.shown }.or(person.bot? then "Someone" else "")
+      else
+        sidebar.organization.name
+      end
+      let role = sidebar.roles.get(person.id).or("member")
+      let roleShown = role == "admin" then "Administrator" else (role == "read-only" then "Read-only" else "Member")
+      let mayManage = sidebar.administrator && !person.bot? && person.id != user.id
+      profilePartial(Card {
+        key: person.id,
+        caption: person.shown,
+        initial: person.shown.take(1).upperCase,
+        tint: "${BEAM.erlang.phash2(person.id, 8)}",
+        badged: person.bot? then "BOT" else "",
+        emblem: person.statusEmoji,
+        statusText: person.statusText,
+        presence: active then "Active" else "Away",
+        active?: active,
+        mail: person.bot? then "" else person.email,
+        keeper: keeper,
+        keeperKey: owner.map { |each| each.id }.or(""),
+        own?: person.id == user.id,
+        role: role,
+        roleShown: roleShown,
+        manageable?: mayManage,
+        name: person.shown == person.name then "" else person.name,
+        title: person.title,
+        department: person.department,
+        phone: person.phone,
+        timeZone: person.timeZone,
+        bio: person.bio
+      })
+    end
+  end
+end

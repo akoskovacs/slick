@@ -1,0 +1,273 @@
+# The dialog a tab has open over the conversation, by its name
+# (`Tab.dialog`): making a channel, a group chat, a team or an organization,
+# adding people, a status, one's own details, and one's bots.
+module App.Views.Chat.Dialogs
+
+using App.Live.Tab, only: [Tab]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.User, only: [User]
+using App.Views.Chat.Page, only: [Sidebar]
+
+# One of my bots, in the bots dialog.
+record Robot do
+  key : String
+  caption : String
+  # Whether it is in the organization the tab is in, and what that is called.
+  here? : Bool
+  spot : String
+  # Whose it is, in words.
+  belonging : String = ""
+  # The people who may be its operators, as the choices of them, and how
+  # many are now.
+  operators : String = ""
+  operated : Integer = 0
+end
+
+# Somebody who may be a bot's operator, in the bots dialog.
+record Operator do
+  key : String
+  caption : String
+  chosen? : Bool = false
+end
+
+# One detail in the form that changes a profile.
+record Detail do
+  key : String
+  caption : String
+  worth : String
+  longest : String
+  hint : String = ""
+  # Whether it is a few lines rather than one.
+  long? : Bool = false
+  # Whether a sync has taken it over: shown, and not to be changed here.
+  locked? : Bool = false
+end
+
+# Somebody who can be picked, in a dialog that picks people.
+record Pick do
+  key : String
+  caption : String
+  badged : String = ""
+end
+
+let botPartial = Template.html(Kex.embed("_bot.html.ket"))
+let operatorPartial = Template.html(Kex.embed("_operator.html.ket"))
+let botsPartial = Template.html(Kex.embed("_bots.html.ket"))
+let dialogPartial = Template.html(Kex.embed("_dialog.html.ket"))
+let channelPartial = Template.html(Kex.embed("_channel.html.ket"))
+let peoplePartial = Template.html(Kex.embed("_people.html.ket"))
+let pickPartial = Template.html(Kex.embed("_pick.html.ket"))
+let teamFormPartial = Template.html(Kex.embed("_team_form.html.ket"))
+let moodPartial = Template.html(Kex.embed("_mood.html.ket"))
+let detailsPartial = Template.html(Kex.embed("_details.html.ket"))
+let detailPartial = Template.html(Kex.embed("_detail.html.ket"))
+
+# The dialog a tab has open, if any; "" for none.
+dialog : Tab -> Sidebar -> User -> Conversation? -> String
+let dialog(tab, sidebar, me, conversation) = shown(tab.dialog, tab, sidebar, me, conversation)
+
+private do
+  shown : String -> Tab -> Sidebar -> User -> Conversation? -> String
+  let shown("status", tab, sidebar, me, conversation) do
+    let presets = App.Models.Emoji.STATUSES.map { |glyph, words| preset(glyph, words) }
+    let statusGlyphs = App.Models.Emoji.STATUSES.map { |glyph, _| glyph }
+    let knownGlyphs = App.Models.Emoji.KNOWN.map { |_, glyph| glyph }
+    let options = ([""] + statusGlyphs + knownGlyphs).map do |glyph|
+      choice(glyph, glyph == me.statusEmoji)
+    end
+    return moodPartial(presets.join(""), options.join(""), me.statusText, tab.dialogProblem)
+  end
+
+  let shown("profile", tab, sidebar, me, conversation) do
+    let inputs = App.Models.User.DETAILS.map do |column, label, longest|
+      detailPartial(Detail {
+        key: column,
+        caption: label,
+        worth: me.detail(column),
+        longest: "${longest}",
+        hint: column == "time_zone" then "Europe/Budapest" else "",
+        long?: column == "bio",
+        locked?: me.locked?(column)
+      })
+    end
+    return detailsPartial(
+      inputs.join("\n"),
+      me.nicknameShown?,
+      tab.dialogProblem,
+      !me.managed.empty?
+    )
+  end
+
+  let shown("bots", tab, sidebar, me, conversation) do
+    let rows = sidebar.bots.map do |bot|
+      let shared = !bot.ownerOrganizationId.empty?
+      let chosen = sidebar.operators.get(bot.id).or([])
+      let choices = sidebar.people
+        .filter { |person| !person.bot? }
+        .map do |person|
+          operatorPartial(Operator {
+            key: person.id,
+            caption: person.shown,
+            chosen?: chosen.contains?(person.id)
+          })
+        end
+      botPartial(Robot {
+        key: bot.id,
+        caption: bot.shown,
+        here?: shared || sidebar.people.any? { |person| person.id == bot.id },
+        spot: sidebar.organization.name,
+        belonging: shared then "belongs to ${sidebar.organization.name}" else "yours",
+        operators: choices.join("\n"),
+        operated: chosen.count
+      })
+    end
+    return botsPartial(
+      sidebar.organization.name,
+      rows.join("\n"),
+      tab.dialogProblem,
+      tab.secret,
+      tab.secretFor
+    )
+  end
+
+  let shown("channel", tab, sidebar, me, conversation) do
+    let owners = sidebar.teams
+      .filter { |team| team.includes?(me.id) }
+      .map do |team|
+        "<option value=\"${Template.escapeHtml(team.id)}\">@${Template.escapeHtml(team.handle)}</option>"
+      end
+    return channelPartial(
+      "Create a channel",
+      "A name of lower-case letters, digits and dashes.",
+      "channel-create",
+      sidebar.organization.name,
+      owners.join(""),
+      tab.dialogProblem,
+      "Create",
+      false
+    )
+  end
+
+  let shown("promote", tab, sidebar, me, conversation) do
+    return channelPartial(
+      "Make it a channel",
+      "Everyone in this chat stays in it, with everything said so far. " +
+        "A channel everyone can read shows them all of it, too.",
+      "group-promote",
+      sidebar.organization.name,
+      "",
+      tab.dialogProblem,
+      "Make it a channel",
+      true
+    )
+  end
+
+  let shown("group", tab, sidebar, me, conversation) do
+    let others = sidebar.people.reject { |person| person.id == me.id }
+    return peoplePartial(
+      "Start a group chat",
+      "Everyone you pick, and you: only you can read it. Pick one person for a private chat.",
+      "group-create",
+      picks(others),
+      tab.dialogProblem,
+      "Start"
+    )
+  end
+
+  let shown("admit", tab, sidebar, me, conversation) do
+    let outside = conversation
+      .map { |open| sidebar.people.reject { |person| open.admits?(person.id) } }
+      .or([])
+    let named = conversation.map { |open| open.title }.or("")
+    return peoplePartial(
+      "Add people to ${named}",
+      "They can read everything said in it, and write in it.",
+      "channel-add",
+      picks(outside),
+      tab.dialogProblem,
+      "Add"
+    )
+  end
+
+  let shown("team", tab, sidebar, me, conversation) do
+    return teamFormPartial(
+      "Create a team",
+      "People mentioned all at once, who can own channels. You are in it to start with.",
+      "team-create",
+      "",
+      "",
+      "",
+      false,
+      tab.dialogProblem,
+      "Create"
+    )
+  end
+
+  let shown("team-edit", tab, sidebar, me, conversation) do
+    match sidebar.teams.find { |team| team.id == tab.team } do
+      Just(team) => return teamFormPartial(
+        "Edit @${team.handle}",
+        "Its handle stays: it is how it was mentioned so far.",
+        "team-update",
+        team.name,
+        team.handle,
+        team.description,
+        true,
+        tab.dialogProblem,
+        "Save"
+      )
+      None => return ""
+    end
+  end
+
+  let shown("organization", tab, sidebar, me, conversation) do
+    return dialogPartial(
+      "Create an organization",
+      "Its own channels and people, apart from every other.",
+      "organization-create",
+      "name",
+      "Acme",
+      tab.dialogProblem,
+      "Create"
+    )
+  end
+
+  let shown("invite", tab, sidebar, me, conversation) do
+    return dialogPartial(
+      "Add people to ${sidebar.organization.name}",
+      "The email somebody registered with. They are in as soon as you add them.",
+      "invite-send",
+      "email",
+      "name@example.com",
+      tab.dialogProblem,
+      "Add"
+    )
+  end
+  let shown(_, tab, sidebar, me, conversation) = ""
+
+  # People to pick, as checkboxes.
+  picks : [User] -> String
+  let picks(people) = people
+    .map do |person|
+      pickPartial(Pick {
+        key: person.id,
+        caption: person.shown,
+        badged: person.bot? then "BOT" else ""
+      })
+    end
+    .join("\n")
+
+  # A ready-made status, set with one click. Both are this program's own
+  # constants, not anything typed.
+  preset : String -> String -> String
+  let preset(glyph, words) = [
+    "<button type=\"button\" data-event=\"status-set\"",
+    " data-emoji=\"${glyph}\" data-text=\"${words}\">",
+    "${glyph} ${words}</button>"
+  ].join("")
+
+  choice : String -> Bool -> String
+  let choice("", chosen?) = "<option value=\"\">No emoji</option>"
+  let choice(glyph, true) = "<option value=\"${glyph}\" selected>${glyph}</option>"
+  let choice(glyph, false) = "<option value=\"${glyph}\">${glyph}</option>"
+end

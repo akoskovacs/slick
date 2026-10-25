@@ -10,7 +10,7 @@ using DB.Repositories.Attachments, as: Attachments
 # The files of a conversation: what was sent into it, what this person
 # has waiting to send there, and — while the files view is open — the
 # start of each small text file.
-cabinet : User -> Tab -> Conversation -> App.Views.Chat.Cabinet
+cabinet : User -> Tab -> Conversation -> App.Views.Chat.Page.Cabinet
 foul cabinet(user, tab, conversation) do
   let stored : [Attachment] = Attachments.inside(conversation.id).or([])
   let waiting : [Attachment] = tab.pending.empty? then [] else Attachments.among(tab.pending).or([])
@@ -22,7 +22,7 @@ foul cabinet(user, tab, conversation) do
     let text = content.map { |bytes| bytes.to(String).or("") }.or("")
     found.put(file.id, text.take(400))
   end
-  return App.Views.Chat.Cabinet {
+  return App.Views.Chat.Page.Cabinet {
     stored: stored,
     queued: queued,
     glimpses: glimpses

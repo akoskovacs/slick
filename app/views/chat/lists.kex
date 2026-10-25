@@ -1,0 +1,75 @@
+# The sidebar's lists: the organizations in the rail, and the channels,
+# group chats, people and teams of the one the tab is in.
+module App.Views.Chat.Lists
+
+using App.Live.Unread, only: [Unread]
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Draft, only: [Draft]
+using App.Models.User, only: [User]
+using App.Views.Chat.Names, only: [counted]
+
+# One line of the sidebar.
+record Entry do
+  # The event the line sends, and the field it sends it with.
+  action : String
+  subject : String
+  key : String
+  caption : String
+  current? : Bool
+  # "BOT" beside a bot's name; "" beside a person's.
+  badged : String = ""
+  # Whether they have a tab open.
+  online? : Bool = false
+  # The emoji of their status, and its words for whoever points at it.
+  emblem : String = ""
+  emblemNote : String = ""
+  # Whether something is written there and not sent, and so marked ✏️.
+  drafted? : Bool = false
+  # How many messages there are not read yet: "3", "99+", or "".
+  unread : String = ""
+end
+
+# One organization in the rail.
+record Badge do
+  key : String
+  glyph : String
+  caption : String
+  current? : Bool
+  # How many messages there are not read yet, all of it together.
+  unread : String = ""
+end
+
+# Somebody in the sidebar, as a line that opens the private chat with
+# them.
+let personEntry(
+  person: User,
+  conversation: Conversation?,
+  user: User,
+  online: [String],
+  drafts: [Draft],
+  unread: Unread
+) -> Entry do
+  let chatting = conversation
+    .map { |open| open.direct? && open.counterpart(user.id) == person.id }
+    .or(false)
+  Entry {
+    action: "direct-open",
+    subject: "user",
+    key: person.id,
+    caption: person.shown,
+    current?: chatting,
+    badged: person.bot? then "BOT" else "",
+    online?: person.bot? || online.contains?(person.id),
+    emblem: person.statusEmoji,
+    emblemNote: person.statusText,
+    drafted?: !chatting && waiting(drafts, person.id),
+    unread: counted(unread.people.get(person.id).or(0))
+  }
+end
+
+# Whether a private chat with somebody has something written and not sent.
+waiting : [Draft] -> String -> Bool
+let waiting(drafts, personId) = drafts.any? do |draft|
+  !draft.personId.empty? && draft.personId == personId
+end
+

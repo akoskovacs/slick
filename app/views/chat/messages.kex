@@ -1,0 +1,210 @@
+# Messages as a conversation or a thread shows them: one person's in a row
+# as one block, with their reactions, the answers to their forms, their
+# files, and the slash commands used among them.
+module App.Views.Chat.Messages
+
+using App.Models.Answer, only: [Answer]
+using App.Models.Attachment, only: [Attachment]
+using App.Models.Command, only: [Command]
+using App.Models.Invocation, only: [Invocation]
+using App.Models.Message, only: [Message]
+using App.Models.Reaction, only: [Reaction]
+using App.Models.Team, only: [Team]
+using App.Models.User, only: [User]
+using App.Helpers.RichText, only: [Given]
+using App.Views.Chat.Names, only: [shownAs, tallied, clocked]
+using App.Views.Chat.Files, only: [enclosed, Enclosure]
+
+# What every message of a conversation is shown with: who is looking, who
+# is there, and the reactions, answers and files of its messages.
+record Room do
+  viewer : User
+  people : [User]
+  # The organization's teams: mentioned, and offered to mention.
+  teams : [Team] = []
+  reactions : [Reaction]
+  responses : [Answer]
+  files : [Attachment]
+  # The slash commands the bots here answer to, and whether here is more
+  # than a private chat — a channel or a group chat, where a bot is only
+  # listening when it is mentioned.
+  commands : [Command] = []
+  channel? : Bool = false
+  # The slash commands used here, oldest first: shown where they happened.
+  invocations : [Invocation] = []
+  # Each member's role in the organization, and whether the viewer
+  # administers it.
+  roles : {String: String} = {}
+  administrator : Bool = false
+end
+
+# One message.
+record Bubble do
+  key : String
+  # The element's id: a message shown in the conversation and again at the
+  # head of its thread is two elements.
+  anchor : String
+  author : String
+  badged : String = ""
+  emblem : String = ""
+  emblemNote : String = ""
+  # The author's first letter and one of eight colours, for the avatar.
+  initial : String
+  tint : String
+  # The author's id, to open their profile with.
+  writer : String = ""
+  stamp : String
+  # The moment it shows, in milliseconds since 1970: shown in the
+  # viewer's own time by the `Moment` hook, and `stamp` until then.
+  at : Integer = 0
+  # The message as markup, already escaped: `App.Helpers.RichText.html`.
+  content : String
+  own? : Bool
+  # "3 replies", or "" when there are none or it is shown inside the thread.
+  answers : String = ""
+  # Whether a thread can be opened from it.
+  threadable? : Bool = true
+  # Whether it carries on from the message above — the same person, soon
+  # after — and so is shown without their name and picture again.
+  continued? : Bool = false
+end
+
+# A slash command somebody used, as the conversation shows it.
+record Usage do
+  key : String
+  who : String
+  verb : String
+  extra : String = ""
+  addressee : String
+  stamp : String
+  # The moment it shows, in milliseconds since 1970: shown in the
+  # viewer's own time by the `Moment` hook, and `stamp` until then.
+  at : Integer = 0
+end
+
+# One emoji under a message: how many put it there, and whether I did.
+record Chip do
+  key : String
+  glyph : String
+  tally : String
+  own? : Bool
+end
+
+let bubblePartial = Template.html(Kex.embed("_bubble.html.ket"))
+let chipPartial = Template.html(Kex.embed("_chip.html.ket"))
+let usedPartial = Template.html(Kex.embed("_used.html.ket"))
+let attachmentPartial = Template.html(Kex.embed("_attachment.html.ket"))
+
+# Messages, and the slash commands used among them, in the order they
+# happened. Consecutive messages of one person are one block, under one
+# name; a command used between them ends the block. `lastUser` and
+# `lastAt` are the message before.
+woven : Room -> [Message] -> [Invocation] -> String -> Integer -> Bool -> [String]
+let woven(room, [], uses, lastUser, lastAt, inThread?) = uses.map { |used| usage(room, used) }
+let woven(room, [message | rest], uses, lastUser, lastAt, inThread?) do
+  let before = uses.filter { |used| used.invokedAt < message.sentAt }
+  if !before.empty?
+    let lines = before.map { |used| usage(room, used) }
+    lines + woven(room, [message] + rest, uses.drop(before.count), "", 0, inThread?)
+  else
+    let carries = message.userId == lastUser && message.sentAt - lastAt < RUN
+    [bubble(room, message, inThread?, carries)] + woven(room, rest, uses, message.userId, message.sentAt, inThread?)
+  end
+end
+
+# `inThread?` is whether it is shown in the thread pane, where a message
+# has its own element id and no way to open the thread it is already in.
+bubble : Room -> Message -> Bool -> Bool -> String
+let bubble(room, message, inThread?, carries) do
+  let writer = room.people.find { |person| person.id == message.userId }
+  let author = writer.map { |person| person.shown }.or("Someone")
+  let mine = room.reactions.filter { |reaction| reaction.messageId == message.id }
+  let chips = mine
+    .map { |reaction| reaction.emoji }
+    .uniq
+    .map do |glyph|
+      let givers = mine.filter { |reaction| reaction.emoji == glyph }
+      chipPartial(Chip {
+        key: message.id,
+        glyph: glyph,
+        tally: "${givers.count}",
+        own?: givers.any? { |reaction| reaction.userId == room.viewer.id }
+      })
+    end
+  let offers = App.Models.Emoji.PALETTE.map do |glyph|
+    chipPartial(Chip {
+      key: message.id,
+      glyph: glyph,
+      tally: "",
+      own?: false
+    })
+  end
+  let attached = room.files
+    .filter { |file| file.messageId == message.id }
+    .reverse
+    .map { |file| attachmentPartial(enclosed(file, room.people, "")) }
+  let given = answered(message, room.viewer, room.people, room.responses)
+  bubblePartial(
+    Bubble {
+      key: message.id,
+      anchor: inThread? then "thread-${message.id}" else "message-${message.id}",
+      answers: inThread? then "" else tallied(message.replyCount),
+      threadable?: !inThread?,
+      continued?: carries,
+      author: author,
+      badged: writer.map { |person| person.bot? }.or(false) then "BOT" else "",
+      emblem: writer.map { |person| person.statusEmoji }.or(""),
+      emblemNote: writer.map { |person| person.statusText }.or(""),
+      initial: author.take(1).upperCase,
+      writer: message.userId,
+      tint: "${BEAM.erlang.phash2(message.userId, 8)}",
+      stamp: clocked(message.sentAt),
+      at: message.sentAt,
+      content: App.Helpers.RichText.mentioned(
+        App.Helpers.RichText.shown(message.body, message.id, given),
+        room.people.map { |person| person.shown } + room.teams.map { |team| team.handle },
+        [shownAs(room.people, room.viewer.id, room.viewer.shown)] + room.teams
+          .filter { |team| team.includes?(room.viewer.id) }
+          .map { |team| team.handle }
+      ),
+      own?: message.userId == room.viewer.id
+    },
+    chips.join(""),
+    offers.join(""),
+    attached.join("")
+  )
+end
+
+private do
+  # The answers a message's forms have had, as the forms show them: whose
+  # each is, by the name they go by.
+  answered : Message -> User -> [User] -> [Answer] -> [Given]
+  let answered(message, user, people, responses) do
+    responses
+      .filter { |each| each.messageId == message.id }
+      .map do |each|
+        Given {
+          form: each.form,
+          who: shownAs(people, each.userId, "Someone"),
+          mine?: each.userId == user.id,
+          answer: each.answer
+        }
+      end
+  end
+
+  # How long after a message the same person's next one still counts as
+  # carrying on from it, in milliseconds.
+  let RUN = 300000
+
+  # One slash command used, as its line in the conversation.
+  usage : Room -> Invocation -> String
+  let usage(room, used) = usedPartial(Usage {
+    key: used.id,
+    who: shownAs(room.people, used.userId, "Someone"),
+    verb: used.command,
+    extra: used.arguments,
+    addressee: "@${shownAs(room.people, used.botId, "a bot")}",
+    stamp: clocked(used.invokedAt),
+    at: used.invokedAt
+  })
+end

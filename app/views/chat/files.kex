@@ -1,0 +1,60 @@
+# The files of a conversation: those sent with a message, as it shows
+# them, and the files view.
+module App.Views.Chat.Files
+
+using App.Models.Attachment, only: [Attachment]
+using App.Models.User, only: [User]
+using App.Views.Chat.Page, only: [Cabinet]
+using App.Views.Chat.Names, only: [shownAs, dated]
+
+# A file, as a message, the message box or the files view shows it.
+record Enclosure do
+  key : String
+  caption : String
+  # Where it is fetched from, and how big it is in words.
+  link : String
+  weight : String
+  picture? : Bool = false
+  # The start of a text file, for the files view; "" for anything else.
+  glimpse : String = ""
+  # Who sent it, and when.
+  sender : String = ""
+  stamp : String = ""
+  # The moment it shows, in milliseconds since 1970: shown in the
+  # viewer's own time by the `Moment` hook, and `stamp` until then.
+  at : Integer = 0
+end
+
+let filePartial = Template.html(Kex.embed("_file.html.ket"))
+
+# Everything sent into a conversation, newest first.
+filed : Cabinet -> [User] -> String
+let filed(cabinet, people) do
+  if cabinet.stored.empty?
+    return [
+      "<div class=\"files\"><p class=\"empty\">",
+      "No files here yet. Drop some in, paste them, or attach them with 📎.",
+      "</p></div>"
+    ].join("")
+  end
+
+  let cards = cabinet.stored.map do |file|
+    filePartial(enclosed(file, people, cabinet.glimpses.get(file.id).or("")))
+  end
+  "<div class=\"files\"><ul class=\"file-grid\">${cards.join("\n")}</ul></div>"
+end
+
+# A file as the page shows it.
+enclosed : Attachment -> [User] -> String -> Enclosure
+let enclosed(file, people, glimpse) = Enclosure {
+  key: file.id,
+  caption: file.filename,
+  link: file.address,
+  weight: file.sized,
+  picture?: file.picture?,
+  glimpse: glimpse,
+  sender: shownAs(people, file.userId, "Someone"),
+  stamp: dated(file.uploadedAt),
+  at: file.uploadedAt
+}
+

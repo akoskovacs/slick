@@ -1,28 +1,23 @@
-# The whole of Slick as one live view: what each browser event does to a
-# tab's state and to what is stored, and the markup that results.
-# `Metro.Live.Socket` runs these two functions against a WebSocket
-# (config/routes.kex).
+# The live view as `Metro.Live.Socket` runs it against a tab's WebSocket
+# (App.Controllers.Chat.joined): the markup for a tab's state, and one
+# event applied to it, by the part of Slick config/live.kex routes it to.
 #
-# Every event is checked here against who sent it. A tab names an
-# organization and a conversation by id, and an id is not a permission:
-# `home` only ever answers with an organization its person is in, and
-# `visible` only with a conversation of that organization they may read.
-# Both are asked before anything is read or written, so the id of another
+# Every event is checked against who sent it. A tab names an organization
+# and a conversation by id, and an id is not a permission: `home` only ever
+# answers with an organization its person is in, and `visible` only with a
+# conversation of that organization they may read (App.Live.Places). Every
+# part asks them before anything is read or written, so the id of another
 # organization's channel, or of somebody else's private chat, gets a tab
 # nothing.
 module App.Live.Chat
 
 using Metro.Live.Presence, only: [Presence, Note]
-using Metro.Live.Socket, only: [field, repeated]
-using App.Live.Places, only: [home, visible, organizations, memberOrganization]
+using App.Live.Places, only: [home, visible, organizations]
 using App.Live.Event, only: [Event, Routes]
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
-using App.Models.Draft, only: [Draft]
-using App.Models.Message, only: [Message]
 using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
-using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Drafts, as: Drafts
@@ -47,94 +42,66 @@ foul markup(statuses, user, tab) do
   match home(user, tab) do
     None => return App.Views.Chat.welcome(tab, user)
     Just(organization) => do
-      let mine : [Organization] = organizations(user)
-      let roster : [String] = Memberships.roster(organization.id).or([])
-      let everyone : [User] = Users.everyone.or([])
-      let people = everyone.filter { |person| roster.contains?(person.id) }
-      let channels : [Conversation] = App.Live.Places.readable(user, Conversations.channels(organization.id).or([]))
-      let groups : [Conversation] = Conversations.groupsOf(organization.id, user.id).or([])
-      let teams : [Team] = Teams.ofOrganization(organization.id).or([])
-      let now = Metro.Clock.milliseconds()
-      let online : [String] = Metro.Live.Presence.standing(statuses, App.Live.Statuses.ONLINE, now)
-        .map { |note| note.member.split(" ").first.or("") }
-      let bots : [User] = tab.dialog == "bots" then App.Live.Bots.manageable(user, organization) else []
-      let operators : {String: [String]} = bots.reduce({}) { |found, bot|
-        found.put(bot.id, DB.Repositories.BotOperators.listed(bot.id).or([]))
-      }
-      let roles = Grants.over("organization", organization.id).or([])
-        .filter { |grant| grant.subjectType == "user" }
-        .reduce({}) { |found, grant| found.put(grant.subjectId, grant.role) }
-      let administrator = App.Services.Authority.canManage(user, organization.id)
-      let drafts : [Draft] = Drafts.pending(user.id).or([])
       let marks : [Reading] = Readings.marks(user.id).or([])
-      match visible(user, tab) do
-        None => do
-          let unread = App.Live.Unread.counts(user, organization, mine, marks, "", "")
-          return App.Views.Chat.index(
-            tab,
-            user,
-            mine,
-            organization,
-            channels,
-            groups,
-            teams,
-            people,
-            online,
-            bots,
-            operators,
-            drafts,
-            unread,
-            App.Views.Chat.Cabinet {},
-            [],
-            [],
-            None,
-            [],
-            [],
-            [],
-            [],
-            [],
-            roles,
-            administrator
-          )
-        end
-        Just(conversation) => do
-          let messages : [Message] = Messages.latest(conversation.id, WINDOW).or([])
-          let thread = App.Live.Threads.messages(conversation, tab.thread)
-          let (reading, readingThread) = App.Live.Unread.markRead(user, marks, conversation, messages, thread, tab.attentive?)
-          let unread = App.Live.Unread.counts(user, organization, mine, marks, reading, readingThread)
-          let reactions = Reactions.throughout(conversation.id).or([])
-          let cabinet = App.Live.Files.cabinet(user, tab, conversation)
-          let responses = Answers.collected(conversation.id).or([])
-          let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, now)
-          return App.Views.Chat.index(
-            tab,
-            user,
-            mine,
-            organization,
-            channels,
-            groups,
-            teams,
-            people,
-            online,
-            bots,
-            operators,
-            drafts,
-            unread,
-            cabinet,
-            App.Live.Commands.available(user, conversation, people),
-            DB.Repositories.Invocations.inside(conversation.id).or([]),
-            Just(conversation),
-            messages,
-            reactions,
-            responses,
-            thread,
-            doing.reject { |note| note.member == user.id },
-            roles,
-            administrator
-          )
-        end
-      end
+      let sidebar = sidebarOf(statuses, user, tab, organization)
+      let pane = visible(user, tab)
+        .map { |conversation| paneOf(statuses, user, tab, sidebar.people, conversation) }
+        .or(App.Views.Chat.Page.Pane {})
+      # Looking at a conversation reads it, before what is unread is counted.
+      let (reading, readingThread) = pane.conversation
+        .map { |conversation| App.Live.Unread.markRead(user, marks, conversation, pane.messages, pane.thread, tab.attentive?) }
+        .or(("", ""))
+      let unread = App.Live.Unread.counts(user, organization, sidebar.organizations, marks, reading, readingThread)
+      return App.Views.Chat.index(tab, user, App.Views.Chat.Page.Sidebar { ...sidebar, unread: unread }, pane)
     end
+  end
+end
+
+private do
+  # What the organization a tab is in shows around the conversation, but
+  # what is unread: that is counted once the conversation is read.
+  sidebarOf : Server<Presence> -> User -> Tab -> Organization -> App.Views.Chat.Page.Sidebar
+  foul sidebarOf(statuses, user, tab, organization) do
+    let roster : [String] = Memberships.roster(organization.id).or([])
+    let everyone : [User] = Users.everyone.or([])
+    let online : [String] = Metro.Live.Presence.standing(statuses, App.Live.Statuses.ONLINE, Metro.Clock.milliseconds())
+      .map { |note| note.member.split(" ").first.or("") }
+    let bots : [User] = tab.dialog == "bots" then App.Live.Bots.manageable(user, organization) else []
+    let roles = Grants.over("organization", organization.id)
+      .or([])
+      .filter { |grant| grant.subjectType == "user" }
+      .reduce({}) { |found, grant| found.put(grant.subjectId, grant.role) }
+    return App.Views.Chat.Page.Sidebar {
+      organizations: organizations(user),
+      organization: organization,
+      channels: App.Live.Places.readable(user, Conversations.channels(organization.id).or([])),
+      groups: Conversations.groupsOf(organization.id, user.id).or([]),
+      teams: Teams.ofOrganization(organization.id).or([]),
+      people: everyone.filter { |person| roster.contains?(person.id) },
+      online: online,
+      bots: bots,
+      operators: bots.reduce({}) { |found, bot| found.put(bot.id, DB.Repositories.BotOperators.listed(bot.id).or([])) },
+      drafts: Drafts.pending(user.id).or([]),
+      roles: roles,
+      administrator: App.Services.Authority.canManage(user, organization.id)
+    }
+  end
+
+  # The conversation a tab shows, with what is beside it.
+  paneOf : Server<Presence> -> User -> Tab -> [User] -> Conversation -> App.Views.Chat.Page.Pane
+  foul paneOf(statuses, user, tab, people, conversation) do
+    let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, Metro.Clock.milliseconds())
+    return App.Views.Chat.Page.Pane {
+      conversation: Just(conversation),
+      messages: Messages.latest(conversation.id, WINDOW).or([]),
+      reactions: Reactions.throughout(conversation.id).or([]),
+      responses: Answers.collected(conversation.id).or([]),
+      thread: App.Live.Threads.messages(conversation, tab.thread),
+      cabinet: App.Live.Files.cabinet(user, tab, conversation),
+      commands: App.Live.Commands.available(user, conversation, people),
+      invocations: DB.Repositories.Invocations.inside(conversation.id).or([]),
+      doing: doing.reject { |note| note.member == user.id }
+    }
   end
 end
 

@@ -1,0 +1,58 @@
+# What things are called on the page: channels, group chats and private
+# chats as lists and titles name them, people by id, and counts as badges
+# and threads show them.
+module App.Views.Chat.Names
+
+using App.Models.Conversation, only: [Conversation]
+using App.Models.User, only: [User]
+
+# A channel as a list shows it: `# name`, or `🔒 name` for a private one.
+channelName : Conversation -> String
+let channelName(channel) = channel.public? then "# ${channel.title}" else "🔒 ${channel.title}"
+
+# A group chat as a list shows it: the others in it, by name.
+gathered : Conversation -> User -> [User] -> String
+let gathered(group, user, people) = group.participants
+  .reject { |id| id == user.id }
+  .map { |id| shownAs(people, id, "Someone") }
+  .sort
+  .join(", ")
+
+# What somebody is called, by id; `otherwise` for nobody known.
+shownAs : [User] -> String -> String -> String
+let shownAs(people, id, otherwise) = people
+  .find { |person| person.id == id }
+  .map { |person| person.shown }
+  .or(otherwise)
+
+# What a conversation is called for this person: `# name` for a channel,
+# `🔒 name` for a private one, the others for a group chat, the other
+# person for a private chat, and themselves "(you)".
+titled : Conversation -> User -> [User] -> String
+let titled(conversation, user, people) do
+  return channelName(conversation) if conversation.channel?
+  return gathered(conversation, user, people) if conversation.group?
+
+  let other = conversation.counterpart(user.id)
+  return "${shownAs(people, other, user.shown)} (you)" if other == user.id
+  shownAs(people, other, "Private chat")
+end
+
+# A thread's replies, as the message it starts shows them; nothing for none.
+tallied : Integer -> String
+let tallied(0) = ""
+let tallied(1) = "1 reply"
+let tallied(replies) = "${replies} replies"
+
+# A number of unread messages as a badge shows it; nothing for none.
+counted : Integer -> String
+let counted(0) = ""
+let counted(count) = count > 99 then "99+" else "${count}"
+
+# A moment as the time of day, "14:51", and as a day and its time,
+# "2026-10-21 14:51": in UTC, until the page shows it in the viewer's
+# own time (`Moment`, in app.js).
+clocked : Integer -> String
+let clocked(at) = "${DateTime.fromEpochSeconds(at / 1000)}".drop(11).take(5)
+dated : Integer -> String
+let dated(at) = "${DateTime.fromEpochSeconds(at / 1000)}".take(16).replace("T", " ")

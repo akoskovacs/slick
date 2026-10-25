@@ -1,0 +1,88 @@
+# A team, open beside the conversation.
+module App.Views.Chat.Teams
+
+using App.Live.Tab, only: [Tab]
+using App.Models.User, only: [User]
+using App.Views.Chat.Page, only: [Sidebar]
+using App.Views.Chat.Names, only: [channelName]
+
+# A team, as the pane beside the conversation shows it.
+record Crew do
+  # Its handle, and its name.
+  handle : String
+  name : String
+  description : String = ""
+  # "3 members".
+  tally : String
+  synced? : Bool = false
+  # Whether whoever is looking is in it.
+  mine? : Bool = false
+end
+
+# One line of a list in the team pane: a member, or a channel. `action` and
+# `subject` are the event it sends and the field it sends it with.
+record Mate do
+  key : String
+  caption : String
+  action : String
+  subject : String
+  badged : String = ""
+  removable? : Bool = false
+end
+
+let teamPartial = Template.html(Kex.embed("_team.html.ket"))
+let matePartial = Template.html(Kex.embed("_mate.html.ket"))
+
+# The team a tab has open, if it is one of the organization's: who is in
+# it, the channels it owns that this person may read, and — unless a sync
+# keeps it — who else could be added.
+pane : Tab -> User -> Sidebar -> String
+let pane(tab, user, sidebar) do
+  match sidebar.teams.find { |team| team.id == tab.team } do
+    None => ""
+    Just(team) => do
+      let mates = team.members.flatMap do |id|
+        sidebar.people.find { |person| person.id == id }.map do |person|
+          [matePartial(Mate {
+            key: person.id,
+            caption: person.id == user.id then "${person.shown} (you)" else person.shown,
+            action: "profile-open",
+            subject: "user",
+            badged: person.bot? then "BOT" else "",
+            removable?: !team.managed?
+          })]
+        end.or([])
+      end
+      let rooms = sidebar.channels
+        .filter { |channel| channel.teamId == team.id }
+        .map do |channel|
+          matePartial(Mate {
+            key: channel.id,
+            caption: channelName(channel),
+            action: "conversation-open",
+            subject: "id"
+          })
+        end
+      let candidates = sidebar.people
+        .reject { |person| team.includes?(person.id) }
+        .map do |person|
+          let id = Template.escapeHtml(person.id)
+          "<option value=\"${id}\">${Template.escapeHtml(person.shown)}</option>"
+        end
+      let count = team.members.count
+      teamPartial(
+        Crew {
+          handle: team.handle,
+          name: team.name,
+          description: team.description,
+          tally: count == 1 then "1 member" else "${count} members",
+          synced?: team.managed?,
+          mine?: team.includes?(user.id)
+        },
+        mates.join("\n"),
+        rooms.join("\n"),
+        candidates.join("")
+      )
+    end
+  end
+end
