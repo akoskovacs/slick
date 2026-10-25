@@ -1,6 +1,6 @@
-# The statuses board, as tabs use it: who has a tab open, and what somebody
-# is doing in the conversation theirs shows — typing, or something a bot
-# says it is busy with.
+# What somebody is doing in the conversation their tab shows, on the
+# statuses board: typing, or something a bot says it is busy with. Who has
+# a tab open is Metro's (`Metro.Live.Presence.arrived`, `online`).
 module App.Live.Statuses
 
 using Metro.Live.Socket, only: [unchanged]
@@ -11,26 +11,9 @@ using App.Live.Event, only: [Event]
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
 
-# The topic, on the board, of who has a tab open. A member there is
-# "<user id> <something of the tab's own>", so that closing one of two tabs
-# does not make somebody look gone.
-let ONLINE = "online"
-
 # How long "is typing" stands after a keystroke is heard of, in milliseconds.
 # The browser says so again every three seconds while it goes on.
 let TYPING_FOR = 6000
-
-# Somebody's tab has opened.
-arrive : Server<Presence> -> User -> String -> Void
-foul arrive(statuses, user, seat) do
-  statuses.noted(ONLINE, "${user.id} ${seat}", "", Metro.Clock.milliseconds() + 86400000)
-end
-
-# Somebody's tab has closed.
-leave : Server<Presence> -> User -> String -> Void
-foul leave(statuses, user, seat) do
-  statuses.lifted(ONLINE, "${user.id} ${seat}")
-end
 
 # Says what somebody is doing in the conversation their tab is showing, for
 # `milliseconds`; "" takes it back. Whether there was a conversation to say

@@ -384,12 +384,12 @@ describe("App.Live.Statuses") do
         lineFor(shown(world, world.bob, Tab {}), user.id).contains?("entry online")
       end
       Assert.falsy(online?(world.ada))
-      App.Live.Statuses.arrive(world.statuses, world.ada, "one")
-      App.Live.Statuses.arrive(world.statuses, world.ada, "two")
+      Metro.Live.Presence.arrived(world.statuses, world.ada.id, "one")
+      Metro.Live.Presence.arrived(world.statuses, world.ada.id, "two")
       Assert.truthy(online?(world.ada))
-      App.Live.Statuses.leave(world.statuses, world.ada, "one")
+      Metro.Live.Presence.departed(world.statuses, world.ada.id, "one")
       Assert.truthy(online?(world.ada))
-      App.Live.Statuses.leave(world.statuses, world.ada, "two")
+      Metro.Live.Presence.departed(world.statuses, world.ada.id, "two")
       Assert.falsy(online?(world.ada))
     end
   end

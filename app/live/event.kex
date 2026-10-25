@@ -28,7 +28,7 @@ let given(event, key) = field(event.entries, key)
 
 # What came with an event, trimmed: what somebody typed.
 typed : Event -> String -> String
-let typed(event, key) = field(event.entries, key).trim
+let typed(event, key) = Metro.Live.Socket.typed(event.entries, key)
 
 # Every value sent for a field of an event: the boxes ticked in a list.
 picked : Event -> String -> [String]
