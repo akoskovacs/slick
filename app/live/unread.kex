@@ -101,9 +101,13 @@ private do
         mark.threadId == reply.parentId && reply.sentAt > mark.readAt
       end
     end
+    let afters = (channels + chats + groups)
+      .filter { |conversation| conversation.id != open }
+      .reduce({}) { |found, conversation| found.put(conversation.id, readTo(conversation, marks, since)) }
+    let newer : {String: Integer} = Messages.newerCounts(afters).or({})
     let counted = do |conversation|
       let replied = answered.count { |reply| reply.conversationId == conversation.id }
-      unreadCount(conversation, marks, since, open) + replied
+      newer.get(conversation.id).or(0) + replied
     end
     let byChannel = channels.reduce({}) do |found, channel|
       found.put(channel.id, counted(channel))
@@ -117,15 +121,13 @@ private do
     return (byChannel, byPerson, byGroup)
   end
 
-  # The messages of a conversation newer than how far this person has read
-  # there; none in the one they are reading.
-  unreadCount : Conversation -> [Reading] -> Integer -> String -> Integer
-  foul unreadCount(conversation, marks, since, open) do
-    return 0 if conversation.id == open
-    let mark = marks.find { |each| each.conversationId == conversation.id && each.threadId.empty? }
-    let read = mark.map { |each| each.readAt }.or(since)
-    return Messages.newerCount(conversation.id, read).or(0)
-  end
+  # How far this person has read in a conversation: since they joined,
+  # where they never have.
+  readTo : Conversation -> [Reading] -> Integer -> Integer
+  let readTo(conversation, marks, since) = marks
+    .find { |each| each.conversationId == conversation.id && each.threadId.empty? }
+    .map { |each| each.readAt }
+    .or(since)
 
   # When the newest of some messages was sent; 0 for none.
   newest : [Message] -> Integer

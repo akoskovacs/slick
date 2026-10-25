@@ -17,13 +17,31 @@ using DB.Repositories.Grants, as: Grants
 # through a team they are in; `None` for none.
 foul role(userId: String, resourceType: String, resourceId: String) -> String? do
   let teams : [String] = Grants.teamsOf(userId).or([])
-  let over : [Grant] = Grants.over(resourceType, resourceId).or([])
-  let roles = over.flatMap do |grant|
-    let held = grant.subjectType == "user" && grant.subjectId == userId
-    let viaTeam = grant.subjectType == "team" && teams.contains?(grant.subjectId)
-    held || viaTeam then [grant.role] else []
+  return roleAmong(userId, teams, Grants.over(resourceType, resourceId).or([]))
+end
+
+# The conversations of these the user may read, as `canRead` decides for
+# each — with the grants that takes read once for all of them.
+foul readable(user: User, conversations: [Conversation]) -> [Conversation] do
+  return conversations if serverAdmin?(user)
+  let teams : [String] = Grants.teamsOf(user.id).or([])
+  let organizationIds = conversations
+    .filter { |conversation| !conversation.direct? && conversation.public? }
+    .map { |conversation| conversation.organizationId }
+    .uniq
+  let privateIds = conversations
+    .filter { |conversation| !conversation.direct? && !conversation.public? }
+    .map { |conversation| conversation.id }
+  let overOrganizations : {String: [Grant]} = Grants.overEach("organization", organizationIds).or({})
+  let overConversations : {String: [Grant]} = Grants.overEach("conversation", privateIds).or({})
+  return conversations.filter do |conversation|
+    let over = conversation.public?
+      then overOrganizations.get(conversation.organizationId).or([])
+      else overConversations.get(conversation.id).or([])
+    conversation.direct?
+      then conversation.firstUser == user.id || conversation.secondUser == user.id
+      else roleAmong(user.id, teams, over).set?
   end
-  return strongest(roles)
 end
 
 # The administrators of an organization, by id.
@@ -104,6 +122,18 @@ foul canAdminister(user: User, conversation: Conversation) -> Bool do
 end
 
 private do
+  # The strongest role a user holds among some grants: their own, or one of
+  # their teams'.
+  roleAmong : String -> [String] -> [Grant] -> String?
+  let roleAmong(userId, teams, grants) do
+    let roles = grants.flatMap do |grant|
+      let held = grant.subjectType == "user" && grant.subjectId == userId
+      let viaTeam = grant.subjectType == "team" && teams.contains?(grant.subjectId)
+      held || viaTeam then [grant.role] else []
+    end
+    strongest(roles)
+  end
+
   # The strongest of some roles: admin, else member, else read-only.
   strongest : [String] -> String?
   let strongest(roles) do

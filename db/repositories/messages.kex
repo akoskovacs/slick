@@ -4,6 +4,8 @@
 module DB.Repositories.Messages
 
 using Harmat.Database, as: Database
+# For `||` on conditions (kexhq/kex#532).
+using Harmat.Schema, only: [Cond]
 using App.Models.Message, only: [Message]
 
 # The newest `limit` messages of a conversation, oldest first. Replies are
@@ -27,6 +29,28 @@ foul newerCount(conversationId: String, after: Integer) -> Integer or! String do
     .where(DB.Schema.Messages.parentId == "")
     .where(DB.Schema.Messages.sentAt > after)
     .count
+end
+
+# The same for several conversations at once, each newer than its own
+# `after`: by conversation id, in one query. A conversation with nothing
+# newer is 0.
+foul newerCounts(afters: {String: Integer}) -> {String: Integer} or! String do
+  let each : [Cond] = afters.entries.map do |entry|
+    match entry do
+      (id, after) => DB.Schema.Messages.conversationId == id && DB.Schema.Messages.sentAt > after
+    end
+  end
+  match each do
+    [] => return Ok({})
+    [first | rest] => do
+      let counted = Database.select().from(DB.Schema.Messages)
+        .where(DB.Schema.Messages.parentId == "")
+        .where(rest.reduce(first) { |either, other| either || other })
+        .countBy(:conversation_id)
+        .try
+      return Ok(afters.keys.reduce({}) { |found, id| found.put(id, counted.get(id).or(0)) })
+    end
+  end
 end
 
 # The replies to any of these messages newer than `after`, oldest first.

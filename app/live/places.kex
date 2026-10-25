@@ -74,4 +74,4 @@ foul member?(organizationId, userId) = Grants.organizationsOf(userId)
 
 # The channels of these that this person may read.
 readable : User -> [Conversation] -> [Conversation]
-foul readable(user, channels) = channels.filter { |channel| App.Services.Authority.canRead(user, channel) }
+foul readable(user, channels) = App.Services.Authority.readable(user, channels)

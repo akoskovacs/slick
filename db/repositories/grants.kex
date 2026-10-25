@@ -51,6 +51,19 @@ foul heldBy(subjectType: String, subjectId: String) -> [Grant] or! String do
     .all(as: Grant)
 end
 
+# Every grant over each of some resources, whoever holds it, by resource.
+foul overEach(resourceType: String, resourceIds: [String]) -> {String: [Grant]} or! String do
+  return Ok({}) if resourceIds.empty?
+  let found = Database.select().from(DB.Schema.Grants)
+    .where(DB.Schema.Grants.resourceType == resourceType)
+    .where(DB.Schema.Grants.resourceId.in(resourceIds))
+    .all(as: Grant)
+    .try
+  return Ok(found.reduce({}) do |grouped, grant|
+    grouped.put(grant.resourceId, grouped.get(grant.resourceId).or([]) + [grant])
+  end)
+end
+
 # Every grant over one resource, whoever holds it.
 foul over(resourceType: String, resourceId: String) -> [Grant] or! String do
   return Database.select().from(DB.Schema.Grants)

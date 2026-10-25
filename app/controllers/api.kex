@@ -134,8 +134,7 @@ foul channelList(request) do
   let organization = organizationFor(request).try
   let bot = userFor(request)
   let found : [Conversation] = Conversations.channels(organization).or([])
-  let listed : [Any] = found
-    .filter { |channel| App.Services.Authority.canRead(bot, channel) }
+  let listed : [Any] = App.Services.Authority.readable(bot, found)
     .map do |channel|
       let entry : {String: Any} = {
         "id": channel.id,
