@@ -55,6 +55,7 @@ jobs:
       KEX: ${{ github.workspace }}/.kex-source/build/kex
       KEX_STDLIB_DIR: ${{ github.workspace }}/.kex-source/src/stdlib
       KEX_RUNTIME_DIR: ${{ github.workspace }}/.kex-source/build/runtime/beam
+      TEY_CACHE: /github/home/.cache/tey
       # The SQLite ODBC driver by the name Debian registers it under: the
       # specs make their databases with it.
       SQLITE_DRIVER: SQLite3
@@ -103,11 +104,15 @@ jobs:
       - name: Precompiled query acceptance
         run: |
           cache="${TEY_CACHE:-$HOME/.cache/tey}/src"
-          harmat="$(jq -r '.packages.harmat.sha256 + "/" + .packages.harmat.commit' tey.lock)"
-          metro="$(jq -r '.packages.metro.sha256 + "/" + .packages.metro.commit' tey.lock)"
+          harmat_git="$(jq -r '.packages.harmat.git' tey.lock)"
+          harmat_key="$(printf %s "$harmat_git" | sha256sum | cut -d ' ' -f1)"
+          harmat_commit="$(jq -r '.packages.harmat.commit' tey.lock)"
+          metro_git="$(jq -r '.packages.metro.git' tey.lock)"
+          metro_key="$(printf %s "$metro_git" | sha256sum | cut -d ' ' -f1)"
+          metro_commit="$(jq -r '.packages.metro.commit' tey.lock)"
           KEX="$GITHUB_WORKSPACE/.kex-source/build/kex" \
-          HARMAT_ROOT="$cache/$harmat" \
-          METRO_ROOT="$cache/$metro" \
+          HARMAT_ROOT="$cache/$harmat_key/$harmat_commit" \
+          METRO_ROOT="$cache/$metro_key/$metro_commit" \
             sh script/check-precompiled-queries.sh
 
   docker:
