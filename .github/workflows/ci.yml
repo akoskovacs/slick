@@ -62,7 +62,7 @@ jobs:
       - name: Install git and the ODBC drivers
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates unixodbc libsqliteodbc
+          apt-get install -y --no-install-recommends git ca-certificates jq unixodbc libsqliteodbc
 
       - uses: actions/checkout@v4
 
@@ -99,6 +99,16 @@ jobs:
 
       - name: Specs
         run: tey test
+
+      - name: Precompiled query acceptance
+        run: |
+          cache="${TEY_CACHE:-$HOME/.cache/tey}/src"
+          harmat="$(jq -r '.packages.harmat.sha256 + "/" + .packages.harmat.commit' tey.lock)"
+          metro="$(jq -r '.packages.metro.sha256 + "/" + .packages.metro.commit' tey.lock)"
+          KEX="$GITHUB_WORKSPACE/.kex-source/build/kex" \
+          HARMAT_ROOT="$cache/$harmat" \
+          METRO_ROOT="$cache/$metro" \
+            sh script/check-precompiled-queries.sh
 
   docker:
     name: Container on PostgreSQL
