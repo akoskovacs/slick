@@ -75,13 +75,13 @@ end
 # The bot authors of a thread's messages — the root and its replies — by id,
 # from among `botIds`.
 foul botAuthors(rootId: MessageId, botIds: [UserId]) -> [UserId] or! String do
-  let root = Database.select().from(DB.Schema.Messages.definition)
+  let root = Database.select([:user_id]).from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.id == rootId)
-    .pluck(:user_id)
+    .all(as: UserId)
     .or([])
-  let replies = Database.select().from(DB.Schema.Messages.definition)
+  let replies = Database.select([:user_id]).from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.parentId == rootId)
-    .pluck(:user_id)
+    .all(as: UserId)
     .or([])
   return Ok((root + replies).filter { |id| botIds.contains?(id) }.uniq)
 end

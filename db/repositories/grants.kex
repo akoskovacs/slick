@@ -85,33 +85,33 @@ end
 
 # The teams a user is in, by id.
 foul teamsOf(userId: UserId) -> [TeamId] or! String do
-  return Database.select().from(DB.Schema.Grants.definition)
+  return Database.select([:resource_id]).from(DB.Schema.Grants.definition)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
     .where(DB.Schema.Grants.resourceType == Database.spelled(TeamResource))
     .orderBy([:granted_at, :id])
-    .pluck(:resource_id)
+    .all(as: TeamId)
 end
 
 # The organizations a user is in, by id — in any role, so a read-only
 # member is still in their organization — oldest grant first.
 foul organizationsOf(userId: UserId) -> [OrganizationId] or! String do
-  return Database.select().from(DB.Schema.Grants.definition)
+  return Database.select([:resource_id]).from(DB.Schema.Grants.definition)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
     .where(DB.Schema.Grants.resourceType == Database.spelled(OrganizationResource))
     .orderBy([:granted_at, :id])
-    .pluck(:resource_id)
+    .all(as: OrganizationId)
 end
 
 # The users holding any grant over a resource, by id.
 foul members(resourceType: GrantResourceType, resourceId: String) -> [UserId] or! String do
-  return Database.select().from(DB.Schema.Grants.definition)
+  return Database.select([:subject_id]).from(DB.Schema.Grants.definition)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.resourceType == Database.spelled(resourceType))
     .where(DB.Schema.Grants.resourceId == resourceId)
     .orderBy([:granted_at, :id])
-    .pluck(:subject_id)
+    .all(as: UserId)
 end
 
 # The users holding any grant over each of some resources, by resource.
@@ -155,12 +155,12 @@ end
 
 # The conversations a user holds a grant over, by id.
 foul conversationsOf(userId: UserId) -> [ConversationId] or! String do
-  return Database.select().from(DB.Schema.Grants.definition)
+  return Database.select([:resource_id]).from(DB.Schema.Grants.definition)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
     .where(DB.Schema.Grants.resourceType == Database.spelled(ConversationResource))
     .orderBy([:granted_at, :id])
-    .pluck(:resource_id)
+    .all(as: ConversationId)
 end
 
 # Whether a subject holds any grant over a resource.
@@ -179,13 +179,13 @@ end
 
 # The users holding a given role over a resource, by id.
 foul roleHolders(resourceType: GrantResourceType, resourceId: String, role: GrantRole) -> [UserId] or! String do
-  return Database.select().from(DB.Schema.Grants.definition)
+  return Database.select([:subject_id]).from(DB.Schema.Grants.definition)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.resourceType == Database.spelled(resourceType))
     .where(DB.Schema.Grants.resourceId == resourceId)
     .where(DB.Schema.Grants.role == Database.spelled(role))
     .orderBy([:granted_at, :id])
-    .pluck(:subject_id)
+    .all(as: UserId)
 end
 
 # When a subject was granted a role over a resource, in milliseconds since

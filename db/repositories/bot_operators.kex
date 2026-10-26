@@ -7,11 +7,11 @@ using App.Models.Ids, only: [UserId]
 
 # A bot's operators, by their id.
 foul forBot(botId: UserId) -> [UserId] or! String do
-  return Database.select()
+  return Database.select([:user_id])
     .from(DB.Schema.BotOperators.definition)
     .where(DB.Schema.BotOperators.botId == botId)
     .orderBy([:user_id])
-    .pluck(:user_id)
+    .all(as: UserId)
 end
 
 # A bot's operators, all of them at once: the old ones and the new ones are

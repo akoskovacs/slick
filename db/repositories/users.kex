@@ -170,9 +170,9 @@ end
 
 # Every bot's id.
 foul botIds -> [UserId] or! String do
-  return Database.select().from(DB.Schema.Users.definition)
+  return Database.select([:id]).from(DB.Schema.Users.definition)
     .where(DB.Schema.Users.kind == Database.spelled(User.Bot))
-    .pluck(:id)
+    .all(as: UserId)
 end
 
 private do
