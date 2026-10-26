@@ -1,10 +1,13 @@
 module DB.Schema.BotOperators
 
 using Harmat.Table, as: Table
-let definition = Table.define :bot_operators do |t|
-  t.text(:id, primaryKey: true)
-  t.text(:bot_id)
-  t.text(:user_id)
-end
+# Known while compiling: a query over this table is written then.
+compiled do
+  let definition = Table.define :bot_operators do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:bot_id)
+    t.text(:user_id)
+  end
 
-let botId = DB.Schema.BotOperators.definition.textColumn(:bot_id)
+  let botId = definition.textColumn(:bot_id)
+end

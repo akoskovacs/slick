@@ -6,14 +6,14 @@ module DB.Repositories.Sessions
 using Harmat.Database, as: Database
 
 foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Integer or! String do
-  let row = {
-    token_digest: tokenDigest,
-    user_id: userId,
-    expires_at: expiresAt,
-    created_at: Metro.Clock.milliseconds()
-  }
+  let createdAt = Metro.Clock.milliseconds()
   return Database.insert(DB.Schema.Sessions)
-    .values(row)
+    .values({
+      token_digest: tokenDigest,
+      user_id: userId,
+      expires_at: expiresAt,
+      created_at: createdAt
+    })
     .run
 end
 

@@ -18,7 +18,7 @@ foul enroll(user: User, passwordHash: String) -> User or! String do
     created_at: Metro.Clock.milliseconds()
   }
   return Database.insert(DB.Schema.Users)
-    .values(row)
+    .values(row, columns: [:id, :email, :name, :password_hash, :created_at])
     .run
     .map { |_| user }
 end
@@ -51,7 +51,7 @@ foul createBot(bot: User, tokenDigest: String) -> User or! String do
     api_token_digest: tokenDigest
   }
   return Database.insert(DB.Schema.Users)
-    .values(row)
+    .values(row, columns: [:id, :email, :name, :password_hash, :created_at, :kind, :owner_id, :owner_organization_id, :api_token_digest])
     .run
     .map { |_| bot }
 end
@@ -75,9 +75,9 @@ end
 # Replaces the token of an organization's bot; whether it was that
 # organization's to change.
 foul rekeyOrganizationBot(botId: String, organizationId: String, tokenDigest: String) -> Bool or! String do
-  return Database.within(DB.Schema.Users.ownerOrganizationId == organizationId)
-    .update(DB.Schema.Users)
-    .set({api_token_digest: tokenDigest})
+  return Database.update(DB.Schema.Users)
+    .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
+    .where(DB.Schema.Users.ownerOrganizationId == organizationId)
     .where(DB.Schema.Users.id == botId)
     .run
     .map { |changed| changed > 0 }
@@ -93,9 +93,9 @@ end
 
 # Replaces a bot's token; whether it was this owner's bot to change.
 foul rekeyBot(botId: String, owner: String, tokenDigest: String) -> Bool or! String do
-  return Database.within(DB.Schema.Users.ownerId == owner)
-    .update(DB.Schema.Users)
-    .set({api_token_digest: tokenDigest})
+  return Database.update(DB.Schema.Users)
+    .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
+    .where(DB.Schema.Users.ownerId == owner)
     .where(DB.Schema.Users.id == botId)
     .run
     .map { |changed| changed > 0 }
@@ -115,7 +115,7 @@ end
 # Sets what somebody says about themselves; "" and "" takes it back.
 foul setStatus(id: String, emoji: String, saying: String) -> Integer or! String do
   return Database.update(DB.Schema.Users)
-    .set({status_emoji: emoji, status_text: saying})
+    .set({status_emoji: emoji, status_text: saying}, columns: [:status_emoji, :status_text])
     .where(DB.Schema.Users.id == id)
     .run
 end
@@ -123,6 +123,7 @@ end
 # Sets the details a profile shows, each as it is on `user`. Whatever a sync
 # has taken over is for the caller to have kept: `App.Live.Chat` does.
 foul update(user: User) -> Integer or! String do
+  let id = user.id
   let row = {
     name: user.name,
     title: user.title,
@@ -134,16 +135,17 @@ foul update(user: User) -> Integer or! String do
     nickname_shown: user.nicknameShown?
   }
   return Database.update(DB.Schema.Users)
-    .set(row)
-    .where(DB.Schema.Users.id == user.id)
+    .set(row, columns: [:name, :title, :department, :phone, :time_zone, :bio, :nickname, :nickname_shown])
+    .where(DB.Schema.Users.id == id)
     .run
 end
 
 # Hands details over to a sync, by column, or back with `[]`: what it has
 # taken over cannot be changed from a profile.
 foul markManaged(id: String, columns: [String]) -> Integer or! String do
+  let managed = columns.join(",")
   return Database.update(DB.Schema.Users)
-    .set({managed: columns.join(",")})
+    .set({managed: managed}, columns: [:managed])
     .where(DB.Schema.Users.id == id)
     .run
 end
@@ -200,9 +202,12 @@ private do
     end
     return done
   end
+end
 
-  # What is read of a user when nobody is signing in: everything but the
-  # password line and the token digest.
+# What is read of a user when nobody is signing in: everything but the
+# password line and the token digest. Known while compiling, so the queries
+# that read it are written then.
+compiled do
   let SHOWN = [
     :id,
     :email,

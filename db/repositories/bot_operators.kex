@@ -17,17 +17,14 @@ end
 # swapped in one transaction.
 foul replace(botId: String, users: [String]) -> Bool or! String do
   let swapped : Integer or! String = Database.transaction do
-    let cleared = Database.delete(DB.Schema.BotOperators)
+    Database.delete(DB.Schema.BotOperators)
       .where(DB.Schema.BotOperators.botId == botId)
       .run
       .try
-    users.uniq.reduce(Ok(cleared)) { |sofar, userId|
-      sofar.flatMap { |_|
-        Database.insert(DB.Schema.BotOperators)
-          .values({id: "${botId}:${userId}", bot_id: botId, user_id: userId})
-          .run
-      }
-    }
+    let rows = users.uniq.map do |userId|
+      {id: "${botId}:${userId}", bot_id: botId, user_id: userId}
+    end
+    Database.insertAll(DB.Schema.BotOperators, rows)
   end
   return swapped.map { |_| true }
 end

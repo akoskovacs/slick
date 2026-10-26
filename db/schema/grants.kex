@@ -5,19 +5,22 @@ module DB.Schema.Grants
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :grants do |t|
-  t.text(:id, primaryKey: true)
-  t.text(:subject_type, oneOf: ["user", "team"])
-  t.text(:subject_id)
-  t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
-  t.text(:resource_id, default: "")
-  t.text(:role, oneOf: ["admin", "member", "read-only"])
-  t.bigint(:granted_at, default: 0)
-end
+# Known while compiling: a query over this table is written then.
+compiled do
+  let definition = Table.define :grants do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:subject_type, oneOf: ["user", "team"])
+    t.text(:subject_id)
+    t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
+    t.text(:resource_id, default: "")
+    t.text(:role, oneOf: ["admin", "member", "read-only"])
+    t.bigint(:granted_at, default: 0)
+  end
 
-let id = DB.Schema.Grants.definition.textColumn(:id)
-let subjectType = DB.Schema.Grants.definition.textColumn(:subject_type)
-let subjectId = DB.Schema.Grants.definition.textColumn(:subject_id)
-let resourceType = DB.Schema.Grants.definition.textColumn(:resource_type)
-let resourceId = DB.Schema.Grants.definition.textColumn(:resource_id)
-let role = DB.Schema.Grants.definition.textColumn(:role)
+  let id = definition.textColumn(:id)
+  let subjectType = definition.textColumn(:subject_type)
+  let subjectId = definition.textColumn(:subject_id)
+  let resourceType = definition.textColumn(:resource_type)
+  let resourceId = definition.textColumn(:resource_id)
+  let role = definition.textColumn(:role)
+end

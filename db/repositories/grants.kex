@@ -17,18 +17,25 @@ let key(subjectType, subjectId, resourceType, resourceId) = "${subjectType}:${su
 foul grant(grant: Grant) -> Grant or! String do
   let id = key(grant.subjectType, grant.subjectId, grant.resourceType, grant.resourceId)
   let stored = Grant { ...grant, id: id, grantedAt: Metro.Clock.milliseconds() }
+  let subjectType = stored.subjectType
+  let subjectId = stored.subjectId
+  let resourceType = stored.resourceType
+  let resourceId = stored.resourceId
+  let role = stored.role
+  let grantedAt = stored.grantedAt
+  let row = {
+    id: id,
+    subject_type: subjectType,
+    subject_id: subjectId,
+    resource_type: resourceType,
+    resource_id: resourceId,
+    role: role,
+    granted_at: grantedAt
+  }
   let made : Grant or! String = Database.transaction do
     Database.delete(DB.Schema.Grants).where(DB.Schema.Grants.id == id).run.try
     Database.insert(DB.Schema.Grants)
-      .values({
-        id: id,
-        subject_type: stored.subjectType,
-        subject_id: stored.subjectId,
-        resource_type: stored.resourceType,
-        resource_id: stored.resourceId,
-        role: stored.role,
-        granted_at: stored.grantedAt
-      })
+      .values(row, columns: [:id, :subject_type, :subject_id, :resource_type, :resource_id, :role, :granted_at])
       .run
       .try
     Ok(stored)

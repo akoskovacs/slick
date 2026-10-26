@@ -27,7 +27,7 @@ foul create(userId: String, blob: Metro.Storage.Blob) -> Attachment or! String d
     uploaded_at: file.uploadedAt
   }
   return Database.insert(DB.Schema.Files)
-    .values(row)
+    .values(row, columns: [:id, :user_id, :filename, :content_type, :byte_size, :checksum, :uploaded_at])
     .run
     .map { |_| file }
 end
@@ -63,9 +63,9 @@ foul markSent(
   conversationId: String,
   messageId: String
 ) -> Integer or! String do
-  return Database.within(DB.Schema.Files.userId == userId)
-    .update(DB.Schema.Files)
-    .set({conversation_id: conversationId, message_id: messageId})
+  return Database.update(DB.Schema.Files)
+    .where(DB.Schema.Files.userId == userId)
+    .set({conversation_id: conversationId, message_id: messageId}, columns: [:conversation_id, :message_id])
     .where(DB.Schema.Files.id.in(ids))
     .where(DB.Schema.Files.messageId == "")
     .run

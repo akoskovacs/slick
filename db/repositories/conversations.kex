@@ -36,8 +36,9 @@ end
 
 # An organization's channel of this name, or `None`.
 foul findChannel(organizationId: String, title: String) -> Conversation? or! String do
+  let slug = "${organizationId}#${title}"
   let row = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.slug == "${organizationId}#${title}")
+    .where(DB.Schema.Conversations.slug == slug)
     .first(as: Conversation)
     .try
   return single(row)
@@ -79,7 +80,7 @@ foul create(
   }
   let made : Conversation or! String = Database.transaction do
     Database.insert(DB.Schema.Conversations)
-      .values(row)
+      .values(row, columns: [:id, :kind, :slug, :title, :organization_id, :access, :team_id, :bot_access, :created_by, :created_at])
       .run
       .try
     let first = access == "private" then [by] else []
@@ -125,7 +126,7 @@ foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> 
       }
       let made : Conversation or! String = Database.transaction do
         Database.insert(DB.Schema.Conversations)
-          .values(row)
+          .values(row, columns: [:id, :kind, :slug, :organization_id, :access, :created_by, :created_at])
           .run
           .try
         admit(chat.id, everyone).try
@@ -161,9 +162,9 @@ foul promote(id: String, title: String, access: String) -> Conversation or! Stri
       return Error("only a group chat becomes a channel") if !chat.group?
 
       let slug = "${chat.organizationId}#${title}"
-      Database.within(DB.Schema.Conversations.kind == "group")
-        .update(DB.Schema.Conversations)
-        .set({kind: "channel", slug: slug, title: title, access: access})
+      Database.update(DB.Schema.Conversations)
+        .set({kind: "channel", slug: slug, title: title, access: access}, columns: [:kind, :slug, :title, :access])
+        .where(DB.Schema.Conversations.kind == "group")
         .where(DB.Schema.Conversations.id == id)
         .run
         .try
@@ -226,7 +227,7 @@ foul findOrCreateDirect(organizationId: String, one: String, other: String) -> C
         created_at: Metro.Clock.milliseconds()
       }
       return Database.insert(DB.Schema.Conversations)
-        .values(row)
+        .values(row, columns: [:id, :kind, :slug, :organization_id, :first_user, :second_user, :created_by, :created_at])
         .run
         .map { |_| chat }
     end
@@ -254,9 +255,9 @@ end
 # Sets a channel's topic; whether there was such a channel. A private chat
 # has no topic, and the condition on `kind` keeps it that way.
 foul setTopic(id: String, topic: String) -> Bool or! String do
-  return Database.within(DB.Schema.Conversations.kind == "channel")
-    .update(DB.Schema.Conversations)
-    .set({topic: topic})
+  return Database.update(DB.Schema.Conversations)
+    .set({topic: topic}, columns: [:topic])
+    .where(DB.Schema.Conversations.kind == "channel")
     .where(DB.Schema.Conversations.id == id)
     .run
     .map { |changed| changed > 0 }
@@ -265,7 +266,7 @@ end
 # How much of a conversation its bots may read: "none", "mentions" or "all".
 foul setBotAccess(id: String, access: String) -> Bool or! String do
   return Database.update(DB.Schema.Conversations)
-    .set({bot_access: access})
+    .set({bot_access: access}, columns: [:bot_access])
     .where(DB.Schema.Conversations.id == id)
     .run
     .map { |changed| changed > 0 }
@@ -282,7 +283,7 @@ foul configure(id: String, access: String, teamId: String, botAccess: String) ->
       return Error("only a channel is configured this way") if !conversation.channel?
       return Database.transaction do
         Database.update(DB.Schema.Conversations)
-          .set({access: access, team_id: teamId, bot_access: botAccess})
+          .set({access: access, team_id: teamId, bot_access: botAccess}, columns: [:access, :team_id, :bot_access])
           .where(DB.Schema.Conversations.id == id)
           .run
           .try

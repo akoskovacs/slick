@@ -13,23 +13,15 @@ foul declare(botId: String, commands: [Command]) -> Integer or! String do
       .where(DB.Schema.Commands.botId == botId)
       .run
       .try
-    # A `.try` inside a block given to `map` would leave only that block:
-    # what failed is collected, so the transaction is undone by it.
-    let failures = commands.flatMap do |command|
-      let stored = Database.insert(DB.Schema.Commands)
-        .values({
-          id: "${botId}:${command.name}",
-          bot_id: botId,
-          name: command.name,
-          description: command.description
-        })
-        .run
-      match stored do
-        Ok(_) => []
-        Error(reason) => [reason]
-      end
+    let rows = commands.map do |command|
+      {
+        id: "${botId}:${command.name}",
+        bot_id: botId,
+        name: command.name,
+        description: command.description
+      }
     end
-    failures.empty? then Ok(commands.count) else Error(failures.first.or(""))
+    Database.insertAll(DB.Schema.Commands, rows)
   end
   return replaced
 end

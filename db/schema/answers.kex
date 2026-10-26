@@ -5,21 +5,24 @@ module DB.Schema.Answers
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :answers do |t|
-  t.text(:id, primaryKey: true)
-  t.text(:message_id)
-  t.text(:conversation_id)
-  t.text(:organization_id)
-  t.text(:asker_id)
-  t.text(:user_id)
-  t.int(:form)
-  t.text(:answer)
-  t.bigint(:answered_at)
-end
+# Known while compiling: a query over this table is written then.
+compiled do
+  let definition = Table.define :answers do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:message_id)
+    t.text(:conversation_id)
+    t.text(:organization_id)
+    t.text(:asker_id)
+    t.text(:user_id)
+    t.int(:form)
+    t.text(:answer)
+    t.bigint(:answered_at)
+  end
 
-let id = DB.Schema.Answers.definition.textColumn(:id)
-let messageId = DB.Schema.Answers.definition.textColumn(:message_id)
-let conversationId = DB.Schema.Answers.definition.textColumn(:conversation_id)
-let organizationId = DB.Schema.Answers.definition.textColumn(:organization_id)
-let askerId = DB.Schema.Answers.definition.textColumn(:asker_id)
-let userId = DB.Schema.Answers.definition.textColumn(:user_id)
+  let id = definition.textColumn(:id)
+  let messageId = definition.textColumn(:message_id)
+  let conversationId = definition.textColumn(:conversation_id)
+  let organizationId = definition.textColumn(:organization_id)
+  let askerId = definition.textColumn(:asker_id)
+  let userId = definition.textColumn(:user_id)
+end
