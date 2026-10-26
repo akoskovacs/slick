@@ -5,6 +5,7 @@ module App.Views.Chat.Conversation
 
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation, PrivateChat, Group]
+using App.Models.Emoji, as: Emoji
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Team, only: [Team]
@@ -59,7 +60,7 @@ let pane(
       let setting = tab.view == App.Live.Tab.SettingsView && (open.channel? || open.group?) && room.administrator
       let heading = headingPartial(
         title,
-        App.Models.Emoji.shown(open.topic),
+        Emoji.shown(open.topic),
         open.channel?,
         tab.retitling?,
         filing,

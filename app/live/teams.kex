@@ -10,11 +10,12 @@ using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Team, only: [Team, TeamId]
+using App.Models.Team, as: Team
 using App.Models.User, only: [User, UserId]
 
 let teamRules = rules do
   validates("name", "A team's name", [present, sized(2, 40)])
-  validates("description", "What a team is for", [sized(0, App.Models.Team.LONGEST_DESCRIPTION)])
+  validates("description", "What a team is for", [sized(0, Team.LONGEST_DESCRIPTION)])
 end
 
 # What a team a sync keeps says when somebody tries to change it here.
@@ -32,10 +33,10 @@ end
 create : User -> Tab -> String -> String -> String -> Outcome
 foul create(user, tab, name, description, given) do
   let typed = given.startsWith?("@") then given.drop(1) else given
-  let handle = typed.empty? then App.Models.Team.handled(name) else typed
+  let handle = typed.empty? then Team.handled(name) else typed
   let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
   return refused(tab, App.Live.Tab.TeamDialog, problems.first.or("")) if !problems.empty?
-  if !App.Models.Team.handle?(handle)
+  if !Team.handle?(handle)
     return refused(tab, App.Live.Tab.TeamDialog, "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter.")
   end
 

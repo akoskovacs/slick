@@ -6,6 +6,7 @@ module App.Views.Chat.Messages
 using App.Models.Answer, only: [Answer]
 using App.Models.Attachment, only: [Attachment]
 using App.Models.Command, only: [Command]
+using App.Models.Emoji, as: Emoji
 using App.Models.Invocation, only: [Invocation]
 using App.Models.Message, only: [Message]
 using App.Models.Reaction, only: [Reaction]
@@ -131,7 +132,7 @@ let bubble(room, message, inThread?, carries) do
         own?: givers.any? { |reaction| reaction.userId == room.viewer.id }
       })
     end
-  let offers = App.Models.Emoji.PALETTE.map do |glyph|
+  let offers = Emoji.PALETTE.map do |glyph|
     chipPartial(Chip {
       key: message.id,
       glyph: glyph,

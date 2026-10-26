@@ -11,6 +11,7 @@ using App.Live.Tab, only: [
 using App.Models.Conversation, only: [Conversation]
 using App.Models.User, only: [User]
 using App.Models.User, as: User
+using App.Models.Emoji, as: Emoji
 using App.Views.Chat.Page, only: [Sidebar]
 
 # One of my bots, in the bots dialog.
@@ -74,9 +75,9 @@ let dialog(tab, sidebar, me, conversation) = shown(tab.dialog, tab, sidebar, me,
 private do
   shown : Dialog -> Tab -> Sidebar -> User -> Conversation? -> String
   let shown(StatusDialog, tab, sidebar, me, conversation) do
-    let presets = App.Models.Emoji.STATUSES.map { |glyph, words| preset(glyph, words) }
-    let statusGlyphs = App.Models.Emoji.STATUSES.map { |glyph, _| glyph }
-    let knownGlyphs = App.Models.Emoji.KNOWN.map { |_, glyph| glyph }
+    let presets = Emoji.STATUSES.map { |glyph, words| preset(glyph, words) }
+    let statusGlyphs = Emoji.STATUSES.map { |glyph, _| glyph }
+    let knownGlyphs = Emoji.KNOWN.map { |_, glyph| glyph }
     let options = ([""] + statusGlyphs + knownGlyphs).map do |glyph|
       choice(glyph, glyph == me.statusEmoji)
     end

@@ -65,8 +65,12 @@ using Net.HTTP.WebSocket, only: [Connection, Text, CloseMessage]
 using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, liveFor, userFor]
 using App.Live.Tab, only: [Tab]
 using App.Models.Command, only: [Command]
+using App.Models.Command, as: Command
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Answer, only: [Answer]
+using App.Models.Invocation, only: [Invocation]
 using App.Models.Message, only: [Message, MessageId]
+using App.Models.Message, as: Message
 using App.Models.Organization, only: [Organization, OrganizationId]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
@@ -104,17 +108,17 @@ foul commandsDeclared(request) do
     let name = "${fields.get("name").or("")}".trim.lowerCase
     let named = name.startsWith?("/") then name.drop(1) else name
     let description = "${fields.get("description").or("")}".trim.replace("\n", " ")
-    if App.Models.Command.named?(named)
-      [Command { botId: bot.id, name: named, description: description.take(App.Models.Command.LONGEST_DESCRIPTION) }]
+    if Command.named?(named)
+      [Command { botId: bot.id, name: named, description: description.take(Command.LONGEST_DESCRIPTION) }]
     else
       []
     end
   end
-  if commands.count != listed.count || commands.count > App.Models.Command.MOST
+  if commands.count != listed.count || commands.count > Command.MOST
     return failed(
       request,
       422,
-      "Commands are at most ${App.Models.Command.MOST}, each a name of lower-case letters, digits and dashes."
+      "Commands are at most ${Command.MOST}, each a name of lower-case letters, digits and dashes."
     )
   end
 
@@ -270,7 +274,7 @@ foul posted(request) do
   end
   let event = thread.empty? then "message-send" else "message-reply"
   let (_, changed) = App.Live.Chat.handled(liveFor(request), eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
-  return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
+  return failed(request, 422, "Not sent: a message needs a body of at most ${Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
   hubFor(request).changed("api", "everyone")
   let people : [User] = Users.everyone.or([])
@@ -359,7 +363,7 @@ end
 private do
   # A response as the API tells it, with where its message is. Nothing for
   # one whose message or conversation is gone.
-  foul placedAnswer(bot: User, people: [User], given: App.Models.Answer.Answer) -> [Any] do
+  foul placedAnswer(bot: User, people: [User], given: Answer) -> [Any] do
     match Messages.find(given.messageId) do
       Ok(Just(message)) => match Conversations.find(given.conversationId) do
         Ok(Just(conversation)) => return [toldAnswer(bot, people, given, message, conversation)]
@@ -369,7 +373,7 @@ private do
     end
   end
 
-  toldAnswer : User -> [User] -> App.Models.Answer.Answer -> Message -> Conversation -> {String: Any}
+  toldAnswer : User -> [User] -> Answer -> Message -> Conversation -> {String: Any}
   let toldAnswer(bot, people, given, message, conversation) do
     let author = people.find { |person| person.id == given.userId }.map { |person| person.shown }.or("Someone")
     {
@@ -386,7 +390,7 @@ private do
     }
   end
 
-  toldInvocation : User -> [User] -> App.Models.Invocation.Invocation -> Conversation -> {String: Any}
+  toldInvocation : User -> [User] -> Invocation -> Conversation -> {String: Any}
   let toldInvocation(bot, people, used, conversation) = {
     "id": used.id,
     "command": used.command,

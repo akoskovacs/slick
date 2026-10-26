@@ -10,6 +10,7 @@ using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.User, only: [User, UserDetail, UserId, Name]
 using App.Models.User, as: User
+using App.Models.Emoji, as: Emoji
 using DB.Repositories.Users, as: Users
 
 let statusRules = rules do
@@ -71,7 +72,7 @@ setStatus : User -> Tab -> String -> String -> Outcome
 foul setStatus(user, tab, emoji, saying) do
   let problems = Metro.Validation.checked(statusRules, {"text": saying}).messages
   return refused(tab, App.Live.Tab.StatusDialog, problems.first.or("")) if !problems.empty?
-  return refused(tab, App.Live.Tab.StatusDialog, "Pick one of the emoji offered.") if !App.Models.Emoji.status?(emoji)
+  return refused(tab, App.Live.Tab.StatusDialog, "Pick one of the emoji offered.") if !Emoji.status?(emoji)
 
   match Users.setStatus(user.id, emoji, saying) do
     Ok(_) => return changed(closed(tab))

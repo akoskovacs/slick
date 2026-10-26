@@ -13,6 +13,8 @@ using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message, MessageId]
+using App.Models.Message, as: Message
+using App.Models.Emoji, as: Emoji
 using App.Models.Reading, only: [Reading]
 using App.Models.User, only: [User]
 using App.Models.Attachment, only: [AttachmentId]
@@ -23,7 +25,7 @@ using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Readings, as: Readings
 
 let messageRules = rules do
-  validates("body", "A message", [present, sized(1, App.Models.Message.LONGEST)])
+  validates("body", "A message", [present, sized(1, Message.LONGEST)])
 end
 
 # How many files can go with one message.
@@ -35,7 +37,7 @@ send : Server<App.Live.Events.Bus> -> Server<Presence> -> User -> Tab -> String 
 foul send(events, statuses, user, tab, body) do
   # A message needs words, unless files go with it.
   let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
-  let unfit = tab.pending.empty? || body.chars.count > App.Models.Message.LONGEST
+  let unfit = tab.pending.empty? || body.chars.count > Message.LONGEST
   return unchanged(tab) if !problems.empty? && unfit
 
   match visible(user, tab) do
@@ -103,7 +105,7 @@ foul saveDraft(user, tab, place, body) do
         conversationId: conversation.id,
         threadId: thread,
         personId: conversation.direct? then conversation.counterpart(user.id) else "",
-        body: body.take(App.Models.Message.LONGEST)
+        body: body.take(Message.LONGEST)
       })
       return unchanged(tab)
     end
@@ -115,7 +117,7 @@ end
 # belong to it.
 react : User -> Tab -> MessageId -> String -> Outcome
 foul react(user, tab, messageId, emoji) do
-  return unchanged(tab) if !App.Models.Emoji.reaction?(emoji)
+  return unchanged(tab) if !Emoji.reaction?(emoji)
 
   match visible(user, tab) do
     None => return unchanged(tab)

@@ -31,6 +31,7 @@
 module App.Helpers.RichText
 
 using Metro.Html, as: Html
+using App.Models.Emoji, as: Emoji
 
 # One block of a message. The strings are text as typed, not yet read for
 # what is bold in them.
@@ -106,7 +107,7 @@ let shown(body, key, given) do
   let content : [Html.Node] = blocks(body).mapIndexed do |block, index|
     [rendered(block, key, index)] + answers(block, given.filter { |each| each.form == index })
   end.reduce([]) { |all, nodes| all + nodes }
-  let tree = App.Models.Emoji.emojiOnly?(body) then [
+  let tree = Emoji.emojiOnly?(body) then [
     Html.div({"class": "big-emoji"}) do
       ...content
     end
@@ -444,7 +445,7 @@ private do
   let inline(text) = linked(text.split(" "), "", true).map { |span| marked(span) }
 
   marked : Span -> Html.Node
-  let marked(Words(text)) = Html.text(App.Models.Emoji.shown(text))
+  let marked(Words(text)) = Html.text(Emoji.shown(text))
   let marked(Bold(inner)) = Html.strong({}) do ...(inner.map { |span| marked(span) }) end
   let marked(Italic(inner)) = Html.em({}) do ...(inner.map { |span| marked(span) }) end
   let marked(Struck(inner)) = Html.s({}) do ...(inner.map { |span| marked(span) }) end
