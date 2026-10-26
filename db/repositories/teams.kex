@@ -29,7 +29,7 @@ foul create(team: Team, by: UserId) -> Team or! String do
     created_at: Metro.Clock.milliseconds()
   }
   let stored : Team or! String = Database.transaction do
-    Database.insert(DB.Schema.Teams)
+    Database.insert(DB.Schema.Teams.definition)
       .values(row)
       .run
       .try
@@ -41,7 +41,7 @@ end
 
 # Every team of an organization, by handle, each with its members.
 foul inOrganization(organizationId: OrganizationId) -> [Team] or! String do
-  let rows = Database.select().from(DB.Schema.Teams)
+  let rows = Database.select().from(DB.Schema.Teams.definition)
     .where(DB.Schema.Teams.organizationId == organizationId)
     .orderBy([:handle])
     .all(as: Team)
@@ -51,7 +51,7 @@ end
 
 # One team, with its members, or `None`.
 foul find(id: TeamId) -> Team? or! String do
-  let row = Database.select().from(DB.Schema.Teams)
+  let row = Database.select().from(DB.Schema.Teams.definition)
     .where(DB.Schema.Teams.id == id)
     .first(as: Team)
     .try
@@ -67,7 +67,7 @@ end
 # Renames a team and says again what it is for; whether there was such a
 # team that is not a sync's.
 foul update(id: TeamId, name: String, description: String) -> Bool or! String do
-  return Database.update(DB.Schema.Teams)
+  return Database.update(DB.Schema.Teams.definition)
     .set({name: name, description: description}, columns: [:name, :description])
     .where(DB.Schema.Teams.externalId == "")
     .where(DB.Schema.Teams.id == id)
@@ -100,7 +100,7 @@ end
 # Hands a team to a sync, as the group of this id — or, with "", takes it
 # back: from then on it is changed here again.
 foul markManaged(id: TeamId, externalId: String) -> Integer or! String do
-  return Database.update(DB.Schema.Teams)
+  return Database.update(DB.Schema.Teams.definition)
     .set({external_id: externalId}, columns: [:external_id])
     .where(DB.Schema.Teams.id == id)
     .run

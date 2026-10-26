@@ -5,21 +5,19 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 # Known while compiling: a query over this table is written then.
-compiled do
-  let definition = Table.define :messages do |t|
-    t.text(:id, primaryKey: true)
-    t.text(:conversation_id)
-    t.text(:user_id)
-    t.text(:body)
-    t.bigint(:sent_at)
-    t.text(:parent_id, default: "")
-    t.int(:reply_count, default: 0)
-  end
-
-  let id = definition.textColumn(:id)
-  let conversationId = definition.textColumn(:conversation_id)
-  let userId = definition.textColumn(:user_id)
-  let body = definition.textColumn(:body)
-  let sentAt = definition.wholeColumn(:sent_at)
-  let parentId = definition.textColumn(:parent_id)
+let definition = Table.define :messages do |t|
+  t.text(:id, primaryKey: true)
+  t.text(:conversation_id)
+  t.text(:user_id)
+  t.text(:body)
+  t.bigint(:sent_at)
+  t.text(:parent_id, default: "")
+  t.int(:reply_count, default: 0)
 end
+
+let id = definition.textColumn(:id)
+let conversationId = definition.textColumn(:conversation_id)
+let userId = definition.textColumn(:user_id)
+let body = definition.textColumn(:body)
+let sentAt = definition.wholeColumn(:sent_at)
+let parentId = definition.textColumn(:parent_id)

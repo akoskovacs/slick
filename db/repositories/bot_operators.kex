@@ -8,7 +8,7 @@ using App.Models.Ids, only: [UserId]
 # A bot's operators, by their id.
 foul forBot(botId: UserId) -> [UserId] or! String do
   return Database.select()
-    .from(DB.Schema.BotOperators)
+    .from(DB.Schema.BotOperators.definition)
     .where(DB.Schema.BotOperators.botId == botId)
     .orderBy([:user_id])
     .pluck(:user_id)
@@ -18,14 +18,14 @@ end
 # swapped in one transaction.
 foul replace(botId: UserId, users: [UserId]) -> Bool or! String do
   let swapped : Integer or! String = Database.transaction do
-    Database.delete(DB.Schema.BotOperators)
+    Database.delete(DB.Schema.BotOperators.definition)
       .where(DB.Schema.BotOperators.botId == botId)
       .run
       .try
     let rows = users.uniq.map do |userId|
       {id: "${botId}:${userId}", bot_id: botId, user_id: userId}
     end
-    Database.insertAll(DB.Schema.BotOperators, rows)
+    Database.insertAll(DB.Schema.BotOperators.definition, rows)
   end
   return swapped.map { |_| true }
 end

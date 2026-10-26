@@ -11,14 +11,14 @@ using App.Models.Ids, only: [UserId]
 
 # Keeps one, as it is.
 foul save(invocation: Invocation) -> Integer or! String do
-  return Database.insert(DB.Schema.Invocations)
+  return Database.insert(DB.Schema.Invocations.definition)
     .record(invocation)
     .run
 end
 
 # Every one used in a conversation, its threads included, oldest first.
 foul inConversation(conversationId: ConversationId) -> [Invocation] or! String do
-  return Database.select().from(DB.Schema.Invocations)
+  return Database.select().from(DB.Schema.Invocations.definition)
     .where(DB.Schema.Invocations.conversationId == conversationId)
     .orderBy([:invoked_at, :id])
     .all(as: Invocation)
@@ -27,7 +27,7 @@ end
 # Those meant for a bot in an organization after `after`, oldest first:
 # what the bot is told.
 foul forBot(organizationId: OrganizationId, botId: UserId, after: Integer) -> [Invocation] or! String do
-  return Database.select().from(DB.Schema.Invocations)
+  return Database.select().from(DB.Schema.Invocations.definition)
     .where(DB.Schema.Invocations.organizationId == organizationId)
     .where(DB.Schema.Invocations.botId == botId)
     .where(DB.Schema.Invocations.invokedAt > after)

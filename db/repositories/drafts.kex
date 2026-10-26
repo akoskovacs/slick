@@ -9,7 +9,7 @@ using App.Models.Ids, only: [UserId]
 
 # Everything a person has started writing and not sent.
 foul pending(userId: UserId) -> [Draft] or! String do
-  return Database.select().from(DB.Schema.Drafts)
+  return Database.select().from(DB.Schema.Drafts.definition)
     .where(DB.Schema.Drafts.userId == userId)
     .all(as: Draft)
 end
@@ -30,14 +30,14 @@ foul save(userId: UserId, draft: Draft) -> Integer or! String do
     saved_at: Metro.Clock.milliseconds()
   }
   let swapped : Integer or! String = Database.transaction do
-    let cleared = Database.delete(DB.Schema.Drafts)
+    let cleared = Database.delete(DB.Schema.Drafts.definition)
       .where(DB.Schema.Drafts.id == id)
       .run
       .try
     if draft.body.trim.empty?
       Ok(cleared)
     else
-      Database.insert(DB.Schema.Drafts)
+      Database.insert(DB.Schema.Drafts.definition)
         .values(row)
         .run
     end

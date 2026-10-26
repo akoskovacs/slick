@@ -11,7 +11,7 @@ using App.Models.Ids, only: [UserId]
 
 # Every reaction in a conversation.
 foul inConversation(conversationId: ConversationId) -> [Reaction] or! String do
-  return Database.select().from(DB.Schema.Reactions)
+  return Database.select().from(DB.Schema.Reactions.definition)
     .where(DB.Schema.Reactions.conversationId == conversationId)
     .all(as: Reaction)
 end
@@ -20,13 +20,13 @@ end
 # Whether it is on afterwards.
 foul toggle(message: Message, userId: UserId, emoji: String) -> Bool or! String do
   let id = "${message.id}:${userId}:${emoji}"
-  let existing = Database.select([:id]).from(DB.Schema.Reactions)
+  let existing = Database.select([:id]).from(DB.Schema.Reactions.definition)
     .where(DB.Schema.Reactions.id == id)
     .first
   match existing do
     Error(reason) => return Error(reason)
     Ok(Just(_)) => do
-      return Database.delete(DB.Schema.Reactions)
+      return Database.delete(DB.Schema.Reactions.definition)
         .where(DB.Schema.Reactions.id == id)
         .run
         .map { |_| false }
@@ -39,7 +39,7 @@ foul toggle(message: Message, userId: UserId, emoji: String) -> Bool or! String 
         user_id: userId,
         emoji: emoji
       }
-      return Database.insert(DB.Schema.Reactions)
+      return Database.insert(DB.Schema.Reactions.definition)
         .values(row)
         .run
         .map { |_| true }

@@ -3,7 +3,7 @@ module App.Views.Chat.Profiles
 
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
-using App.Models.Grant, only: [GrantRole, Member, Admin, ReadOnly]
+using App.Models.Grant, as: Grant
 using App.Views.Chat.Page, only: [Sidebar]
 
 # Somebody's profile, beside the conversation.
@@ -61,11 +61,11 @@ let pane(tab, user, sidebar) do
       else
         sidebar.organization.name
       end
-      let role = sidebar.roles.get(person.id).or(Member)
-      let roleShown = role == Admin then "Administrator" else (role == ReadOnly then "Read-only" else "Member")
-      let admin? = role == Admin
-      let member? = role == Member
-      let readOnly? = role == ReadOnly
+      let role = sidebar.roles.get(person.id).or(Grant.Member)
+      let roleShown = role == Grant.Admin then "Administrator" else (role == Grant.ReadOnly then "Read-only" else "Member")
+      let admin? = role == Grant.Admin
+      let member? = role == Grant.Member
+      let readOnly? = role == Grant.ReadOnly
       let mayManage = sidebar.administrator && !person.bot? && person.id != user.id
       profilePartial(Card {
         key: person.id,

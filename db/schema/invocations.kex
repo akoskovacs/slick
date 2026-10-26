@@ -6,22 +6,20 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 # Known while compiling: a query over this table is written then.
-compiled do
-  let definition = Table.define :invocations do |t|
-    t.text(:id, primaryKey: true)
-    t.text(:organization_id)
-    t.text(:conversation_id)
-    t.text(:thread_id, default: "")
-    t.text(:bot_id)
-    t.text(:user_id)
-    t.text(:command)
-    t.text(:arguments, default: "")
-    t.bigint(:invoked_at)
-  end
-
-  let id = definition.textColumn(:id)
-  let organizationId = definition.textColumn(:organization_id)
-  let conversationId = definition.textColumn(:conversation_id)
-  let botId = definition.textColumn(:bot_id)
-  let invokedAt = definition.wholeColumn(:invoked_at)
+let definition = Table.define :invocations do |t|
+  t.text(:id, primaryKey: true)
+  t.text(:organization_id)
+  t.text(:conversation_id)
+  t.text(:thread_id, default: "")
+  t.text(:bot_id)
+  t.text(:user_id)
+  t.text(:command)
+  t.text(:arguments, default: "")
+  t.bigint(:invoked_at)
 end
+
+let id = definition.textColumn(:id)
+let organizationId = definition.textColumn(:organization_id)
+let conversationId = definition.textColumn(:conversation_id)
+let botId = definition.textColumn(:bot_id)
+let invokedAt = definition.wholeColumn(:invoked_at)

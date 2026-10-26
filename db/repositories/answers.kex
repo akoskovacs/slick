@@ -16,7 +16,7 @@ using App.Models.Answer, only: [Answer]
 
 # Every answer in a conversation.
 foul inConversation(conversationId: ConversationId) -> [Answer] or! String do
-  return Database.select().from(DB.Schema.Answers)
+  return Database.select().from(DB.Schema.Answers.definition)
     .where(DB.Schema.Answers.conversationId == conversationId)
     .orderBy([:answered_at, :id])
     .all(as: Answer)
@@ -25,7 +25,7 @@ end
 # Every answer, in an organization, to the forms somebody asked — a bot
 # reading what its own messages were answered with. Oldest first.
 foul askedBy(organizationId: OrganizationId, askerId: UserId) -> [Answer] or! String do
-  return Database.select().from(DB.Schema.Answers)
+  return Database.select().from(DB.Schema.Answers.definition)
     .where(DB.Schema.Answers.organizationId == organizationId)
     .where(DB.Schema.Answers.askerId == askerId)
     .orderBy([:answered_at, :id])
@@ -58,11 +58,11 @@ foul save(organizationId: OrganizationId, message: Message, form: Integer, userI
   }
   # The earlier answer and this one are swapped in one transaction.
   let swapped : Integer or! String = Database.transaction do
-    Database.delete(DB.Schema.Answers)
+    Database.delete(DB.Schema.Answers.definition)
       .where(DB.Schema.Answers.id == id)
       .run
       .try
-    Database.insert(DB.Schema.Answers)
+    Database.insert(DB.Schema.Answers.definition)
       .values(row)
       .run
   end

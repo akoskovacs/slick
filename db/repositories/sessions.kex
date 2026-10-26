@@ -8,7 +8,7 @@ using App.Models.Ids, only: [UserId]
 
 foul admit(tokenDigest: String, userId: UserId, expiresAt: Integer) -> Integer or! String do
   let createdAt = Metro.Clock.milliseconds()
-  return Database.insert(DB.Schema.Sessions)
+  return Database.insert(DB.Schema.Sessions.definition)
     .values({
       token_digest: tokenDigest,
       user_id: userId,
@@ -20,14 +20,14 @@ end
 
 # Whose session a digest is, and when it expires (seconds since 1970).
 foul holder(tokenDigest: String) -> (UserId, Integer)? or! String do
-  return Database.select().from(DB.Schema.Sessions)
+  return Database.select().from(DB.Schema.Sessions.definition)
     .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
     .first(as: Session)
     .map { |session| session.map { |held| (held.userId, held.expiresAt) } }
 end
 
 foul revoke(tokenDigest: String) -> Bool or! String do
-  return Database.delete(DB.Schema.Sessions)
+  return Database.delete(DB.Schema.Sessions.definition)
     .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
     .run
     .map { |count| count > 0 }

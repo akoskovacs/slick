@@ -29,7 +29,7 @@ foul create(userId: UserId, blob: Metro.Storage.Blob) -> Attachment or! String d
     checksum: file.checksum,
     uploaded_at: file.uploadedAt
   }
-  return Database.insert(DB.Schema.Files)
+  return Database.insert(DB.Schema.Files.definition)
     .values(row)
     .run
     .map { |_| file }
@@ -37,14 +37,14 @@ end
 
 # One file, or `None`.
 foul find(id: AttachmentId) -> Attachment? or! String do
-  return Database.select().from(DB.Schema.Files)
+  return Database.select().from(DB.Schema.Files.definition)
     .where(DB.Schema.Files.id == id)
     .first(as: Attachment)
 end
 
 # Several files, by id, as many of them as there are.
 foul findAll(ids: [AttachmentId]) -> [Attachment] or! String do
-  return Database.select().from(DB.Schema.Files)
+  return Database.select().from(DB.Schema.Files.definition)
     .where(DB.Schema.Files.id.in(ids))
     .orderBy([:uploaded_at, :id])
     .all(as: Attachment)
@@ -52,7 +52,7 @@ end
 
 # Every file sent into a conversation, newest first.
 foul inConversation(conversationId: ConversationId) -> [Attachment] or! String do
-  return Database.select().from(DB.Schema.Files)
+  return Database.select().from(DB.Schema.Files.definition)
     .where(DB.Schema.Files.conversationId == conversationId)
     .orderBy(descending: [:uploaded_at, :id])
     .all(as: Attachment)
@@ -66,7 +66,7 @@ foul markSent(
   conversationId: ConversationId,
   messageId: MessageId
 ) -> Integer or! String do
-  return Database.update(DB.Schema.Files)
+  return Database.update(DB.Schema.Files.definition)
     .where(DB.Schema.Files.userId == userId)
     .set({conversation_id: conversationId, message_id: messageId}, columns: [:conversation_id, :message_id])
     .where(DB.Schema.Files.id.in(ids))

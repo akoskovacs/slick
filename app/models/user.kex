@@ -9,8 +9,7 @@ using App.Models.Conversation, only: [Conversation, ConversationId]
 using App.Models.Conversation, as: Conversation
 using App.Models.Message, only: [MessageId]
 using App.Models.Team, only: [TeamId]
-using App.Models.Grant, only: [Grant, GrantResourceType, GrantRole, Admin, Member, ReadOnly, UserSubject, TeamSubject, ServerResource, OrganizationResource, ConversationResource]
-using App.Models.Grant, as: Grant
+using App.Models.Grant, only: [Grant, GrantResourceType, GrantRole]
 using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Messages, as: Messages
@@ -236,8 +235,8 @@ make User do
     let privateIds : [ConversationId] = conversations
       .filter { |conversation| !conversation.direct? && !conversation.public? }
       .map { |conversation| conversation.id }
-    let overOrganizations : {OrganizationId: [Grant]} = Grants.overEach(OrganizationResource, organizationIds).or({})
-    let overConversations : {ConversationId: [Grant]} = Grants.overEach(ConversationResource, privateIds).or({})
+    let overOrganizations : {OrganizationId: [Grant]} = Grants.overEach(Grant.OrganizationResource, organizationIds).or({})
+    let overConversations : {ConversationId: [Grant]} = Grants.overEach(Grant.ConversationResource, privateIds).or({})
     return conversations.filter do |conversation|
       let over = conversation.public?
         then overOrganizations.get(conversation.organizationId).or([])
@@ -251,15 +250,15 @@ make User do
   # Whether this person may make a channel or team in an organization.
   let canCreate?(organizationId: OrganizationId) -> Bool do
     return true if @serverAdmin?
-    let at = role(OrganizationResource, organizationId)
-    at == Just(Member) || at == Just(Admin)
+    let at = role(Grant.OrganizationResource, organizationId)
+    at == Just(Grant.Member) || at == Just(Grant.Admin)
   end
 
   # Whether this person may administer an organization: invites, bots,
   # teams and channels.
   let canManage?(organizationId: OrganizationId) -> Bool do
     return true if @serverAdmin?
-    role(OrganizationResource, organizationId) == Just(Admin)
+    role(Grant.OrganizationResource, organizationId) == Just(Grant.Admin)
   end
 
   # Whether this person may read a conversation.
@@ -269,9 +268,9 @@ make User do
       return conversation.firstUser == @id || conversation.secondUser == @id
     end
     if conversation.public?
-      return role(OrganizationResource, conversation.organizationId).set?
+      return role(Grant.OrganizationResource, conversation.organizationId).set?
     end
-    role(ConversationResource, conversation.id).set?
+    role(Grant.ConversationResource, conversation.id).set?
   end
 
   # Whether this person may say something in a conversation.
@@ -281,17 +280,17 @@ make User do
       return conversation.firstUser == @id || conversation.secondUser == @id
     end
     let at = conversation.public?
-      then role(OrganizationResource, conversation.organizationId)
-      else role(ConversationResource, conversation.id)
-    at == Just(Member) || at == Just(Admin)
+      then role(Grant.OrganizationResource, conversation.organizationId)
+      else role(Grant.ConversationResource, conversation.id)
+    at == Just(Grant.Member) || at == Just(Grant.Admin)
   end
 
   # Whether this person may manage a conversation: its topic, members and
   # bot access.
   let canAdminister?(conversation: Conversation) -> Bool do
     return true if @serverAdmin?
-    return true if role(OrganizationResource, conversation.organizationId) == Just(Admin)
-    role(ConversationResource, conversation.id) == Just(Admin)
+    return true if role(Grant.OrganizationResource, conversation.organizationId) == Just(Grant.Admin)
+    role(Grant.ConversationResource, conversation.id) == Just(Grant.Admin)
   end
 
   # Whether this bot may read a conversation's thread — `root` "" for its
@@ -317,10 +316,10 @@ make User do
   # through a team.
   let serverAdmin? -> Bool do
     let teams = Grants.teamsOf(@id).or([])
-    Grants.over(ServerResource, "").or([]).any? do |grant|
-      grant.role == Admin && (
-        (grant.subjectType == UserSubject && grant.subjectId == @id) ||
-        (grant.subjectType == TeamSubject && teams.contains?(grant.subjectId))
+    Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
+      grant.role == Grant.Admin && (
+        (grant.subjectType == Grant.UserSubject && grant.subjectId == @id) ||
+        (grant.subjectType == Grant.TeamSubject && teams.contains?(grant.subjectId))
       )
     end
   end

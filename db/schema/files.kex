@@ -7,21 +7,19 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 # Known while compiling: a query over this table is written then.
-compiled do
-  let definition = Table.define :files do |t|
-    t.text(:id, primaryKey: true)
-    t.text(:user_id)
-    t.text(:conversation_id, default: "")
-    t.text(:message_id, default: "")
-    t.text(:filename)
-    t.text(:content_type)
-    t.bigint(:byte_size)
-    t.text(:checksum)
-    t.bigint(:uploaded_at)
-  end
-
-  let id = definition.textColumn(:id)
-  let userId = definition.textColumn(:user_id)
-  let conversationId = definition.textColumn(:conversation_id)
-  let messageId = definition.textColumn(:message_id)
+let definition = Table.define :files do |t|
+  t.text(:id, primaryKey: true)
+  t.text(:user_id)
+  t.text(:conversation_id, default: "")
+  t.text(:message_id, default: "")
+  t.text(:filename)
+  t.text(:content_type)
+  t.bigint(:byte_size)
+  t.text(:checksum)
+  t.bigint(:uploaded_at)
 end
+
+let id = definition.textColumn(:id)
+let userId = definition.textColumn(:user_id)
+let conversationId = definition.textColumn(:conversation_id)
+let messageId = definition.textColumn(:message_id)

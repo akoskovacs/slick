@@ -7,7 +7,6 @@ using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.Grant, only: [Grant, GrantRole]
 using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using App.Models.Ids, only: [UserId]

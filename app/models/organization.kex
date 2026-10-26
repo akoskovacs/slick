@@ -3,7 +3,7 @@
 module App.Models.Organization
 
 using App.Models.Ids, only: [UserId]
-using App.Models.Grant, only: [Admin, OrganizationResource, GrantRole]
+using App.Models.Grant, only: [GrantRole]
 using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 
@@ -28,11 +28,11 @@ make Organization do
   end
 
   # The administrators of this organization, by id.
-  let admins -> [UserId] = Grants.roleHolders(OrganizationResource, @id, Admin).or([])
+  let admins -> [UserId] = Grants.roleHolders(Grant.OrganizationResource, @id, Grant.Admin).or([])
 
   # The role a person holds here, directly or through one of their teams.
   foul roleOf(userId: UserId) -> GrantRole? do
     let teams = Grants.teamsOf(userId).or([])
-    Grant.roleFor(userId, teams, Grants.over(OrganizationResource, @id).or([]))
+    Grant.roleFor(userId, teams, Grants.over(Grant.OrganizationResource, @id).or([]))
   end
 end

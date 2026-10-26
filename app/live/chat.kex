@@ -11,8 +11,8 @@
 # nothing.
 module App.Live.Chat
 
-using App.Models.Grant, only: [Grant, GrantRole]
 using App.Models.Grant, as: Grant
+using App.Models.Grant, only: [GrantRole]
 using Metro.Live.Presence, only: [Presence, Note]
 using App.Live.Event, only: [Event, Routes]
 using App.Live.Tab, only: [Tab]

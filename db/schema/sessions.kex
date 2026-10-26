@@ -6,16 +6,14 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 # Known while compiling: a query over this table is written then.
-compiled do
-  let definition = Table.define :sessions do |t|
-    t.text(:token_digest, primaryKey: true)
-    t.text(:user_id)
-    t.bigint(:expires_at)
-    t.bigint(:created_at)
-  end
-
-  let tokenDigest = definition.textColumn(:token_digest)
-  let userId = definition.textColumn(:user_id)
-  let expiresAt = definition.wholeColumn(:expires_at)
-  let createdAt = definition.wholeColumn(:created_at)
+let definition = Table.define :sessions do |t|
+  t.text(:token_digest, primaryKey: true)
+  t.text(:user_id)
+  t.bigint(:expires_at)
+  t.bigint(:created_at)
 end
+
+let tokenDigest = definition.textColumn(:token_digest)
+let userId = definition.textColumn(:user_id)
+let expiresAt = definition.wholeColumn(:expires_at)
+let createdAt = definition.wholeColumn(:created_at)
