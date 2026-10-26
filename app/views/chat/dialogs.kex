@@ -86,12 +86,12 @@ private do
   let shown(ProfileDialog, tab, sidebar, me, conversation) do
     let inputs = User.DETAILS.map do |column, label, longest|
       detailPartial(Detail {
-        key: column,
+        key: Harmat.Database.spelled(column),
         caption: label,
         worth: me.detail(column),
         longest: "${longest}",
-        hint: column == "time_zone" then "Europe/Budapest" else "",
-        long?: column == "bio",
+        hint: column == User.TimeZone then "Europe/Budapest" else "",
+        long?: column == User.Bio,
         locked?: me.locked?(column)
       })
     end

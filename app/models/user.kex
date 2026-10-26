@@ -9,6 +9,7 @@ using DB.Repositories.Grants, as: Grants
 
 type UserId = String
 type UserKind = Person | Bot
+type UserDetail = Name | Nickname | Title | Department | Phone | TimeZone | Bio
 
 # Whether a message names somebody, the way a bot looks for itself:
 # "@name", however either is cased.
@@ -45,20 +46,20 @@ record User do
   timeZone : String = ""
   # The details a sync has taken over, by column: they are shown, and are
   # not theirs to change while it has them.
-  managed : [String] = []
+  managed : [UserDetail] = []
 end
 
 # The details a profile has, by the column each is kept in, with what each
 # is called and how long it may be. `name` is the one shown everywhere,
 # unless they go by their nickname.
 let DETAILS = [
-  ("name", "Name", 40),
-  ("nickname", "Nickname", 40),
-  ("title", "Title", 80),
-  ("department", "Department", 80),
-  ("phone", "Phone", 30),
-  ("time_zone", "Time zone", 60),
-  ("bio", "Bio", 300)
+  (Name, "Name", 40),
+  (Nickname, "Nickname", 40),
+  (Title, "Title", 80),
+  (Department, "Department", 80),
+  (Phone, "Phone", 30),
+  (TimeZone, "Time zone", 60),
+  (Bio, "Bio", 300)
 ]
 
 make User do
@@ -85,16 +86,15 @@ make User do
   end
 
   # One of their details, by its column; "" for no such column.
-  detail : String -> String
-  let detail("name") = @name
-  let detail("nickname") = @nickname
-  let detail("title") = @title
-  let detail("department") = @department
-  let detail("phone") = @phone
-  let detail("time_zone") = @timeZone
-  let detail("bio") = @bio
-  let detail(_) = ""
+  detail : UserDetail -> String
+  let detail(Name) = @name
+  let detail(Nickname) = @nickname
+  let detail(Title) = @title
+  let detail(Department) = @department
+  let detail(Phone) = @phone
+  let detail(TimeZone) = @timeZone
+  let detail(Bio) = @bio
 
   # Whether a sync has taken a detail over.
-  let locked?(column: String) -> Bool = @managed.contains?(column)
+  let locked?(column: UserDetail) -> Bool = @managed.contains?(column)
 end

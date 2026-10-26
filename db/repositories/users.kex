@@ -6,7 +6,7 @@ module DB.Repositories.Users
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
 using Harmat.Database, as: Database
-using App.Models.User, only: [User]
+using App.Models.User, only: [User, UserDetail]
 using App.Models.User, as: User
 using DB.Repositories.Grants, as: Grants
 
@@ -145,8 +145,8 @@ end
 
 # Hands details over to a sync, by column, or back with `[]`: what it has
 # taken over cannot be changed from a profile.
-foul markManaged(id: String, columns: [String]) -> Integer or! String do
-  let managed = columns.join(",")
+foul markManaged(id: String, columns: [UserDetail]) -> Integer or! String do
+  let managed = columns.map { |column| Database.spelled(column) }.join(",")
   return Database.update(DB.Schema.Users)
     .set({managed: managed}, columns: [:managed])
     .where(DB.Schema.Users.id == id)
