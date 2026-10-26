@@ -63,7 +63,7 @@ jobs:
       - name: Install git and the ODBC drivers
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates jq unixodbc libsqliteodbc
+          apt-get install -y --no-install-recommends git ca-certificates jq ripgrep unixodbc libsqliteodbc
 
       - uses: actions/checkout@v4
 
