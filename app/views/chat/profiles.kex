@@ -33,7 +33,7 @@ record Card do
   timeZone : String = ""
   # Whether it is whoever is looking.
   own? : Bool
-  # Their role in the organization: "admin", "member" or "read-only"; ""
+  # Their role in the organization: "admin", "member" or "read_only"; ""
   # for a bot, whose role nobody changes here.
   role : String = ""
   # The same, in words for a person to read.
@@ -60,7 +60,7 @@ let pane(tab, user, sidebar) do
         sidebar.organization.name
       end
       let role = sidebar.roles.get(person.id).or("member")
-      let roleShown = role == "admin" then "Administrator" else (role == "read-only" then "Read-only" else "Member")
+      let roleShown = role == "admin" then "Administrator" else (role == "read_only" then "Read-only" else "Member")
       let mayManage = sidebar.administrator && !person.bot? && person.id != user.id
       profilePartial(Card {
         key: person.id,

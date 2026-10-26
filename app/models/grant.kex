@@ -1,7 +1,7 @@
 # One grant of a role to a subject over a resource: who may do what where.
 #
-#   Grant { subjectType: "user", subjectId: user.id,
-#           resourceType: "organization", resourceId: org.id, role: "admin" }
+#   Grant { subjectType: UserSubject, subjectId: user.id,
+#           resourceType: OrganizationResource, resourceId: org.id, role: Admin }
 #
 # The subject is a user (person or bot) or a team; the resource a server
 # (resourceId ""), an organization, a conversation (a channel or a group
@@ -9,26 +9,34 @@
 module App.Models.Grant
 
 type GrantId = String
+type GrantSubjectType = UserSubject | TeamSubject
+type GrantResourceType = ServerResource | OrganizationResource | ConversationResource | TeamResource
+type GrantRole = Admin | Member | ReadOnly
+
+roleFrom : String -> GrantRole?
+let roleFrom(text) = match Type.of(Admin).parse(text) do
+  Ok(Admin) => Just(Admin)
+  Ok(Member) => Just(Member)
+  Ok(ReadOnly) => Just(ReadOnly)
+  _ => None
+end
+
 record Grant do
   id : GrantId = ""
   # Who holds the grant: a "user" (person or bot) or a "team".
-  subjectType : String = "user"
+  subjectType : GrantSubjectType = UserSubject
   subjectId : String
   # What it is over: "server", "organization", "conversation" or "team".
-  resourceType : String = "server"
+  resourceType : GrantResourceType = ServerResource
   # The id of that thing; "" for the server.
   resourceId : String = ""
-  # "admin", "member" or "read-only".
-  role : String = "member"
+  # "admin", "member" or "read_only".
+  role : GrantRole = Member
   # Milliseconds since 1970.
   grantedAt : Integer = 0
 end
 
-let ROLES = ["admin", "member", "read-only"]
-let SUBJECTS = ["user", "team"]
-let RESOURCES = ["server", "organization", "conversation", "team"]
-
 make Grant do
-  let admin? -> Bool = @role == "admin"
-  let readOnly? -> Bool = @role == "read-only"
+  let admin? -> Bool = @role == Admin
+  let readOnly? -> Bool = @role == ReadOnly
 end

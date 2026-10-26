@@ -4,7 +4,7 @@
 module App.Views.Chat.Conversation
 
 using App.Live.Tab, only: [Tab]
-using App.Models.Conversation, only: [Conversation, Direct, Group]
+using App.Models.Conversation, only: [Conversation, PrivateChat, Group]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Team, only: [Team]
@@ -67,7 +67,7 @@ let pane(
         noted(open),
         open.channel? && !open.public?,
         open.group?,
-        open.botAccess,
+        Harmat.Database.spelled(open.botAccess),
         room.administrator && (open.channel? || open.group?),
         setting
       )
@@ -89,7 +89,7 @@ let pane(
       let shown = if filing
         filed(cabinet, room.people)
       elif setting
-        open.channel? then settingsPane(open, organization, room) else groupSettingsPartial(open.botAccess)
+        open.channel? then settingsPane(open, organization, room) else groupSettingsPartial(Harmat.Database.spelled(open.botAccess))
       else
         let uses = room.invocations.filter { |used| used.threadId.empty? }
         let bubbles = woven(room, messages, uses, "", 0, false)
@@ -126,7 +126,7 @@ private do
   let noted(conversation) do
     let count = conversation.participants.count
     match conversation.kind do
-      Direct => "Private: only the two of you can read this."
+      PrivateChat => "Private: only the two of you can read this."
       Group => "Private: only the ${count} of you can read this."
       _ => do
         let people = count == 1 then "1 person" else "${count} people"
@@ -142,7 +142,7 @@ private do
     let owners = room.teams
       .filter { |team| team.includes?(room.viewer.id) || team.id == conversation.teamId }
       .map { |team| teamOptionPartial(team.id, team.handle, team.id == conversation.teamId) }
-    settingsPartial(organization.name, conversation.public?, conversation.botAccess, owners.join(""))
+    settingsPartial(organization.name, conversation.public?, Harmat.Database.spelled(conversation.botAccess), owners.join(""))
   end
 
   # What somebody's chat with themselves is for, at the start of it.

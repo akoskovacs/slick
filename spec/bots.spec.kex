@@ -242,7 +242,7 @@ describe("App.Live.Bots, what bots read") do
   it("refuses a member, and anything but none, mentions or all") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let (eveTries, eveChanged) = stepped(world, world.eve, Tab {}, [("event", "bot-access-set"), ("access", "none")])
+      let (eveTries, eveChanged) = stepped(world, world.eve, Tab {}, [("event", "bot-access-set"), ("access", "no_bots")])
       Assert.falsy(eveChanged)
       Assert.truthy(eveTries.failure.contains?("Only an administrator"))
       let (odd, oddChanged) = stepped(world, world.ada, Tab {}, [("event", "bot-access-set"), ("access", "everything")])

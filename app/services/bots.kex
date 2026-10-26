@@ -5,6 +5,7 @@
 module App.Services.Bots
 
 using App.Models.User, only: [User]
+using App.Models.User, as: User
 using App.Models.Organization, only: [OrganizationId]
 using DB.Repositories.Users, as: Users
 
@@ -18,7 +19,7 @@ foul built(maker, organizationId, name) do
   let id = Metro.Id.generate(prefix: "b")
   let token = "${PREFIX}${Metro.Auth.Token.fresh()}"
   let bot = User {
-    id: id, email: "${id}@bots.invalid", name: name, kind: "bot",
+    id: id, email: "${id}@bots.invalid", name: name, kind: User.Bot,
     ownerId: organizationId.empty? then maker.id else "", ownerOrganizationId: organizationId
   }
   return Users.createBot(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }

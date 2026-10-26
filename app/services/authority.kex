@@ -9,13 +9,15 @@
 module App.Services.Authority
 
 using App.Models.User, only: [User]
+using App.Models.User, as: User
 using App.Models.Conversation, only: [Conversation]
-using App.Models.Grant, only: [Grant]
+using App.Models.Grant, only: [Grant, GrantResourceType, GrantRole, UserSubject, TeamSubject, OrganizationResource, ConversationResource, Admin, Member, ReadOnly]
+using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 
 # The strongest role a user — by id — holds over a resource, directly or
 # through a team they are in; `None` for none.
-foul role(userId: String, resourceType: String, resourceId: String) -> String? do
+foul role(userId: String, resourceType: GrantResourceType, resourceId: String) -> GrantRole? do
   let teams : [String] = Grants.teamsOf(userId).or([])
   return roleAmong(userId, teams, Grants.over(resourceType, resourceId).or([]))
 end
@@ -32,8 +34,8 @@ foul readable(user: User, conversations: [Conversation]) -> [Conversation] do
   let privateIds = conversations
     .filter { |conversation| !conversation.direct? && !conversation.public? }
     .map { |conversation| conversation.id }
-  let overOrganizations : {String: [Grant]} = Grants.overEach("organization", organizationIds).or({})
-  let overConversations : {String: [Grant]} = Grants.overEach("conversation", privateIds).or({})
+  let overOrganizations : {String: [Grant]} = Grants.overEach(Grant.OrganizationResource, organizationIds).or({})
+  let overConversations : {String: [Grant]} = Grants.overEach(Grant.ConversationResource, privateIds).or({})
   return conversations.filter do |conversation|
     let over = conversation.public?
       then overOrganizations.get(conversation.organizationId).or([])
@@ -46,7 +48,7 @@ end
 
 # The administrators of an organization, by id.
 foul admins(organizationId: String) -> [String] do
-  return Grants.roleHolders("organization", organizationId, "admin").or([])
+  return Grants.roleHolders(OrganizationResource, organizationId, Admin).or([])
 end
 
 # Whether a bot may read a conversation's thread — `root` "" for its newest
@@ -61,7 +63,7 @@ foul botMayRead(bot: User, conversation: Conversation, root: String) -> Bool do
 
   match DB.Repositories.Messages.find(root) do
     Ok(Just(message)) => do
-      return true if App.Models.User.mentioned?(bot.name, message.body)
+      return true if User.mentioned?(bot.name, message.body)
       return DB.Repositories.Messages.botAuthors(root, [bot.id]).or([]).count > 0
     end
     _ => return false
@@ -71,15 +73,15 @@ end
 # Whether the user may make a channel or a team in an organization.
 foul canCreate(user: User, organizationId: String) -> Bool do
   return true if user.serverAdmin?
-  let at = role(user.id, "organization", organizationId)
-  return at == Just("member") || at == Just("admin")
+  let at = role(user.id, OrganizationResource, organizationId)
+  return at == Just(Member) || at == Just(Admin)
 end
 
 # Whether the user administers an organization: invites, bots, teams,
 # channels.
 foul canManage(user: User, organizationId: String) -> Bool do
   return true if user.serverAdmin?
-  return role(user.id, "organization", organizationId) == Just("admin")
+  return role(user.id, OrganizationResource, organizationId) == Just(Admin)
 end
 
 # Whether the user may read a conversation.
@@ -89,9 +91,9 @@ foul canRead(user: User, conversation: Conversation) -> Bool do
     return conversation.firstUser == user.id || conversation.secondUser == user.id
   end
   if conversation.public?
-    return role(user.id, "organization", conversation.organizationId).set?
+    return role(user.id, OrganizationResource, conversation.organizationId).set?
   end
-  return role(user.id, "conversation", conversation.id).set?
+  return role(user.id, ConversationResource, conversation.id).set?
 end
 
 # Whether the user may say something in a conversation.
@@ -101,42 +103,42 @@ foul canWrite(user: User, conversation: Conversation) -> Bool do
     return conversation.firstUser == user.id || conversation.secondUser == user.id
   end
   if conversation.public?
-    let inOrg = role(user.id, "organization", conversation.organizationId)
-    return inOrg == Just("member") || inOrg == Just("admin")
+    let inOrg = role(user.id, OrganizationResource, conversation.organizationId)
+    return inOrg == Just(Member) || inOrg == Just(Admin)
   end
-  let inConversation = role(user.id, "conversation", conversation.id)
-  return inConversation == Just("member") || inConversation == Just("admin")
+  let inConversation = role(user.id, ConversationResource, conversation.id)
+  return inConversation == Just(Member) || inConversation == Just(Admin)
 end
 
 # Whether the user may manage a conversation — its topic, its members, its
 # bot access.
 foul canAdminister(user: User, conversation: Conversation) -> Bool do
   return true if user.serverAdmin?
-  if role(user.id, "organization", conversation.organizationId) == Just("admin")
+  if role(user.id, OrganizationResource, conversation.organizationId) == Just(Admin)
     return true
   end
-  return role(user.id, "conversation", conversation.id) == Just("admin")
+  return role(user.id, ConversationResource, conversation.id) == Just(Admin)
 end
 
 private do
   # The strongest role a user holds among some grants: their own, or one of
   # their teams'.
-  roleAmong : String -> [String] -> [Grant] -> String?
+  roleAmong : String -> [String] -> [Grant] -> GrantRole?
   let roleAmong(userId, teams, grants) do
     let roles = grants.flatMap do |grant|
-      let held = grant.subjectType == "user" && grant.subjectId == userId
-      let viaTeam = grant.subjectType == "team" && teams.contains?(grant.subjectId)
+      let held = grant.subjectType == UserSubject && grant.subjectId == userId
+      let viaTeam = grant.subjectType == TeamSubject && teams.contains?(grant.subjectId)
       held || viaTeam then [grant.role] else []
     end
     strongest(roles)
   end
 
   # The strongest of some roles: admin, else member, else read-only.
-  strongest : [String] -> String?
+  strongest : [GrantRole] -> GrantRole?
   let strongest(roles) do
-    return Just("admin") if roles.contains?("admin")
-    return Just("member") if roles.contains?("member")
-    return Just("read-only") if roles.contains?("read-only")
+    return Just(Admin) if roles.contains?(Admin)
+    return Just(Member) if roles.contains?(Member)
+    return Just(ReadOnly) if roles.contains?(ReadOnly)
     return None
   end
 end

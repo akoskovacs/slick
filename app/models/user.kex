@@ -4,9 +4,11 @@
 module App.Models.User
 
 using App.Models.Organization, only: [OrganizationId]
+using App.Models.Grant, only: [Admin, UserSubject, TeamSubject, ServerResource]
 using DB.Repositories.Grants, as: Grants
 
 type UserId = String
+type UserKind = Person | Bot
 
 # Whether a message names somebody, the way a bot looks for itself:
 # "@name", however either is cased.
@@ -17,7 +19,7 @@ record User do
   email : String
   name : String = ""
   # "person" or "bot".
-  kind : String = "person"
+  kind : UserKind = Person
   # A bot belongs to a person or to an organization: one of these is set
   # on a bot, and neither on a person.
   ownerId : UserId = ""
@@ -60,16 +62,16 @@ let DETAILS = [
 ]
 
 make User do
-  let bot? -> Bool = @kind == "bot"
+  let bot? -> Bool = @kind == Bot
 
   # Whether this user holds the server-wide administrator role, directly or
   # through a team.
   let serverAdmin? -> Bool do
     let teams = Grants.teamsOf(@id).or([])
-    Grants.over("server", "").or([]).any? do |grant|
-      grant.role == "admin" && (
-        (grant.subjectType == "user" && grant.subjectId == @id) ||
-        (grant.subjectType == "team" && teams.contains?(grant.subjectId))
+    Grants.over(ServerResource, "").or([]).any? do |grant|
+      grant.role == Admin && (
+        (grant.subjectType == UserSubject && grant.subjectId == @id) ||
+        (grant.subjectType == TeamSubject && teams.contains?(grant.subjectId))
       )
     end
   end

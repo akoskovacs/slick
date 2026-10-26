@@ -9,15 +9,17 @@
 module DB.Repositories.Conversations
 
 using Harmat.Database, as: Database
-using App.Models.Conversation, only: [Conversation, Channel, Direct, Group]
+using App.Models.Conversation, only: [Conversation, ConversationAccess, BotAccess, Channel, Group, Public, Private, Mentions]
+using App.Models.Conversation, as: Conversation
 using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 
 # Every channel of an organization, by name: the private ones too, which
 # not everyone may read.
 foul channels(organizationId: String) -> [Conversation] or! String do
   let rows = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind == "channel")
+    .where(DB.Schema.Conversations.kind == Database.spelled(Channel))
     .where(DB.Schema.Conversations.organizationId == organizationId)
     .orderBy([:title])
     .all(as: Conversation)
@@ -52,9 +54,9 @@ foul create(
   organizationId: String,
   title: String,
   by: String,
-  access: String = "public",
+  access: ConversationAccess = Public,
   teamId: String = "",
-  botAccess: String = "mentions"
+  botAccess: BotAccess = Mentions
 ) -> Conversation or! String do
   let channel = Conversation {
     id: Metro.Id.generate(prefix: "c"),
@@ -68,7 +70,7 @@ foul create(
   }
   let row = {
     id: channel.id,
-    kind: App.Models.Conversation.kindName(channel.kind),
+    kind: channel.kind,
     slug: channel.slug,
     title: title,
     organization_id: organizationId,
@@ -83,11 +85,11 @@ foul create(
       .values(row)
       .run
       .try
-    let first = access == "private" then [by] else []
+    let first = access == Private then [by] else []
     admit(channel.id, first).try
     # The team that owns the channel administers it, and so do its members.
     if teamId != ""
-      Grants.grant(Grant { subjectType: "team", subjectId: teamId, resourceType: "conversation", resourceId: channel.id, role: "admin" }).try
+      Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: teamId, resourceType: Grant.ConversationResource, resourceId: channel.id, role: Grant.Admin }).try
     end
     Ok(Conversation { ...channel, participants: first })
   end
@@ -99,7 +101,7 @@ end
 # have one group chat, as two people have one private chat.
 foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> Conversation or! String do
   let everyone = (people + [by]).uniq.sort
-  let slug = "${organizationId}${App.Models.Conversation.gathering(everyone)}"
+  let slug = "${organizationId}${Conversation.gathering(everyone)}"
   let existing = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.slug == slug)
     .first(as: Conversation)
@@ -112,15 +114,15 @@ foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> 
         kind: Group,
         slug: slug,
         organizationId: organizationId,
-        access: "private",
+        access: Private,
         participants: everyone
       }
       let row = {
         id: chat.id,
-        kind: App.Models.Conversation.kindName(chat.kind),
+        kind: chat.kind,
         slug: slug,
         organization_id: organizationId,
-        access: "private",
+        access: Private,
         created_by: by,
         created_at: Metro.Clock.milliseconds()
       }
@@ -143,7 +145,7 @@ foul groups(organizationId: String, userId: String) -> [Conversation] or! String
   return Ok([]) if ids.empty?
 
   let rows = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind == "group")
+    .where(DB.Schema.Conversations.kind == Database.spelled(Group))
     .where(DB.Schema.Conversations.organizationId == organizationId)
     .where(DB.Schema.Conversations.id.in(ids))
     .orderBy([:created_at, :id])
@@ -155,7 +157,7 @@ end
 # Makes a group chat a channel of this name, public or private; whoever
 # was in it is in the channel. Fails when the organization has a channel
 # of that name, or there is no such group chat.
-foul promote(id: String, title: String, access: String) -> Conversation or! String do
+foul promote(id: String, title: String, access: ConversationAccess) -> Conversation or! String do
   let found : Conversation? = find(id).try
   match found do
     Just(chat) => do
@@ -163,8 +165,8 @@ foul promote(id: String, title: String, access: String) -> Conversation or! Stri
 
       let slug = "${chat.organizationId}#${title}"
       Database.update(DB.Schema.Conversations)
-        .set({kind: "channel", slug: slug, title: title, access: access}, columns: [:kind, :slug, :title, :access])
-        .where(DB.Schema.Conversations.kind == "group")
+        .set({kind: Channel, slug: slug, title: title, access: access}, columns: [:kind, :slug, :title, :access])
+        .where(DB.Schema.Conversations.kind == Database.spelled(Group))
         .where(DB.Schema.Conversations.id == id)
         .run
         .try
@@ -186,7 +188,7 @@ foul admit(conversationId: String, userIds: [String]) -> Integer or! String do
   let present : [String] = (participantsOf([conversationId]).try).get(conversationId).or([])
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   let failures = newcomers.flatMap do |userId|
-    let stored = Grants.grant(Grant { subjectType: "user", subjectId: userId, resourceType: "conversation", resourceId: conversationId, role: "member" })
+    let stored = Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: userId, resourceType: Grant.ConversationResource, resourceId: conversationId, role: Grant.Member })
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
@@ -198,7 +200,7 @@ end
 # The private chat between two people in an organization, created the
 # first time it is asked for.
 foul findOrCreateDirect(organizationId: String, one: String, other: String) -> Conversation or! String do
-  let slug = "${organizationId}${App.Models.Conversation.pairing(one, other)}"
+  let slug = "${organizationId}${Conversation.pairing(one, other)}"
   let existing = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.slug == slug)
     .first(as: Conversation)
@@ -210,7 +212,7 @@ foul findOrCreateDirect(organizationId: String, one: String, other: String) -> C
       let second = one <= other then other else one
       let chat = Conversation {
         id: Metro.Id.generate(prefix: "d"),
-        kind: Direct,
+        kind: Conversation.PrivateChat,
         slug: slug,
         firstUser: first,
         secondUser: second,
@@ -218,7 +220,7 @@ foul findOrCreateDirect(organizationId: String, one: String, other: String) -> C
       }
       let row = {
         id: chat.id,
-        kind: "direct",
+        kind: Conversation.PrivateChat,
         slug: slug,
         organization_id: organizationId,
         first_user: first,
@@ -238,13 +240,13 @@ end
 # they are in it.
 foul directs(organizationId: String, userId: String) -> [Conversation] or! String do
   let asFirst = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind == "direct")
+    .where(DB.Schema.Conversations.kind == Database.spelled(Conversation.PrivateChat))
     .where(DB.Schema.Conversations.organizationId == organizationId)
     .where(DB.Schema.Conversations.firstUser == userId)
     .all(as: Conversation)
     .try
   let asSecond = Database.select().from(DB.Schema.Conversations)
-    .where(DB.Schema.Conversations.kind == "direct")
+    .where(DB.Schema.Conversations.kind == Database.spelled(Conversation.PrivateChat))
     .where(DB.Schema.Conversations.organizationId == organizationId)
     .where(DB.Schema.Conversations.secondUser == userId)
     .all(as: Conversation)
@@ -257,14 +259,14 @@ end
 foul setTopic(id: String, topic: String) -> Bool or! String do
   return Database.update(DB.Schema.Conversations)
     .set({topic: topic}, columns: [:topic])
-    .where(DB.Schema.Conversations.kind == "channel")
+    .where(DB.Schema.Conversations.kind == Database.spelled(Channel))
     .where(DB.Schema.Conversations.id == id)
     .run
     .map { |changed| changed > 0 }
 end
 
-# How much of a conversation its bots may read: "none", "mentions" or "all".
-foul setBotAccess(id: String, access: String) -> Bool or! String do
+# How much of a conversation its bots may read: "no_bots", "mentions" or "all_bots".
+foul setBotAccess(id: String, access: BotAccess) -> Bool or! String do
   return Database.update(DB.Schema.Conversations)
     .set({bot_access: access}, columns: [:bot_access])
     .where(DB.Schema.Conversations.id == id)
@@ -275,7 +277,7 @@ end
 # A channel's settings at once: who may read it, the team that owns it, and
 # how much its bots may read. Only a channel; a private chat or a group chat
 # has its own ways.
-foul configure(id: String, access: String, teamId: String, botAccess: String) -> Bool or! String do
+foul configure(id: String, access: ConversationAccess, teamId: String, botAccess: BotAccess) -> Bool or! String do
   let found : Conversation? = find(id).try
   match found do
     None => return Error("that conversation is not there")
@@ -290,10 +292,10 @@ foul configure(id: String, access: String, teamId: String, botAccess: String) ->
         # The team that owns the channel administers it, and only that team.
         if conversation.teamId != teamId
           if !conversation.teamId.empty?
-            Grants.revoke(Grants.key("team", conversation.teamId, "conversation", id)).try
+            Grants.revoke(Grants.key(Grant.TeamSubject, conversation.teamId, Grant.ConversationResource, id)).try
           end
           if !teamId.empty?
-            Grants.grant(Grant { subjectType: "team", subjectId: teamId, resourceType: "conversation", resourceId: id, role: "admin" }).try
+            Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: teamId, resourceType: Grant.ConversationResource, resourceId: id, role: Grant.Admin }).try
           end
         end
         Ok(true)
@@ -319,7 +321,7 @@ private do
   # whoever holds a grant over it, a team's grant handing it to every
   # member of that team.
   foul peopled(conversations: [Conversation]) -> [Conversation] or! String do
-    let closed = conversations.filter { |conversation| conversation.access == "private" }
+    let closed = conversations.filter { |conversation| conversation.access == Private }
     return Ok(conversations) if closed.empty?
 
     let byConversation : {String: [String]} = participantsOf(closed.map { |each| each.id }).try
@@ -330,7 +332,7 @@ private do
 
   # Who takes part in some conversations, by conversation.
   foul participantsOf(ids: [String]) -> {String: [String]} or! String do
-    return Grants.readersOf("conversation", ids)
+    return Grants.readersOf(Grant.ConversationResource, ids)
   end
 
   # The conversations a person takes part in, by id.

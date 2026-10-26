@@ -6,6 +6,7 @@ module App.Views.Chat.Dialogs
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.User, only: [User]
+using App.Models.User, as: User
 using App.Views.Chat.Page, only: [Sidebar]
 
 # One of my bots, in the bots dialog.
@@ -79,7 +80,7 @@ private do
   end
 
   let shown("profile", tab, sidebar, me, conversation) do
-    let inputs = App.Models.User.DETAILS.map do |column, label, longest|
+    let inputs = User.DETAILS.map do |column, label, longest|
       detailPartial(Detail {
         key: column,
         caption: label,

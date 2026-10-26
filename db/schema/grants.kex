@@ -2,6 +2,8 @@
 # db/migrate/N0022_create_grants.kex and docs/permissions.md.
 module DB.Schema.Grants
 
+using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
@@ -9,11 +11,11 @@ using Harmat.Table, only: [Definition]
 compiled do
   let definition = Table.define :grants do |t|
     t.text(:id, primaryKey: true)
-    t.text(:subject_type, oneOf: ["user", "team"])
+    t.text(:subject_type, oneOf: Harmat.Column.choices(Type.of(Grant.UserSubject)))
     t.text(:subject_id)
-    t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
+    t.text(:resource_type, oneOf: Harmat.Column.choices(Type.of(Grant.ServerResource)))
     t.text(:resource_id, default: "")
-    t.text(:role, oneOf: ["admin", "member", "read-only"])
+    t.text(:role, oneOf: Harmat.Column.choices(Type.of(Grant.Admin)))
     t.bigint(:granted_at, default: 0)
   end
 

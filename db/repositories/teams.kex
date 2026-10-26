@@ -10,6 +10,7 @@ module DB.Repositories.Teams
 using Harmat.Database, as: Database
 using App.Models.Team, only: [Team]
 using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 
 # Creates a team, with its first members. Fails when the organization has a
@@ -80,7 +81,7 @@ foul addMembers(teamId: String, userIds: [String]) -> Integer or! String do
   # A `.try` inside a block given to `map` would leave only that block:
   # what failed is collected instead.
   let failures = newcomers.flatMap do |userId|
-    let stored = Grants.grant(Grant { subjectType: "user", subjectId: userId, resourceType: "team", resourceId: teamId, role: "member" })
+    let stored = Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: userId, resourceType: Grant.TeamResource, resourceId: teamId, role: Grant.Member })
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
@@ -91,7 +92,7 @@ end
 
 # Takes a person out of a team, and their grant with them.
 foul removeMember(teamId: String, userId: String) -> Integer or! String do
-  return Grants.revoke(Grants.key("user", userId, "team", teamId))
+  return Grants.revoke(Grants.key(Grant.UserSubject, userId, Grant.TeamResource, teamId))
 end
 
 # Hands a team to a sync, as the group of this id — or, with "", takes it
@@ -105,12 +106,12 @@ end
 
 # The ids of the people in a team.
 foul members(teamId: String) -> [String] or! String do
-  return Grants.members("team", teamId)
+  return Grants.members(Grant.TeamResource, teamId)
 end
 
 # The ids of the people in any of some teams, by team.
 foul rosters(teamIds: [String]) -> {String: [String]} or! String do
-  return Grants.membersOf("team", teamIds)
+  return Grants.membersOf(Grant.TeamResource, teamIds)
 end
 
 private do

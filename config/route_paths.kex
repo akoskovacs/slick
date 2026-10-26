@@ -5,6 +5,6 @@ module Config.RoutePaths
 
 using Metro.Router, as: Router
 
-let channel = Router.path("/:organization/channels/:name")
-let direct = Router.path("/:organization/dm/:person")
-let group = Router.path("/:organization/groups/:group")
+let channel = Router.routePath("/:organization/channels/:name")
+let direct = Router.routePath("/:organization/dm/:person")
+let group = Router.routePath("/:organization/groups/:group")

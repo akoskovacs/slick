@@ -3,6 +3,8 @@
 # channel, and what a conversation is about.
 module App.Live.Conversations
 
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
@@ -79,7 +81,7 @@ foul createChannel(user, tab, title, access, teamId) do
         .or(teamId.empty?)
       return refused(tab, "channel", "A channel can only be made for a team you are in.") if !owns
 
-      let kept = access == "private" then "private" else "public"
+      let kept = access == "private" then Conversation.Private else Conversation.Public
       match DB.Repositories.Conversations.create(organization.id, title, user.id, access: kept, teamId: teamId) do
         Ok(channel) => return changed(at(organization.id, channel.id))
         Error(_) => return refused(tab, "channel", "There is already a channel called ${title}.")
@@ -122,7 +124,7 @@ foul makeChannel(user, tab, title, access) do
         return refused(tab, "promote", "Only an administrator can make this a channel.")
       end
 
-      let kept = access == "public" then "public" else "private"
+      let kept = access == "public" then Conversation.Public else Conversation.Private
       match DB.Repositories.Conversations.promote(conversation.id, title, kept) do
         Ok(channel) => return changed(at(channel.organizationId, channel.id))
         Error(_) => return refused(tab, "promote", "There is already a channel called ${title}.")
@@ -180,8 +182,10 @@ end
 # channel.
 configure : User -> Tab -> String -> String -> String -> Outcome
 foul configure(user, tab, access, teamId, botAccess) do
-  return unchanged(inSettings(tab, "Pick who may read it.")) if !["public", "private"].contains?(access)
-  return unchanged(inSettings(tab, "Pick what bots may read.")) if !["none", "mentions", "all"].contains?(botAccess)
+  let chosenAccess = Conversation.accessFrom(access)
+  let chosenBotAccess = Conversation.botAccessFrom(botAccess)
+  return unchanged(inSettings(tab, "Pick who may read it.")) if !chosenAccess.set?
+  return unchanged(inSettings(tab, "Pick what bots may read.")) if !chosenBotAccess.set?
 
   match visible(user, tab) do
     None => return unchanged(tab)
@@ -201,7 +205,7 @@ foul configure(user, tab, access, teamId, botAccess) do
         return unchanged(inSettings(tab, "A channel can only belong to a team you are in.")) if !owns
       end
 
-      match DB.Repositories.Conversations.configure(conversation.id, access, teamId, botAccess) do
+      match DB.Repositories.Conversations.configure(conversation.id, chosenAccess.or(Conversation.Public), teamId, chosenBotAccess.or(Conversation.Mentions)) do
         Ok(true) => return changed(Tab { ...closed(tab), view: "", notice: "Channel settings saved." })
         Ok(false) => return unchanged(inSettings(tab, "That conversation is not there."))
         Error(reason) => return unchanged(inSettings(tab, reason))

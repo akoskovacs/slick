@@ -14,9 +14,12 @@
 # relies on; production starts with whoever registers.
 module DB.Seeds
 
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using Metro.Environment, only: [Environment, Development]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
+using App.Models.User, as: User
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
@@ -55,7 +58,7 @@ private do
     Memberships.add(acme.id, bob.id).try
     Memberships.add(acme.id, eve.id).try
 
-    let general = Conversations.create(acme.id, App.Models.Conversation.GENERAL, ada.id, botAccess: "all").try
+    let general = Conversations.create(acme.id, Conversation.GENERAL, ada.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(general.id, "Company-wide announcements and chatter").try
     let welcome = Messages.create(general.id, ada.id, "Welcome to Acme :wave:", "").try
     Messages.create(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "").try
@@ -65,7 +68,7 @@ private do
     Reactions.toggle(welcome, bob.id, "👍").try
     Reactions.toggle(welcome, eve.id, "🎉").try
 
-    let random = Conversations.create(acme.id, "random", bob.id, botAccess: "all").try
+    let random = Conversations.create(acme.id, "random", bob.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(random.id, "Anything goes :tada:").try
     Messages.create(random.id, bob.id, "Lunch at one?", "").try
     Messages.create(random.id, eve.id, "`yes`", "").try
@@ -86,7 +89,7 @@ private do
       members: [ada.id, eve.id]
     }
     let team = Teams.create(design, ada.id).try
-    let studio = Conversations.create(acme.id, "studio", eve.id, access: "private", teamId: team.id).try
+    let studio = Conversations.create(acme.id, "studio", eve.id, access: Conversation.Private, teamId: team.id).try
     Messages.create(studio.id, eve.id, "New mockups are up, @design", "").try
 
     let bots = BOTS.map { |name| bot(name, acme.id).try }
@@ -111,7 +114,7 @@ private do
       id: id,
       email: "${id}@bots.invalid",
       name: name,
-      kind: "bot",
+      kind: User.Bot,
       ownerOrganizationId: organizationId
     }
     return Users.createBot(made, Metro.Auth.Token.digest(token(name)))

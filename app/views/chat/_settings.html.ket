@@ -24,8 +24,8 @@ params: [organization: String, public?: Bool, botAccess: String, teams: String]
       <p class="hint" id="channel-bot-help">Choose which messages bots can read.</p>
       <select id="channel-bot-access" name="bot-access" aria-describedby="channel-bot-help">
         <option value="mentions"<% if botAccess == "mentions" %> selected<% end %>>Only messages that mention them</option>
-        <option value="all"<% if botAccess == "all" %> selected<% end %>>All messages</option>
-        <option value="none"<% if botAccess == "none" %> selected<% end %>>No messages</option>
+        <option value="all_bots"<% if botAccess == "all_bots" %> selected<% end %>>All messages</option>
+        <option value="no_bots"<% if botAccess == "no_bots" %> selected<% end %>>No messages</option>
       </select>
     </section>
     <div class="actions settings-actions">

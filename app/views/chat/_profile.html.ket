@@ -47,7 +47,7 @@ params: [card: Card]
         <select id="member-role" name="role" aria-label="Role">
           <option value="member"<% if card.role == "member" %> selected<% end %>>Member</option>
           <option value="admin"<% if card.role == "admin" %> selected<% end %>>Administrator</option>
-          <option value="read-only"<% if card.role == "read-only" %> selected<% end %>>Read-only</option>
+          <option value="read_only"<% if card.role == "read_only" %> selected<% end %>>Read-only</option>
         </select>
         <button type="submit" class="primary">Save role</button>
       </form>

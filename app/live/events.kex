@@ -21,9 +21,12 @@
 # (`reset`): one full look, as a bot that polls would take now and then.
 module App.Live.Events
 
+using App.Models.User, only: [User]
+using App.Models.User, as: User
 using Net.HTTP.WebSocket, only: [Text]
 using JSON
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, BotAccess]
+using App.Models.Conversation, as: Conversation
 
 # One thing that happened. `kind` is "message", "answer" or "command".
 record Event do
@@ -61,7 +64,7 @@ record Event do
   body : String = ""
   # How much of the conversation its bots may read: "none", "mentions" or
   # "all".
-  botAccess : String = "mentions"
+  botAccess : BotAccess = Conversation.Mentions
   # The bots that have replied in this thread: a reply reaches them even
   # when it does not name them.
   replied : [String] = []
@@ -142,11 +145,11 @@ let heard?(event, bot, name, organizations) do
   return event.first == bot || event.second == bot if event.first != ""
 
   # A channel or a group chat, gated by what it lets its bots read.
-  return false if event.botAccess == "none"
+  return false if event.botAccess == Conversation.NoBots
   let admitted = event.public? || event.people.contains?(bot)
-  return admitted if event.botAccess == "all"
+  return admitted if event.botAccess == Conversation.AllBots
 
-  admitted && (App.Models.User.mentioned?(name, event.body) || event.replied.contains?(bot))
+  admitted && (User.mentioned?(name, event.body) || event.replied.contains?(bot))
 end
 
 # An event as the bot told of it is shown it: where, as the API takes it,
@@ -162,7 +165,7 @@ let told(seat, event) do
     "thread": event.thread,
     "message": event.message,
     "at": event.at,
-    "access": event.first != "" then "all" else event.botAccess
+    "access": event.first != "" then "all_bots" else Harmat.Database.spelled(event.botAccess)
   }
   JSON.stringify(fields)
 end

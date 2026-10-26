@@ -8,7 +8,8 @@ using App.Live.Outcome, only: [Outcome, refused]
 using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.Grant, only: [Grant]
+using App.Models.Grant, only: [Grant, GrantRole]
+using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Memberships, as: Memberships
@@ -72,7 +73,8 @@ end
 # administrator cannot be demoted.
 setRole : User -> Tab -> String -> String -> Outcome
 foul setRole(user, tab, personId, role) do
-  return unchanged(tab) if !["admin", "member", "read-only"].contains?(role)
+  let selected = Grant.roleFrom(role)
+  return unchanged(tab) if !selected.set?
   return unchanged(tab) if personId == user.id
 
   match home(user, tab) do
@@ -82,18 +84,18 @@ foul setRole(user, tab, personId, role) do
       if !App.Services.Authority.canManage(user, organization.id)
         return unchanged(Tab { ...profile, failure: "Only an administrator can change a member's role." })
       end
-      let was = App.Services.Authority.role(personId, "organization", organization.id)
+      let was = App.Services.Authority.role(personId, Grant.OrganizationResource, organization.id)
       return unchanged(Tab { ...profile, failure: "They are not in ${organization.name}." }) if !was.set?
-      if role != "admin" && was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
+      if selected != Just(Grant.Admin) && was == Just(Grant.Admin) && App.Services.Authority.admins(organization.id).count <= 1
         return unchanged(Tab { ...profile, failure: "The last administrator cannot be demoted." })
       end
 
       let grant = Grant {
-        subjectType: "user",
+        subjectType: Grant.UserSubject,
         subjectId: personId,
-        resourceType: "organization",
+        resourceType: Grant.OrganizationResource,
         resourceId: organization.id,
-        role: role
+        role: selected.or(Grant.Member)
       }
       match Grants.grant(grant) do
         Ok(_) => return changed(Tab { ...profile, notice: "Their role is ${role} now." })
@@ -114,13 +116,13 @@ foul removeMember(user, tab, personId) do
       if !App.Services.Authority.canManage(user, organization.id)
         return unchanged(Tab { ...away, failure: "Only an administrator can remove a member." })
       end
-      let was = App.Services.Authority.role(personId, "organization", organization.id)
+      let was = App.Services.Authority.role(personId, Grant.OrganizationResource, organization.id)
       return unchanged(Tab { ...away, failure: "They are not in ${organization.name}." }) if !was.set?
-      if was == Just("admin") && App.Services.Authority.admins(organization.id).count <= 1
+      if was == Just(Grant.Admin) && App.Services.Authority.admins(organization.id).count <= 1
         return unchanged(Tab { ...away, failure: "The last administrator cannot be removed." })
       end
 
-      match Grants.revoke(Grants.key("user", personId, "organization", organization.id)) do
+      match Grants.revoke(Grants.key(Grant.UserSubject, personId, Grant.OrganizationResource, organization.id)) do
         Ok(_) => return changed(Tab { ...away, notice: "They are no longer in ${organization.name}." })
         Error(reason) => return unchanged(Tab { ...away, failure: reason })
       end

@@ -38,9 +38,9 @@ One table expresses every "who may do what where":
 ```
 grant(subject, resource, role)
 
-  subject    = user | team            (polymorphic: either may hold a grant)
-  resource   = server | organization | conversation | team
-  role       = admin | member | read-only
+  subject    = user_subject | team_subject
+  resource   = server_resource | organization_resource | conversation_resource | team_resource
+  role       = admin | member | read_only
 ```
 
 A **user** is a person or a bot (`users.kind`). A **team** is a group of
@@ -58,11 +58,11 @@ two people is implicit (the two of them, and nobody else).
 # db/schema/grants.kex
 Table.define :grants do |t|
   t.text(:id, primaryKey: true)          # "<subject-type>:<subject-id>:<resource-type>:<resource-id>"
-  t.text(:subject_type, oneOf: ["user", "team"])
+  t.text(:subject_type, oneOf: Harmat.Column.choices(Type.of(Grant.UserSubject)))
   t.text(:subject_id)
-  t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
+  t.text(:resource_type, oneOf: Harmat.Column.choices(Type.of(Grant.ServerResource)))
   t.text(:resource_id, default: "")      # "" for a server grant
-  t.text(:role, oneOf: ["admin", "member", "read-only"])
+  t.text(:role, oneOf: Harmat.Column.choices(Type.of(Grant.Admin)))
   t.text(:granted_at)
 end
 # indexes on subject_id, on (resource_type, resource_id), and on the pair
@@ -140,13 +140,13 @@ A bot is a user (`kind: "bot"`). Its grants work exactly like a person's.
 Two additions apply only to bots:
 
 - **Channel read-scope** — a property of a conversation,
-  `bot_access ∈ none | mentions | all`, set by whoever may manage the
+  `bot_access ∈ no_bots | mentions | all_bots`, set by whoever may manage the
   conversation:
 
-  - `none` — bots do not read or hear about this conversation at all.
+  - `no_bots` — bots do not read or hear about this conversation at all.
   - `mentions` — a bot reads only threads it was mentioned in, threads it has
     replied in, and its own private chats (the safe default).
-  - `all` — a bot reads everything it is otherwise allowed to, and takes part
+  - `all_bots` — a bot reads everything it is otherwise allowed to, and takes part
     naturally (no `@mention` required).
 
   A bot's effective ability is the intersection of its grants and this

@@ -2,6 +2,8 @@
 # db/migrate/N0004_create_conversations.kex and N0021_add_groups.kex.
 module DB.Schema.Conversations
 
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
@@ -9,7 +11,7 @@ using Harmat.Table, only: [Definition]
 compiled do
   let definition = Table.define :conversations do |t|
     t.text(:id, primaryKey: true)
-    t.text(:kind, oneOf: ["channel", "direct", "group"])
+    t.text(:kind, oneOf: Harmat.Column.choices(Type.of(Conversation.Channel)))
     t.text(:slug)
     t.text(:title, default: "")
     t.text(:topic, default: "")
@@ -18,9 +20,9 @@ compiled do
     t.text(:created_by, default: "")
     t.bigint(:created_at)
     t.text(:organization_id, default: "")
-    t.text(:access, default: "public", oneOf: ["public", "private"])
+    t.text(:access, default: "public", oneOf: Harmat.Column.choices(Type.of(Conversation.Public)))
     t.text(:team_id, default: "")
-    t.text(:bot_access, default: "mentions", oneOf: ["none", "mentions", "all"])
+    t.text(:bot_access, default: "mentions", oneOf: Harmat.Column.choices(Type.of(Conversation.NoBots)))
   end
 
   let id = definition.textColumn(:id)

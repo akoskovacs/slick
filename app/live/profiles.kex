@@ -9,6 +9,7 @@ using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.User, only: [User]
+using App.Models.User, as: User
 using DB.Repositories.Users, as: Users
 
 let statusRules = rules do
@@ -34,11 +35,11 @@ update : User -> Tab -> [(String, String?)] -> Outcome
 foul update(user, tab, entries) do
   match Users.find(user.id) do
     Ok(Just(stored)) => do
-      let given = App.Models.User.DETAILS.map do |column, _, _|
+      let given = User.DETAILS.map do |column, _, _|
         let kept = stored.locked?(column)
         (column, kept then stored.detail(column) else field(entries, column).trim)
       end
-      let problems = App.Models.User.DETAILS.flatMap do |column, label, longest|
+      let problems = User.DETAILS.flatMap do |column, label, longest|
         faults(column, label, longest, chosen(given, column))
       end
       return refused(tab, "profile", problems.first.or("")) if !problems.empty?

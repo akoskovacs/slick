@@ -6,6 +6,7 @@ module App.Live.Places
 
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
@@ -42,7 +43,7 @@ foul visible(user, tab) do
   match home(user, tab) do
     None => return None
     Just(organization) => do
-      let found = tab.conversation.empty? then Conversations.findChannel(organization.id, App.Models.Conversation.GENERAL) else Conversations.find(tab.conversation)
+      let found = tab.conversation.empty? then Conversations.findChannel(organization.id, Conversation.GENERAL) else Conversations.find(tab.conversation)
       match found do
         Ok(Just(conversation)) => do
           return None if conversation.organizationId != organization.id || !App.Services.Authority.canRead(user, conversation)

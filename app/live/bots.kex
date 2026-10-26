@@ -4,6 +4,8 @@
 # closed, and nowhere else.
 module App.Live.Bots
 
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
@@ -136,7 +138,8 @@ end
 # administrator changes it.
 setAccess : User -> Tab -> String -> Outcome
 foul setAccess(user, tab, access) do
-  return unchanged(tab) if !["none", "mentions", "all"].contains?(access)
+  let selected = Conversation.botAccessFrom(access)
+  return unchanged(tab) if !selected.set?
 
   match visible(user, tab) do
     None => return unchanged(tab)
@@ -146,7 +149,7 @@ foul setAccess(user, tab, access) do
         return failed(tab, "Only an administrator can change what bots read here.")
       end
 
-      match Conversations.setBotAccess(conversation.id, access) do
+      match Conversations.setBotAccess(conversation.id, selected.or(Conversation.Mentions)) do
         Ok(true) => return changed(Tab { ...closed(tab), notice: "Bots here read ${access}." })
         Ok(false) => return failed(tab, "That conversation is not there.")
         Error(reason) => return failed(tab, reason)

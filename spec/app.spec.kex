@@ -2,9 +2,12 @@ using Metro.Live.Presence, only: [Presence]
 using Metro.Environment, only: [Development, Test, Production]
 using App.Live.Tab, only: [Tab]
 using App.Services.Authority
-using App.Models.Conversation, only: [Conversation, Channel, Direct]
+using App.Models.Conversation, only: [Conversation, Channel, PrivateChat]
+using App.Models.Conversation, as: Conversation
 using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
+using App.Models.User, as: User
 using Spec.Support, only: [World, stepped, shown, fresh, populated, said]
 
 # Slick as it is linked for serving: the routes are built, so Rodolfo and
@@ -620,7 +623,7 @@ describe("The events bus, telling bots what happens") do
     # every bot of Acme's, and none of another organization's.
     let publicMessage = App.Live.Events.Event {
       kind: "message", organizationId: acme, organization: "acme",
-      conversationId: "c1", channel: "general", message: "m1", at: 100, public?: true, botAccess: "all"
+      conversationId: "c1", channel: "general", message: "m1", at: 100, public?: true, botAccess: Conversation.AllBots
     }
     # A message in a private channel of Acme: only its participants.
     let privateMessage = App.Live.Events.Event {
@@ -636,16 +639,16 @@ describe("The events bus, telling bots what happens") do
     }
     # A channel that only tells bots what names them, and a mention in it.
     let mentioned = App.Live.Events.Event {
-      ...publicMessage, botAccess: "mentions", body: "hey @muse, look at this"
+      ...publicMessage, botAccess: Conversation.Mentions, body: "hey @muse, look at this"
     }
     # A reply in a thread a bot already replied in: told to that bot, though
     # it is not named.
     let replied = App.Live.Events.Event {
-      ...publicMessage, botAccess: "mentions", body: "and 3 + 3?", thread: "m1", replied: ["b1"]
+      ...publicMessage, botAccess: Conversation.Mentions, body: "and 3 + 3?", thread: "m1", replied: ["b1"]
     }
     # A channel bots may read nothing of.
     let forbidden = App.Live.Events.Event {
-      ...publicMessage, botAccess: "none", body: "hey @muse"
+      ...publicMessage, botAccess: Conversation.NoBots, body: "hey @muse"
     }
 
     Assert.truthy(App.Live.Events.heard?(publicMessage, "b1", "muse", [acme]))
@@ -684,16 +687,16 @@ describe("App.Authority, deciding from grants") do
       let ada = User { id: "u1", email: "ada@x", name: "Ada" }
       let bob = User { id: "u2", email: "bob@x", name: "Bob" }
       let carl = User { id: "u3", email: "carl@x", name: "Carl" }
-      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
+      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: User.Bot }
 
-      let general = Conversation { id: "c1", kind: Channel, slug: "o1#general", title: "general", organizationId: "o1", access: "public" }
-      let secret = Conversation { id: "c2", kind: Channel, slug: "o1#secret", title: "secret", organizationId: "o1", access: "private" }
-      let dm = Conversation { id: "d1", kind: Direct, slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
+      let general = Conversation { id: "c1", kind: Channel, slug: "o1#general", title: "general", organizationId: "o1", access: Conversation.Public }
+      let secret = Conversation { id: "c2", kind: Channel, slug: "o1#secret", title: "secret", organizationId: "o1", access: Conversation.Private }
+      let dm = Conversation { id: "d1", kind: PrivateChat, slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
 
-      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u1", resourceType: "organization", resourceId: "o1", role: "member" }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u2", resourceType: "organization", resourceId: "o1", role: "admin" }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u3", resourceType: "organization", resourceId: "o1", role: "read-only" }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Member }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u2", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Admin }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u3", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.ReadOnly }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "b1", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Member }).try
 
       # A public channel: members, admins and read-only users read it; only
       # members and admins write.
@@ -709,14 +712,14 @@ describe("App.Authority, deciding from grants") do
       Assert.falsy(App.Services.Authority.canRead(bob, secret))
       Assert.truthy(App.Services.Authority.canAdminister(bob, secret))
 
-      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u1", resourceType: "conversation", resourceId: "c2", role: "member" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.ConversationResource, resourceId: "c2", role: Grant.Member }).try
       Assert.truthy(App.Services.Authority.canRead(ada, secret))
       Assert.truthy(App.Services.Authority.canWrite(ada, secret))
       Assert.falsy(App.Services.Authority.canAdminister(ada, secret))
 
       # A team that owns the channel hands its members the channel.
-      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u1", resourceType: "team", resourceId: "t1", role: "member" }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: "team", subjectId: "t1", resourceType: "conversation", resourceId: "c2", role: "admin" }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.TeamResource, resourceId: "t1", role: Grant.Member }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: "t1", resourceType: Grant.ConversationResource, resourceId: "c2", role: Grant.Admin }).try
       Assert.truthy(App.Services.Authority.canAdminister(ada, secret))
       Assert.falsy(App.Services.Authority.canRead(carl, secret))
 
@@ -767,10 +770,10 @@ describe("App.Authority, roles an administrator gives") do
       Assert.truthy(App.Services.Authority.canManage(eve, acme.organization))
 
       # Read-only: still in the organization, but cannot write.
-      let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read-only")])
+      let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read_only")])
       Assert.truthy(muted)
-      Assert.truthy(App.Services.Authority.canRead(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
-      Assert.falsy(App.Services.Authority.canWrite(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
+      Assert.truthy(App.Services.Authority.canRead(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
+      Assert.falsy(App.Services.Authority.canWrite(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
 
       # The last administrator cannot be demoted or removed.
       let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
@@ -791,9 +794,9 @@ end
 describe("App.Authority, what a channel lets its bots read") do
   it("gates a bot by the setting, and by whether it is named or in the thread") do
     with Harmat.Connection = fresh() do
-      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
-      let channel = Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: "o1", access: "public", botAccess: "mentions" }
-      DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
+      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: User.Bot }
+      let channel = Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: "o1", access: Conversation.Public, botAccess: Conversation.Mentions }
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "b1", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Member }).try
 
       let asked = DB.Repositories.Messages.create("c1", "u1", "a question", "").try
       let named = DB.Repositories.Messages.create("c1", "u1", "hey @muse, help", "").try
@@ -806,11 +809,11 @@ describe("App.Authority, what a channel lets its bots read") do
       Assert.truthy(App.Services.Authority.botMayRead(bot, channel, asked.id))
 
       # "all": everything.
-      DB.Repositories.Conversations.setBotAccess("c1", "all").try
-      Assert.truthy(App.Services.Authority.botMayRead(bot, Conversation { ...channel, botAccess: "all" }, ""))
+      DB.Repositories.Conversations.setBotAccess("c1", Conversation.AllBots).try
+      Assert.truthy(App.Services.Authority.botMayRead(bot, Conversation { ...channel, botAccess: Conversation.AllBots }, ""))
 
       # "none": nothing.
-      let none = Conversation { ...channel, botAccess: "none" }
+      let none = Conversation { ...channel, botAccess: Conversation.NoBots }
       Assert.falsy(App.Services.Authority.botMayRead(bot, none, named.id))
     end
   end

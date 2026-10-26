@@ -12,8 +12,8 @@ using Harmat.Migration, only: [changeColumn, addColumn, createTable, addIndex]
 
 let change = Migration.define :add_groups, follows: :create_teams do
   changeColumn(:conversations,
-    from: { |t| t.text(:kind, oneOf: ["channel", "direct"]) },
-    to: do |t| t.text(:kind, oneOf: ["channel", "direct", "group"])
+    from: { |t| t.text(:kind, oneOf: ["channel", "private_chat"]) },
+    to: do |t| t.text(:kind, oneOf: ["channel", "private_chat", "group"])
   end)
   addColumn(:conversations) { |t| t.text(:access, default: "public", oneOf: ["public", "private"]) }
   addColumn(:conversations) { |t| t.text(:team_id, default: "") }

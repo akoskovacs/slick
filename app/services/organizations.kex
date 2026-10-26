@@ -2,7 +2,9 @@
 module App.Services.Organizations
 
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
@@ -22,14 +24,14 @@ foul create(founder, name, slug) do
       .try
     Memberships.add(organization.id, founder.id).try
     Grants.grant(Grant {
-      subjectType: "user",
+      subjectType: Grant.UserSubject,
       subjectId: founder.id,
-      resourceType: "organization",
+      resourceType: Grant.OrganizationResource,
       resourceId: organization.id,
-      role: "admin"
+      role: Grant.Admin
     }).try
     let general : Conversation = Conversations
-      .create(organization.id, App.Models.Conversation.GENERAL, founder.id)
+      .create(organization.id, Conversation.GENERAL, founder.id)
       .try
     Conversations.setTopic(general.id, GENERAL_TOPIC).try
     Ok(organization)

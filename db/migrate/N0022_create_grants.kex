@@ -12,11 +12,11 @@ using Harmat.Sql, only: [sql]
 let change = Migration.define :create_grants, follows: :add_groups do
   createTable(:grants) do |t|
     t.text(:id, primaryKey: true)
-    t.text(:subject_type, oneOf: ["user", "team"])
+    t.text(:subject_type, oneOf: ["user_subject", "team_subject"])
     t.text(:subject_id)
-    t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
+    t.text(:resource_type, oneOf: ["server_resource", "organization_resource", "conversation_resource", "team_resource"])
     t.text(:resource_id, default: "")
-    t.text(:role, oneOf: ["admin", "member", "read-only"])
+    t.text(:role, oneOf: ["admin", "member", "read_only"])
     t.text(:granted_at, default: "")
   end
   addIndex(:grants, [:subject_id])
@@ -25,43 +25,43 @@ let change = Migration.define :create_grants, follows: :add_groups do
   # Memberships: everyone already in an organization is a member of it.
   execute(
     sql`INSERT INTO grants (id, subject_type, subject_id, resource_type, resource_id, role, granted_at)
-        SELECT 'user:' || user_id || ':organization:' || organization_id,
-               'user', user_id, 'organization', organization_id, 'member', joined_at FROM memberships`,
-    undo: sql`DELETE FROM grants WHERE subject_type = 'user' AND resource_type = 'organization' AND role = 'member'`
+        SELECT 'user_subject:' || user_id || ':organization_resource:' || organization_id,
+               'user_subject', user_id, 'organization_resource', organization_id, 'member', joined_at FROM memberships`,
+    undo: sql`DELETE FROM grants WHERE subject_type = 'user_subject' AND resource_type = 'organization_resource' AND role = 'member'`
   )
 
   # Participants of a private channel or a group chat are members of it.
   execute(
     sql`INSERT INTO grants (id, subject_type, subject_id, resource_type, resource_id, role, granted_at)
-        SELECT 'user:' || user_id || ':conversation:' || conversation_id,
-               'user', user_id, 'conversation', conversation_id, 'member', joined_at FROM participants`,
-    undo: sql`DELETE FROM grants WHERE subject_type = 'user' AND resource_type = 'conversation' AND role = 'member'`
+        SELECT 'user_subject:' || user_id || ':conversation_resource:' || conversation_id,
+               'user_subject', user_id, 'conversation_resource', conversation_id, 'member', joined_at FROM participants`,
+    undo: sql`DELETE FROM grants WHERE subject_type = 'user_subject' AND resource_type = 'conversation_resource' AND role = 'member'`
   )
 
   # Team members are members of their team.
   execute(
     sql`INSERT INTO grants (id, subject_type, subject_id, resource_type, resource_id, role, granted_at)
-        SELECT 'user:' || user_id || ':team:' || team_id,
-               'user', user_id, 'team', team_id, 'member', joined_at FROM team_members`,
-    undo: sql`DELETE FROM grants WHERE subject_type = 'user' AND resource_type = 'team' AND role = 'member'`
+        SELECT 'user_subject:' || user_id || ':team_resource:' || team_id,
+               'user_subject', user_id, 'team_resource', team_id, 'member', joined_at FROM team_members`,
+    undo: sql`DELETE FROM grants WHERE subject_type = 'user_subject' AND resource_type = 'team_resource' AND role = 'member'`
   )
 
   # A team that owns a channel administers it.
   execute(
     sql`INSERT INTO grants (id, subject_type, subject_id, resource_type, resource_id, role, granted_at)
-        SELECT 'team:' || team_id || ':conversation:' || id,
-               'team', team_id, 'conversation', id, 'admin', created_at FROM conversations WHERE team_id != ''`,
-    undo: sql`DELETE FROM grants WHERE subject_type = 'team' AND resource_type = 'conversation' AND role = 'admin'`
+        SELECT 'team_subject:' || team_id || ':conversation_resource:' || id,
+               'team_subject', team_id, 'conversation_resource', id, 'admin', created_at FROM conversations WHERE team_id != ''`,
+    undo: sql`DELETE FROM grants WHERE subject_type = 'team_subject' AND resource_type = 'conversation_resource' AND role = 'admin'`
   )
 
   # Whoever created an organization administers it, in place of their member
   # grant: one grant per subject over one resource, with the stronger role.
   execute(
     sql`UPDATE grants SET role = 'admin'
-        WHERE subject_type = 'user' AND resource_type = 'organization'
+        WHERE subject_type = 'user_subject' AND resource_type = 'organization_resource'
           AND EXISTS (SELECT 1 FROM organizations o
                       WHERE o.id = grants.resource_id AND o.created_by = grants.subject_id)`,
     undo: sql`UPDATE grants SET role = 'member'
-        WHERE subject_type = 'user' AND resource_type = 'organization' AND role = 'admin'`
+        WHERE subject_type = 'user_subject' AND resource_type = 'organization_resource' AND role = 'admin'`
   )
 end

@@ -11,6 +11,8 @@
 # nothing.
 module App.Live.Chat
 
+using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using Metro.Live.Presence, only: [Presence, Note]
 using App.Live.Places, only: [home, visible, organizations]
 using App.Live.Event, only: [Event, Routes]
@@ -65,10 +67,10 @@ private do
     let roster : [String] = Memberships.roster(organization.id).or([])
     let everyone : [User] = Users.everyone.or([])
     let bots : [User] = tab.dialog == "bots" then App.Live.Bots.manageable(user, organization) else []
-    let roles = Grants.over("organization", organization.id)
+    let roles = Grants.over(Grant.OrganizationResource, organization.id)
       .or([])
-      .filter { |grant| grant.subjectType == "user" }
-      .reduce({}) { |found, grant| found.put(grant.subjectId, grant.role) }
+      .filter { |grant| grant.subjectType == Grant.UserSubject }
+      .reduce({}) { |found, grant| found.put(grant.subjectId, Harmat.Database.spelled(grant.role)) }
     return App.Views.Chat.Page.Sidebar {
       organizations: organizations(user),
       organization: organization,

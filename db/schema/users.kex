@@ -2,6 +2,8 @@
 # password; `name` is what a person is called in a conversation.
 module DB.Schema.Users
 
+using App.Models.User, only: [User]
+using App.Models.User, as: User
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
@@ -13,7 +15,7 @@ compiled do
     t.text(:password_hash)
     t.bigint(:created_at)
     t.text(:name, default: "")
-    t.text(:kind, default: "person", oneOf: ["person", "bot"])
+    t.text(:kind, default: "person", oneOf: Harmat.Column.choices(Type.of(User.Person)))
     t.text(:owner_id, default: "")
     t.text(:api_token_digest, default: "")
     t.text(:owner_organization_id, default: "")
