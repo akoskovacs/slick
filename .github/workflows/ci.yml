@@ -51,10 +51,10 @@ jobs:
     env:
       # The precompiler is merged in Kex main but has not shipped in a toolchain
       # image yet. Build that compiler here and make Tey and Kex use it.
-      TEY_KEX: ${{ github.workspace }}/kex/build/kex
-      KEX: ${{ github.workspace }}/kex/build/kex
-      KEX_STDLIB_DIR: ${{ github.workspace }}/kex/src/stdlib
-      KEX_RUNTIME_DIR: ${{ github.workspace }}/kex/build/runtime/beam
+      TEY_KEX: ${{ github.workspace }}/.kex-source/build/kex
+      KEX: ${{ github.workspace }}/.kex-source/build/kex
+      KEX_STDLIB_DIR: ${{ github.workspace }}/.kex-source/src/stdlib
+      KEX_RUNTIME_DIR: ${{ github.workspace }}/.kex-source/build/runtime/beam
       # The SQLite ODBC driver by the name Debian registers it under: the
       # specs make their databases with it.
       SQLITE_DRIVER: SQLite3
@@ -71,7 +71,7 @@ jobs:
         with:
           repository: kexhq/kex
           ref: d20a580b5a9d9a768aa5641c9f1ecbe02a7dbef4
-          path: kex
+          path: .kex-source
 
       - name: Install Kex build dependencies
         run: |
@@ -80,8 +80,8 @@ jobs:
 
       - name: Build Kex compiler
         run: |
-          cmake -S kex -B kex/build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build kex/build --parallel 2
+          cmake -S .kex-source -B .kex-source/build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build .kex-source/build --parallel 2
 
       - name: Let git fetch the private dependencies
         env:
@@ -116,10 +116,10 @@ jobs:
         with:
           repository: kexhq/kex
           ref: d20a580b5a9d9a768aa5641c9f1ecbe02a7dbef4
-          path: kex
+          path: .kex-source
 
       - name: Build the Kex toolchain image
-        run: docker build -f kex/docker/Dockerfile -t kex:ci kex
+        run: docker build -f .kex-source/docker/Dockerfile -t kex:ci .kex-source
 
       - name: Build the image
         run: docker compose build
