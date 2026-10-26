@@ -4,6 +4,7 @@
 module App.Models.User
 
 using App.Models.Organization, only: [OrganizationId]
+using DB.Repositories.Grants, as: Grants
 
 type UserId = String
 
@@ -60,6 +61,18 @@ let DETAILS = [
 
 make User do
   let bot? -> Bool = @kind == "bot"
+
+  # Whether this user holds the server-wide administrator role, directly or
+  # through a team.
+  let serverAdmin? -> Bool do
+    let teams = Grants.teamsOf(@id).or([])
+    Grants.over("server", "").or([]).any? do |grant|
+      grant.role == "admin" && (
+        (grant.subjectType == "user" && grant.subjectId == @id) ||
+        (grant.subjectType == "team" && teams.contains?(grant.subjectId))
+      )
+    end
+  end
 
   # What to call them: their nickname, if they go by it; else their name,
   # or the front of their email until they have one.
