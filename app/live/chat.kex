@@ -66,7 +66,7 @@ private do
   foul sidebarOf(statuses, user, tab, organization) do
     let roster : [String] = Memberships.roster(organization.id).or([])
     let everyone : [User] = Users.everyone.or([])
-    let bots : [User] = tab.dialog == "bots" then App.Live.Bots.manageable(user, organization) else []
+    let bots : [User] = tab.dialog == App.Live.Tab.BotsDialog then App.Live.Bots.manageable(user, organization) else []
     let roles = Grants.over(Grant.OrganizationResource, organization.id)
       .or([])
       .filter { |grant| grant.subjectType == Grant.UserSubject }

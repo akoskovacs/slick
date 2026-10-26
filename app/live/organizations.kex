@@ -31,18 +31,18 @@ end
 create : User -> Tab -> String -> [String] -> Outcome
 foul create(user, tab, name, rootSegments) do
   let problems = Metro.Validation.checked(organizationRules, {"name": name}).messages
-  return refused(tab, "organization", problems.first.or("")) if !problems.empty?
+  return refused(tab, App.Live.Tab.OrganizationDialog, problems.first.or("")) if !problems.empty?
 
   let slug = App.Models.Organization.slugged(name)
   if slug.chars.count < 2
-    return refused(tab, "organization", "A name needs at least two letters or digits.")
+    return refused(tab, App.Live.Tab.OrganizationDialog, "A name needs at least two letters or digits.")
   end
   if rootSegments.contains?(slug)
-    return refused(tab, "organization", "${name} cannot be used as a name. Try another.")
+    return refused(tab, App.Live.Tab.OrganizationDialog, "${name} cannot be used as a name. Try another.")
   end
 
   match App.Services.Organizations.create(user, name, slug) do
-    Error(_) => return refused(tab, "organization", "There is already an organization called ${name}.")
+    Error(_) => return refused(tab, App.Live.Tab.OrganizationDialog, "There is already an organization called ${name}.")
     Ok(organization) => return changed(Tab { organization: organization.id })
   end
 end
@@ -54,15 +54,15 @@ foul invite(user, tab, email) do
     None => return unchanged(tab)
     Just(organization) => do
       if !App.Services.Authority.canManage(user, organization.id)
-        return refused(tab, "invite", "Only an administrator of ${organization.name} can invite people.")
+        return refused(tab, App.Live.Tab.InviteDialog, "Only an administrator of ${organization.name} can invite people.")
       end
 
       match Users.credentials(email) do
         Ok(Just((person, _))) => match Memberships.add(organization.id, person.id) do
           Ok(_) => return changed(Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." })
-          Error(_) => return refused(tab, "invite", "${person.shown} is already in ${organization.name}.")
+          Error(_) => return refused(tab, App.Live.Tab.InviteDialog, "${person.shown} is already in ${organization.name}.")
         end
-        _ => return refused(tab, "invite", "Nobody has registered with ${email}. They need an account first.")
+        _ => return refused(tab, App.Live.Tab.InviteDialog, "Nobody has registered with ${email}. They need an account first.")
       end
     end
   end

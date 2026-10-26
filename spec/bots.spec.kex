@@ -46,7 +46,7 @@ describe("App.Live.Bots, making one") do
       let world = populated()
       let (made, changed) = stepped(world, world.bob, Tab {}, [("event", "bot-create"), ("name", "x"), ("owner", "me")])
       Assert.falsy(changed)
-      Assert.equal(made.dialog, "bots")
+      Assert.equal(made.dialog, App.Live.Tab.BotsDialog)
       Assert.truthy(!made.dialogProblem.empty?)
       Assert.equal(made.secret, "")
     end
@@ -88,9 +88,9 @@ describe("App.Live.Bots, an organization's") do
       let (_, bot) = createBot(world, world.ada, Tab {}, "acme-bot", "organization")
       Assert.equal(bot.ownerId, "")
       Assert.equal(bot.ownerOrganizationId, world.acme.organization)
-      let evesDialog = shown(world, world.eve, Tab { dialog: "bots" })
+      let evesDialog = shown(world, world.eve, Tab { dialog: App.Live.Tab.BotsDialog })
       Assert.falsy(evesDialog.split("<h2>Bots</h2>").drop(1).first.or("").contains?(">acme-bot"))
-      let adasDialog = shown(world, world.ada, Tab { dialog: "bots" })
+      let adasDialog = shown(world, world.ada, Tab { dialog: App.Live.Tab.BotsDialog })
       Assert.truthy(adasDialog.contains?("acme-bot"))
       Assert.truthy(adasDialog.contains?("belongs to Acme Corp"))
       Assert.falsy(shown(world, world.mal, Tab {}).contains?("acme-bot"))
@@ -101,7 +101,7 @@ describe("App.Live.Bots, an organization's") do
     with Harmat.Connection = fresh() do
       let world = populated()
       createBot(world, world.bob, Tab {}, "deploy-bot", "me")
-      Assert.truthy(shown(world, world.bob, Tab { dialog: "bots" }).contains?("<span class=\"hint\">yours</span>"))
+      Assert.truthy(shown(world, world.bob, Tab { dialog: App.Live.Tab.BotsDialog }).contains?("<span class=\"hint\">yours</span>"))
     end
   end
 end
@@ -150,7 +150,7 @@ describe("App.Live.Bots, adding one to an organization") do
       Assert.falsy(shown(world, world.mal, Tab {}).contains?(">ada-bot"))
       let (added, changed) = stepped(world, world.ada, world.other, [("event", "bot-add"), ("id", bot.id)])
       Assert.truthy(changed)
-      Assert.equal(added.dialog, "bots")
+      Assert.equal(added.dialog, App.Live.Tab.BotsDialog)
       Assert.truthy(shown(world, world.mal, Tab {}).contains?(">ada-bot"))
     end
   end
@@ -183,7 +183,7 @@ describe("App.Live.Bots, removing one") do
       Assert.truthy(changed)
       Assert.truthy(removed.notice.contains?("acme-bot"))
       Assert.equal(App.Services.Bots.bearer(Just("Bearer ${made.secret}")), None)
-      Assert.falsy(shown(world, world.ada, Tab { dialog: "bots" }).contains?(">acme-bot"))
+      Assert.falsy(shown(world, world.ada, Tab { dialog: App.Live.Tab.BotsDialog }).contains?(">acme-bot"))
     end
   end
 
@@ -196,7 +196,7 @@ describe("App.Live.Bots, removing one") do
       let (_, bobRemoved) = stepped(world, world.bob, Tab {}, [("event", "bot-remove"), ("id", bot.id)])
       Assert.truthy(bobRemoved)
       Assert.equal(App.Services.Bots.bearer(Just("Bearer ${made.secret}")), None)
-      Assert.falsy(shown(world, world.bob, Tab { dialog: "bots" }).contains?(">deploy-bot"))
+      Assert.falsy(shown(world, world.bob, Tab { dialog: App.Live.Tab.BotsDialog }).contains?(">deploy-bot"))
       Assert.falsy(App.Services.Authentication.current(Just(made.secret)).set?)
     end
   end

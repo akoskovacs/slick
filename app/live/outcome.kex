@@ -4,12 +4,12 @@
 # are the ones that leave the tab saying what went wrong.
 module App.Live.Outcome
 
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Tab, only: [Tab, Dialog, closed]
 
 type Outcome = (Tab, Bool)
 
 # A dialog left open, saying what was wrong with its last try.
-refused : Tab -> String -> String -> Outcome
+refused : Tab -> Dialog -> String -> Outcome
 let refused(tab, dialog, problem) = (Tab {
   ...closed(tab),
   dialog: dialog,

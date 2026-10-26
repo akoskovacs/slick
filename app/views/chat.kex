@@ -142,7 +142,7 @@ let index(tab, user, sidebar, pane) do
     pane.conversation,
     pane.messages,
     pane.cabinet,
-    pane.thread.empty? && tab.dialog.empty?,
+    pane.thread.empty? && tab.dialog == App.Live.Tab.NoDialog,
     pane.doing,
     unsent("")
   )

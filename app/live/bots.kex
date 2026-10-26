@@ -18,7 +18,7 @@ using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Users, as: Users
 
-let DIALOG = "bots"
+let DIALOG = App.Live.Tab.BotsDialog
 
 let botRules = rules do
   validates("name", "A bot's name", [present, sized(2, 40)])

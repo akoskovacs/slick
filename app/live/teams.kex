@@ -34,16 +34,16 @@ foul create(user, tab, name, description, given) do
   let typed = given.startsWith?("@") then given.drop(1) else given
   let handle = typed.empty? then App.Models.Team.handled(name) else typed
   let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
-  return refused(tab, "team", problems.first.or("")) if !problems.empty?
+  return refused(tab, App.Live.Tab.TeamDialog, problems.first.or("")) if !problems.empty?
   if !App.Models.Team.handle?(handle)
-    return refused(tab, "team", "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter.")
+    return refused(tab, App.Live.Tab.TeamDialog, "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter.")
   end
 
   match home(user, tab) do
     None => return unchanged(tab)
     Just(organization) => do
       if !App.Services.Authority.canCreate(user, organization.id)
-        return refused(tab, "team", "You may not make a team in ${organization.name}.")
+        return refused(tab, App.Live.Tab.TeamDialog, "You may not make a team in ${organization.name}.")
       end
       let team = Team {
         id: "",
@@ -56,7 +56,7 @@ foul create(user, tab, name, description, given) do
 
       match DB.Repositories.Teams.create(team, user.id) do
         Ok(made) => return changed(beside(tab, made.id))
-        Error(_) => return refused(tab, "team", "There is already a team called @${handle}.")
+        Error(_) => return refused(tab, App.Live.Tab.TeamDialog, "There is already a team called @${handle}.")
       end
     end
   end
@@ -66,16 +66,16 @@ end
 update : User -> Tab -> String -> String -> Outcome
 foul update(user, tab, name, description) do
   let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
-  return refused(tab, "team-edit", problems.first.or("")) if !problems.empty?
+  return refused(tab, App.Live.Tab.TeamEditDialog, problems.first.or("")) if !problems.empty?
 
   match current(user, tab) do
     None => return unchanged(closed(tab))
     Just(team) => do
-      return refused(tab, "team-edit", "@${team.handle} is ${SYNCED}") if team.managed?
+      return refused(tab, App.Live.Tab.TeamEditDialog, "@${team.handle} is ${SYNCED}") if team.managed?
 
       match DB.Repositories.Teams.update(team.id, name, description) do
         Ok(_) => return changed(closed(tab))
-        Error(reason) => return refused(tab, "team-edit", reason)
+        Error(reason) => return refused(tab, App.Live.Tab.TeamEditDialog, reason)
       end
     end
   end

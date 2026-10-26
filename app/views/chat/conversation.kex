@@ -55,8 +55,8 @@ let pane(
     ].join("")
     Just(open) => do
       let title = titled(open, room.viewer, room.people)
-      let filing = tab.view == "files"
-      let setting = tab.view == "settings" && (open.channel? || open.group?) && room.administrator
+      let filing = tab.view == App.Live.Tab.FilesView
+      let setting = tab.view == App.Live.Tab.SettingsView && (open.channel? || open.group?) && room.administrator
       let heading = headingPartial(
         title,
         App.Models.Emoji.shown(open.topic),

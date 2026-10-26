@@ -596,7 +596,7 @@ describe("App.Controllers.Files") do
         Assert.equal(asking(world.mal).code, 404)
         Assert.equal(asking(world.bob).outgoing.get("X-Content-Type-Options"), Just("nosniff"))
         # The files view lists it, with the start of what it says.
-        let view = shown(world, world.bob, Tab { view: "files" })
+        let view = shown(world, world.bob, Tab { view: App.Live.Tab.FilesView })
         Assert.truthy(view.contains?("<pre>first line\nsecond &lt;line&gt;</pre>"))
         Assert.truthy(view.contains?("Files <span class=\"tally\">1</span>"))
         # A file once sent cannot be sent again.

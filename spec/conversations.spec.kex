@@ -37,7 +37,7 @@ describe("App.Live.Conversations, channels") do
       let (asking, _) = stepped(world, world.ada, Tab {}, [("event", "dialog-open"), ("dialog", "channel")])
       Assert.truthy(shown(world, world.ada, asking).contains?("aria-label=\"Create a channel\""))
       let (malformed, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "Bad Name!")])
-      Assert.equal(malformed.dialog, "channel")
+      Assert.equal(malformed.dialog, App.Live.Tab.ChannelDialog)
       Assert.truthy(!malformed.dialogProblem.empty?)
       Assert.truthy(shown(world, world.ada, malformed).contains?("role=\"alert\""))
       createChannel(world, "random", "public")
@@ -66,7 +66,7 @@ describe("App.Live.Conversations, channels") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let secret = createChannel(world, "secret", "private")
-      let admitting = shown(world, world.ada, Tab { ...secret, dialog: "admit" })
+      let admitting = shown(world, world.ada, Tab { ...secret, dialog: App.Live.Tab.AdmitDialog })
       Assert.truthy(admitting.contains?("value=\"${world.bob.id}\""))
       Assert.falsy(admitting.contains?("value=\"${world.ada.id}\""))
       let (added, changed) = stepped(world, world.ada, secret, [("event", "channel-add"), ("person", world.bob.id), ("person", world.mal.id)])
@@ -270,9 +270,9 @@ describe("App.Live.Conversations, a channel's settings") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let random = createChannel(world, "random", "public")
-      let (saved, changed) = stepped(world, world.ada, Tab { ...random, view: "settings" }, [("event", "channel-configure"), ("access", "private"), ("bot-access", "mentions"), ("team", "")])
+      let (saved, changed) = stepped(world, world.ada, Tab { ...random, view: App.Live.Tab.SettingsView }, [("event", "channel-configure"), ("access", "private"), ("bot-access", "mentions"), ("team", "")])
       Assert.truthy(changed)
-      Assert.equal(saved.view, "")
+      Assert.equal(saved.view, App.Live.Tab.ConversationView)
       Assert.truthy(saved.notice.contains?("saved"))
       Assert.equal(App.Live.Places.visible(world.bob, random), None)
     end
@@ -285,7 +285,7 @@ describe("App.Live.Conversations, a channel's settings") do
       let (bobs, _) = stepped(world, world.bob, Tab {}, [("event", "team-create"), ("name", "Ops")])
       let (refused, changed) = stepped(world, world.ada, random, [("event", "channel-configure"), ("access", "public"), ("bot-access", "all_bots"), ("team", bobs.team)])
       Assert.falsy(changed)
-      Assert.equal(refused.view, "settings")
+      Assert.equal(refused.view, App.Live.Tab.SettingsView)
       Assert.truthy(refused.failure.contains?("a team you are in"))
       let (design, _) = stepped(world, world.ada, Tab {}, [("event", "team-create"), ("name", "Design")])
       let (_, given) = stepped(world, world.ada, random, [("event", "channel-configure"), ("access", "public"), ("bot-access", "all_bots"), ("team", design.team)])

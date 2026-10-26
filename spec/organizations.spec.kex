@@ -36,7 +36,7 @@ describe("App.Live.Organizations, making one") do
       let zed = registered("Zed", "zed@example.com")
       let (unnamed, _) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "!")])
       Assert.truthy(!unnamed.dialogProblem.empty?)
-      Assert.equal(unnamed.dialog, "organization")
+      Assert.equal(unnamed.dialog, App.Live.Tab.OrganizationDialog)
       let (reserved, _) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "Sign In")])
       Assert.truthy(reserved.dialogProblem.contains?("cannot be used"))
       let (taken, changed) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "acme corp")])

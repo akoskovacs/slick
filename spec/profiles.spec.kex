@@ -126,7 +126,7 @@ describe("App.Live.Profiles, one's own details") do
       Assert.truthy(card.contains?("Sales"))
       Assert.falsy(card.contains?("Hacked"))
       Assert.falsy(card.contains?("CEO"))
-      let form = shown(world, world.bob, Tab { dialog: "profile" })
+      let form = shown(world, world.bob, Tab { dialog: App.Live.Tab.ProfileDialog })
       let inputOf = do |column|
         form
           .split("name=\"${column}\"")

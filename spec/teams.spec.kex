@@ -31,7 +31,7 @@ describe("App.Live.Teams, making one") do
       createDesign(world)
       let (unnamed, _) = stepped(world, world.ada, Tab {}, [("event", "team-create"), ("name", "")])
       Assert.truthy(!unnamed.dialogProblem.empty?)
-      Assert.equal(unnamed.dialog, "team")
+      Assert.equal(unnamed.dialog, App.Live.Tab.TeamDialog)
       let (taken, takenChanged) = stepped(world, world.bob, Tab {}, [("event", "team-create"), ("name", "Other"), ("handle", "@design-crew")])
       Assert.falsy(takenChanged)
       Assert.truthy(taken.dialogProblem.contains?("already a team"))

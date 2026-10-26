@@ -10,7 +10,7 @@ describe("App.Live.Navigation") do
       let world = populated()
       let (bots, changed) = stepped(world, world.ada, Tab {}, [("event", "dialog-open"), ("dialog", "bots")])
       Assert.falsy(changed)
-      Assert.equal(bots.dialog, "bots")
+      Assert.equal(bots.dialog, App.Live.Tab.BotsDialog)
       let (odd, _) = stepped(world, world.ada, Tab {}, [("event", "dialog-open"), ("dialog", "anything")])
       Assert.equal(odd, Tab {})
     end
@@ -19,7 +19,7 @@ describe("App.Live.Navigation") do
   it("closes what is open over the conversation, and keeps the rest") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let open = Tab { team: "t1", dialog: "bots", dialogProblem: "x", notice: "y" }
+      let open = Tab { team: "t1", dialog: App.Live.Tab.BotsDialog, dialogProblem: "x", notice: "y" }
       let (cancelled, _) = stepped(world, world.ada, open, [("event", "cancel")])
       Assert.equal(cancelled, Tab { team: "t1" })
     end
@@ -29,12 +29,12 @@ describe("App.Live.Navigation") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let (files, _) = stepped(world, world.ada, Tab { thread: "m1" }, [("event", "view-files")])
-      Assert.equal(files.view, "files")
+      Assert.equal(files.view, App.Live.Tab.FilesView)
       Assert.equal(files.thread, "")
       let (settings, _) = stepped(world, world.ada, Tab { profile: "u1", team: "t1" }, [("event", "view-settings")])
-      Assert.equal(settings, Tab { view: "settings" })
+      Assert.equal(settings, Tab { view: App.Live.Tab.SettingsView })
       let (messages, _) = stepped(world, world.ada, files, [("event", "view-messages")])
-      Assert.equal(messages.view, "")
+      Assert.equal(messages.view, App.Live.Tab.ConversationView)
     end
   end
 
@@ -53,7 +53,7 @@ describe("Config.Live") do
   it("leaves the tab as it is for an event nobody answers") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let tab = Tab { dialog: "bots" }
+      let tab = Tab { dialog: App.Live.Tab.BotsDialog }
       Assert.equal(stepped(world, world.ada, tab, [("event", "refresh")]), (tab, false))
       Assert.equal(stepped(world, world.ada, tab, [("event", "bot-explode")]), (tab, false))
       Assert.equal(stepped(world, world.ada, tab, [("event", "")]), (tab, false))
