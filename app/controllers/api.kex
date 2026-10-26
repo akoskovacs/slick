@@ -66,7 +66,7 @@ using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, liveFo
 using App.Live.Tab, only: [Tab]
 using App.Models.Command, only: [Command]
 using App.Models.Conversation, only: [Conversation]
-using App.Models.Message, only: [Message]
+using App.Models.Message, only: [Message, MessageId]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
@@ -403,7 +403,7 @@ private do
   # A thread as the API tells it: the message it hangs from, then the
   # replies, oldest first. Nothing, when the message is not one of this
   # conversation's.
-  foul unfolded(conversation: Conversation, rootId: String) -> [Any] do
+foul unfolded(conversation: Conversation, rootId: MessageId) -> [Any] do
     match Messages.find(rootId) do
       Ok(Just(root)) => do
         let none : [Any] = []
