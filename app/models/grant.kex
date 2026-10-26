@@ -30,12 +30,7 @@ end
 
 make Grant do
   roleFrom : String -> GrantRole?
-  let roleFrom(text) = match Type.of(Admin).parse(text) do
-    Ok(Admin) => Just(Admin)
-    Ok(Member) => Just(Member)
-    Ok(ReadOnly) => Just(ReadOnly)
-    _ => None
-  end
+  let roleFrom(text) = Type.of(Admin).parse(text).optional
 
   let admin? -> Bool = @role == Admin
   let readOnly? -> Bool = @role == ReadOnly

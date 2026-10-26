@@ -38,19 +38,10 @@ let GENERAL = "general"
 
 make Conversation do
   accessFrom : String -> ConversationAccess?
-  let accessFrom(text) = match Type.of(Public).parse(text) do
-    Ok(Public) => Just(Public)
-    Ok(Private) => Just(Private)
-    _ => None
-  end
+  let accessFrom(text) = Type.of(Public).parse(text).optional
 
   botAccessFrom : String -> BotAccess?
-  let botAccessFrom(text) = match Type.of(NoBots).parse(text) do
-    Ok(NoBots) => Just(NoBots)
-    Ok(Mentions) => Just(Mentions)
-    Ok(AllBots) => Just(AllBots)
-    _ => None
-  end
+  let botAccessFrom(text) = Type.of(NoBots).parse(text).optional
 
   # The slug of the private chat between two people, whichever way round
   # they are given.
