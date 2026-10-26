@@ -12,6 +12,7 @@ using App.Models.Grant, only: [Grant, GrantRole]
 using App.Models.Grant, as: Grant
 using App.Models.User, only: [User, UserId]
 using App.Models.Organization, only: [OrganizationId]
+using App.Models.Organization, as: Organization
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Users, as: Users
@@ -34,7 +35,7 @@ foul create(user, tab, name, rootSegments) do
   let problems = Metro.Validation.checked(organizationRules, {"name": name}).messages
   return refused(tab, App.Live.Tab.OrganizationDialog, problems.first.or("")) if !problems.empty?
 
-  let slug = App.Models.Organization.slugged(name)
+  let slug = Organization.slugged(name)
   if slug.chars.count < 2
     return refused(tab, App.Live.Tab.OrganizationDialog, "A name needs at least two letters or digits.")
   end

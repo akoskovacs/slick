@@ -13,14 +13,6 @@ type GrantSubjectType = UserSubject | TeamSubject
 type GrantResourceType = ServerResource | OrganizationResource | ConversationResource | TeamResource
 type GrantRole = Admin | Member | ReadOnly
 
-roleFrom : String -> GrantRole?
-let roleFrom(text) = match Type.of(Admin).parse(text) do
-  Ok(Admin) => Just(Admin)
-  Ok(Member) => Just(Member)
-  Ok(ReadOnly) => Just(ReadOnly)
-  _ => None
-end
-
 record Grant do
   id : GrantId = ""
   # Who holds the grant: a "user" (person or bot) or a "team".
@@ -37,6 +29,14 @@ record Grant do
 end
 
 make Grant do
+  roleFrom : String -> GrantRole?
+  let roleFrom(text) = match Type.of(Admin).parse(text) do
+    Ok(Admin) => Just(Admin)
+    Ok(Member) => Just(Member)
+    Ok(ReadOnly) => Just(ReadOnly)
+    _ => None
+  end
+
   let admin? -> Bool = @role == Admin
   let readOnly? -> Bool = @role == ReadOnly
 end

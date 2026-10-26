@@ -29,26 +29,26 @@ end
 let LONGEST_HANDLE = 30
 let LONGEST_DESCRIPTION = 250
 
-# Whether a handle can be one: lower-case letters, digits and dashes,
-# starting with a letter.
-handle? : String -> Bool
-let handle?(text) do
-  let first = text.chars.first.map { |char| char.letter? && char.lower? }.or(false)
-  let count = text.chars.count
-  first && count >= 2 && count <= LONGEST_HANDLE && text.chars.all? do |char|
-    (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
-  end
-end
-
-# The handle a name suggests: lower case, with dashes between its words.
-handled : String -> String
-let handled(name) do
-  let words = name.trim.lowerCase.split(" ").map do |word|
-    word.chars.filter { |char| char.lower? || char.digit? || "${char}" == "-" }.map { |char| "${char}" }.join("")
-  end
-  words.reject { |word| word.empty? }.join("-").take(LONGEST_HANDLE)
-end
-
 make Team do
+  # Whether a handle can be one: lower-case letters, digits and dashes,
+  # starting with a letter.
+  handle? : String -> Bool
+  let handle?(text) do
+    let first = text.chars.first.map { |char| char.letter? && char.lower? }.or(false)
+    let count = text.chars.count
+    first && count >= 2 && count <= LONGEST_HANDLE && text.chars.all? do |char|
+      (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
+    end
+  end
+
+  # The handle a name suggests: lower case, with dashes between its words.
+  handled : String -> String
+  let handled(name) do
+    let words = name.trim.lowerCase.split(" ").map do |word|
+      word.chars.filter { |char| char.lower? || char.digit? || "${char}" == "-" }.map { |char| "${char}" }.join("")
+    end
+    words.reject { |word| word.empty? }.join("-").take(LONGEST_HANDLE)
+  end
+
   let includes?(userId: UserId) -> Bool = @members.contains?(userId)
 end

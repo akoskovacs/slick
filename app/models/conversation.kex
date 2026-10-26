@@ -11,21 +11,6 @@ type ConversationKind = Channel | PrivateChat | Group
 type ConversationAccess = Public | Private
 type BotAccess = NoBots | Mentions | AllBots
 
-accessFrom : String -> ConversationAccess?
-let accessFrom(text) = match Type.of(Public).parse(text) do
-  Ok(Public) => Just(Public)
-  Ok(Private) => Just(Private)
-  _ => None
-end
-
-botAccessFrom : String -> BotAccess?
-let botAccessFrom(text) = match Type.of(NoBots).parse(text) do
-  Ok(NoBots) => Just(NoBots)
-  Ok(Mentions) => Just(Mentions)
-  Ok(AllBots) => Just(AllBots)
-  _ => None
-end
-
 record Conversation do
   id : ConversationId
   kind : ConversationKind = Channel
@@ -51,17 +36,32 @@ end
 # The channel every workspace starts with.
 let GENERAL = "general"
 
-# The slug of the private chat between two people, whichever way round they
-# are given.
-pairing : UserId -> UserId -> String
-let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:${one}"
-
-# The slug of the group chat between some people, in whatever order they
-# are given.
-gathering : [UserId] -> String
-let gathering(people) = "&${people.uniq.sort.join(",")}"
-
 make Conversation do
+  accessFrom : String -> ConversationAccess?
+  let accessFrom(text) = match Type.of(Public).parse(text) do
+    Ok(Public) => Just(Public)
+    Ok(Private) => Just(Private)
+    _ => None
+  end
+
+  botAccessFrom : String -> BotAccess?
+  let botAccessFrom(text) = match Type.of(NoBots).parse(text) do
+    Ok(NoBots) => Just(NoBots)
+    Ok(Mentions) => Just(Mentions)
+    Ok(AllBots) => Just(AllBots)
+    _ => None
+  end
+
+  # The slug of the private chat between two people, whichever way round
+  # they are given.
+  pairing : UserId -> UserId -> String
+  let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:${one}"
+
+  # The slug of the group chat between some people, in whatever order they
+  # are given.
+  gathering : [UserId] -> String
+  let gathering(people) = "&${people.uniq.sort.join(",")}"
+
   let channel? -> Bool = @kind == Channel
   let group? -> Bool = @kind == Group
   let direct? -> Bool = @kind == PrivateChat
