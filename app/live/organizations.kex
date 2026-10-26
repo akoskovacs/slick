@@ -86,7 +86,7 @@ foul setRole(user, tab, personId, role) do
       if !user.canManage?(organization.id)
         return unchanged(Tab { ...profile, failure: "Only an administrator can change a member's role." })
       end
-      let was = App.Services.Authority.role(personId, Grant.OrganizationResource, organization.id)
+      let was = organization.roleOf(personId)
       return unchanged(Tab { ...profile, failure: "They are not in ${organization.name}." }) if !was.set?
       if selected != Just(Grant.Admin) && was == Just(Grant.Admin) && organization.admins.count <= 1
         return unchanged(Tab { ...profile, failure: "The last administrator cannot be demoted." })
@@ -118,7 +118,7 @@ foul removeMember(user, tab, personId) do
       if !user.canManage?(organization.id)
         return unchanged(Tab { ...away, failure: "Only an administrator can remove a member." })
       end
-      let was = App.Services.Authority.role(personId, Grant.OrganizationResource, organization.id)
+      let was = organization.roleOf(personId)
       return unchanged(Tab { ...away, failure: "They are not in ${organization.name}." }) if !was.set?
       if was == Just(Grant.Admin) && organization.admins.count <= 1
         return unchanged(Tab { ...away, failure: "The last administrator cannot be removed." })

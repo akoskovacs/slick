@@ -3,7 +3,7 @@
 module App.Models.Organization
 
 using App.Models.Ids, only: [UserId]
-using App.Models.Grant, only: [Admin, OrganizationResource]
+using App.Models.Grant, only: [Admin, OrganizationResource, GrantRole]
 using DB.Repositories.Grants, as: Grants
 
 type OrganizationId = String
@@ -28,4 +28,7 @@ make Organization do
 
   # The administrators of this organization, by id.
   let admins -> [UserId] = Grants.roleHolders(OrganizationResource, @id, Admin).or([])
+
+  # The role a person holds here, directly or through one of their teams.
+  foul roleOf(userId: UserId) -> GrantRole? = App.Services.Authority.role(userId, OrganizationResource, @id)
 end
