@@ -8,17 +8,20 @@
 # the API and the events stream, not here.
 module App.Services.Authority
 
-using App.Models.User, only: [User]
+using App.Models.User, only: [User, UserId]
 using App.Models.User, as: User
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, ConversationId]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.Team, only: [TeamId]
+using App.Models.Message, only: [MessageId]
 using App.Models.Grant, only: [Grant, GrantResourceType, GrantRole, UserSubject, TeamSubject, OrganizationResource, ConversationResource, Admin, Member, ReadOnly]
 using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 
 # The strongest role a user — by id — holds over a resource, directly or
 # through a team they are in; `None` for none.
-foul role(userId: String, resourceType: GrantResourceType, resourceId: String) -> GrantRole? do
-  let teams : [String] = Grants.teamsOf(userId).or([])
+foul role(userId: UserId, resourceType: GrantResourceType, resourceId: String) -> GrantRole? do
+  let teams : [TeamId] = Grants.teamsOf(userId).or([])
   return roleAmong(userId, teams, Grants.over(resourceType, resourceId).or([]))
 end
 
@@ -26,16 +29,16 @@ end
 # each — with the grants that takes read once for all of them.
 foul readable(user: User, conversations: [Conversation]) -> [Conversation] do
   return conversations if user.serverAdmin?
-  let teams : [String] = Grants.teamsOf(user.id).or([])
-  let organizationIds = conversations
+  let teams : [TeamId] = Grants.teamsOf(user.id).or([])
+  let organizationIds : [OrganizationId] = conversations
     .filter { |conversation| !conversation.direct? && conversation.public? }
     .map { |conversation| conversation.organizationId }
     .uniq
-  let privateIds = conversations
+  let privateIds : [ConversationId] = conversations
     .filter { |conversation| !conversation.direct? && !conversation.public? }
     .map { |conversation| conversation.id }
-  let overOrganizations : {String: [Grant]} = Grants.overEach(Grant.OrganizationResource, organizationIds).or({})
-  let overConversations : {String: [Grant]} = Grants.overEach(Grant.ConversationResource, privateIds).or({})
+  let overOrganizations : {OrganizationId: [Grant]} = Grants.overEach(Grant.OrganizationResource, organizationIds).or({})
+  let overConversations : {ConversationId: [Grant]} = Grants.overEach(Grant.ConversationResource, privateIds).or({})
   return conversations.filter do |conversation|
     let over = conversation.public?
       then overOrganizations.get(conversation.organizationId).or([])
@@ -47,14 +50,14 @@ foul readable(user: User, conversations: [Conversation]) -> [Conversation] do
 end
 
 # The administrators of an organization, by id.
-foul admins(organizationId: String) -> [String] do
+foul admins(organizationId: OrganizationId) -> [UserId] do
   return Grants.roleHolders(OrganizationResource, organizationId, Admin).or([])
 end
 
 # Whether a bot may read a conversation's thread — `root` "" for its newest
 # messages — given what the conversation lets its bots read. A person is
 # never gated here, and a private chat is the bot's own.
-foul botMayRead(bot: User, conversation: Conversation, root: String) -> Bool do
+foul botMayRead(bot: User, conversation: Conversation, root: MessageId) -> Bool do
   return true if !bot.bot?
   return true if conversation.direct?
   return false if conversation.botsForbidden?
@@ -71,7 +74,7 @@ foul botMayRead(bot: User, conversation: Conversation, root: String) -> Bool do
 end
 
 # Whether the user may make a channel or a team in an organization.
-foul canCreate(user: User, organizationId: String) -> Bool do
+foul canCreate(user: User, organizationId: OrganizationId) -> Bool do
   return true if user.serverAdmin?
   let at = role(user.id, OrganizationResource, organizationId)
   return at == Just(Member) || at == Just(Admin)
@@ -79,7 +82,7 @@ end
 
 # Whether the user administers an organization: invites, bots, teams,
 # channels.
-foul canManage(user: User, organizationId: String) -> Bool do
+foul canManage(user: User, organizationId: OrganizationId) -> Bool do
   return true if user.serverAdmin?
   return role(user.id, OrganizationResource, organizationId) == Just(Admin)
 end
@@ -123,7 +126,7 @@ end
 private do
   # The strongest role a user holds among some grants: their own, or one of
   # their teams'.
-  roleAmong : String -> [String] -> [Grant] -> GrantRole?
+  roleAmong : UserId -> [TeamId] -> [Grant] -> GrantRole?
   let roleAmong(userId, teams, grants) do
     let roles = grants.flatMap do |grant|
       let held = grant.subjectType == UserSubject && grant.subjectId == userId

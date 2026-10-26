@@ -6,9 +6,11 @@ module DB.Repositories.Reactions
 using Harmat.Database, as: Database
 using App.Models.Message, only: [Message]
 using App.Models.Reaction, only: [Reaction]
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.User, only: [UserId]
 
 # Every reaction in a conversation.
-foul inConversation(conversationId: String) -> [Reaction] or! String do
+foul inConversation(conversationId: ConversationId) -> [Reaction] or! String do
   return Database.select().from(DB.Schema.Reactions)
     .where(DB.Schema.Reactions.conversationId == conversationId)
     .all(as: Reaction)
@@ -16,7 +18,7 @@ end
 
 # Puts a person's emoji on a message, or takes it off if it is there.
 # Whether it is on afterwards.
-foul toggle(message: Message, userId: String, emoji: String) -> Bool or! String do
+foul toggle(message: Message, userId: UserId, emoji: String) -> Bool or! String do
   let id = "${message.id}:${userId}:${emoji}"
   let existing = Database.select([:id]).from(DB.Schema.Reactions)
     .where(DB.Schema.Reactions.id == id)

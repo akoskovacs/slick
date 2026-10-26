@@ -5,9 +5,10 @@ module DB.Repositories.Drafts
 
 using Harmat.Database, as: Database
 using App.Models.Draft, only: [Draft]
+using App.Models.User, only: [UserId]
 
 # Everything a person has started writing and not sent.
-foul pending(userId: String) -> [Draft] or! String do
+foul pending(userId: UserId) -> [Draft] or! String do
   return Database.select().from(DB.Schema.Drafts)
     .where(DB.Schema.Drafts.userId == userId)
     .all(as: Draft)
@@ -17,7 +18,7 @@ end
 # kept before; nothing written takes it away.
 # The old one and the new one are swapped in one transaction, so a draft is
 # never lost between them.
-foul save(userId: String, draft: Draft) -> Integer or! String do
+foul save(userId: UserId, draft: Draft) -> Integer or! String do
   let id = "${userId}:${draft.conversationId}:${draft.threadId}"
   let row = {
     id: id,

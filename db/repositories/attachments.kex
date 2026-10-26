@@ -4,10 +4,13 @@
 module DB.Repositories.Attachments
 
 using Harmat.Database, as: Database
-using App.Models.Attachment, only: [Attachment]
+using App.Models.Attachment, only: [Attachment, AttachmentId]
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+using App.Models.User, only: [UserId]
 
 # Notes a file somebody has just uploaded: theirs alone, until it is sent.
-foul create(userId: String, blob: Metro.Storage.Blob) -> Attachment or! String do
+foul create(userId: UserId, blob: Metro.Storage.Blob) -> Attachment or! String do
   let file = Attachment {
     id: blob.key,
     userId: userId,
@@ -33,14 +36,14 @@ foul create(userId: String, blob: Metro.Storage.Blob) -> Attachment or! String d
 end
 
 # One file, or `None`.
-foul find(id: String) -> Attachment? or! String do
+foul find(id: AttachmentId) -> Attachment? or! String do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.id == id)
     .first(as: Attachment)
 end
 
 # Several files, by id, as many of them as there are.
-foul findAll(ids: [String]) -> [Attachment] or! String do
+foul findAll(ids: [AttachmentId]) -> [Attachment] or! String do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.id.in(ids))
     .orderBy([:uploaded_at, :id])
@@ -48,7 +51,7 @@ foul findAll(ids: [String]) -> [Attachment] or! String do
 end
 
 # Every file sent into a conversation, newest first.
-foul inConversation(conversationId: String) -> [Attachment] or! String do
+foul inConversation(conversationId: ConversationId) -> [Attachment] or! String do
   return Database.select().from(DB.Schema.Files)
     .where(DB.Schema.Files.conversationId == conversationId)
     .orderBy(descending: [:uploaded_at, :id])
@@ -58,10 +61,10 @@ end
 # Sends a person's files with a message: only theirs, and only those not
 # sent before. How many went.
 foul markSent(
-  userId: String,
-  ids: [String],
-  conversationId: String,
-  messageId: String
+  userId: UserId,
+  ids: [AttachmentId],
+  conversationId: ConversationId,
+  messageId: MessageId
 ) -> Integer or! String do
   return Database.update(DB.Schema.Files)
     .where(DB.Schema.Files.userId == userId)

@@ -5,9 +5,10 @@ module DB.Repositories.Commands
 
 using Harmat.Database, as: Database
 using App.Models.Command, only: [Command]
+using App.Models.User, only: [UserId]
 
 # Replaces a bot's commands with these, all at once.
-foul declare(botId: String, commands: [Command]) -> Integer or! String do
+foul declare(botId: UserId, commands: [Command]) -> Integer or! String do
   let replaced : Integer or! String = Database.transaction do
     Database.delete(DB.Schema.Commands)
       .where(DB.Schema.Commands.botId == botId)
@@ -27,7 +28,7 @@ foul declare(botId: String, commands: [Command]) -> Integer or! String do
 end
 
 # The commands of some bots, by name.
-foul forBots(botIds: [String]) -> [Command] or! String do
+foul forBots(botIds: [UserId]) -> [Command] or! String do
   return Database.select().from(DB.Schema.Commands)
     .where(DB.Schema.Commands.botId.in(botIds))
     .orderBy([:name, :bot_id])

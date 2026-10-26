@@ -5,7 +5,11 @@
 module DB.Repositories.Grants
 
 using Harmat.Database, as: Database
-using App.Models.Grant, only: [Grant, GrantSubjectType, GrantResourceType, GrantRole, UserSubject, TeamSubject, OrganizationResource, ConversationResource, TeamResource]
+using App.Models.Grant, only: [Grant, GrantId, GrantSubjectType, GrantResourceType, GrantRole, UserSubject, TeamSubject, OrganizationResource, ConversationResource, TeamResource]
+using App.Models.User, only: [UserId]
+using App.Models.Team, only: [TeamId]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.Conversation, only: [ConversationId]
 
 # The id of a grant is its subject and its resource, so a second grant of
 # the same subject over the same resource takes the place of the first.
@@ -44,7 +48,7 @@ foul grant(grant: Grant) -> Grant or! String do
 end
 
 # Takes a grant back.
-foul revoke(grantId: String) -> Integer or! String do
+foul revoke(grantId: GrantId) -> Integer or! String do
   return Database.delete(DB.Schema.Grants)
     .where(DB.Schema.Grants.id == grantId)
     .run
@@ -80,7 +84,7 @@ foul over(resourceType: GrantResourceType, resourceId: String) -> [Grant] or! St
 end
 
 # The teams a user is in, by id.
-foul teamsOf(userId: String) -> [String] or! String do
+foul teamsOf(userId: UserId) -> [TeamId] or! String do
   return Database.select().from(DB.Schema.Grants)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
@@ -91,7 +95,7 @@ end
 
 # The organizations a user is in, by id — in any role, so a read-only
 # member is still in their organization — oldest grant first.
-foul organizationsOf(userId: String) -> [String] or! String do
+foul organizationsOf(userId: UserId) -> [OrganizationId] or! String do
   return Database.select().from(DB.Schema.Grants)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
@@ -101,7 +105,7 @@ foul organizationsOf(userId: String) -> [String] or! String do
 end
 
 # The users holding any grant over a resource, by id.
-foul members(resourceType: GrantResourceType, resourceId: String) -> [String] or! String do
+foul members(resourceType: GrantResourceType, resourceId: String) -> [UserId] or! String do
   return Database.select().from(DB.Schema.Grants)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.resourceType == Database.spelled(resourceType))
@@ -111,7 +115,7 @@ foul members(resourceType: GrantResourceType, resourceId: String) -> [String] or
 end
 
 # The users holding any grant over each of some resources, by resource.
-foul membersOf(resourceType: GrantResourceType, resourceIds: [String]) -> {String: [String]} or! String do
+foul membersOf(resourceType: GrantResourceType, resourceIds: [String]) -> {String: [UserId]} or! String do
   return Ok({}) if resourceIds.empty?
   let rows = Database.select([:resource_id, :subject_id]).from(DB.Schema.Grants)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
@@ -128,7 +132,7 @@ end
 
 # Who may read each of some resources: everyone holding a grant over one —
 # a team's grant handing it to every member of the team — by resource.
-foul readersOf(resourceType: GrantResourceType, resourceIds: [String]) -> {String: [String]} or! String do
+foul readersOf(resourceType: GrantResourceType, resourceIds: [String]) -> {String: [UserId]} or! String do
   return Ok({}) if resourceIds.empty?
   let found = Database.select().from(DB.Schema.Grants)
     .where(DB.Schema.Grants.resourceType == Database.spelled(resourceType))
@@ -137,7 +141,7 @@ foul readersOf(resourceType: GrantResourceType, resourceIds: [String]) -> {Strin
     .all(as: Grant)
     .try
   let teamIds = found.filter { |grant| grant.subjectType == TeamSubject }.map { |grant| grant.subjectId }.uniq
-  let teams : {String: [String]} = membersOf(TeamResource, teamIds).or({})
+  let teams : {String: [UserId]} = membersOf(TeamResource, teamIds).or({})
   return Ok(found.reduce({}) do |grouped, grant|
     let holders = grant.subjectType == UserSubject then [grant.subjectId] else teams.get(grant.subjectId).or([])
     grouped.put(grant.resourceId, (grouped.get(grant.resourceId).or([]) + holders).uniq)
@@ -145,12 +149,12 @@ foul readersOf(resourceType: GrantResourceType, resourceIds: [String]) -> {Strin
 end
 
 # Who may read one resource.
-foul readers(resourceType: GrantResourceType, resourceId: String) -> [String] or! String do
+foul readers(resourceType: GrantResourceType, resourceId: String) -> [UserId] or! String do
   return readersOf(resourceType, [resourceId]).map { |grouped| grouped.get(resourceId).or([]) }
 end
 
 # The conversations a user holds a grant over, by id.
-foul conversationsOf(userId: String) -> [String] or! String do
+foul conversationsOf(userId: UserId) -> [ConversationId] or! String do
   return Database.select().from(DB.Schema.Grants)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
@@ -174,7 +178,7 @@ foul holds?(subjectType: GrantSubjectType, subjectId: String, resourceType: Gran
 end
 
 # The users holding a given role over a resource, by id.
-foul roleHolders(resourceType: GrantResourceType, resourceId: String, role: GrantRole) -> [String] or! String do
+foul roleHolders(resourceType: GrantResourceType, resourceId: String, role: GrantRole) -> [UserId] or! String do
   return Database.select().from(DB.Schema.Grants)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.resourceType == Database.spelled(resourceType))

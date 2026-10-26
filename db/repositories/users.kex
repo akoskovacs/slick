@@ -6,8 +6,9 @@ module DB.Repositories.Users
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
 using Harmat.Database, as: Database
-using App.Models.User, only: [User, UserDetail]
+using App.Models.User, only: [User, UserDetail, UserId]
 using App.Models.User, as: User
+using App.Models.Organization, only: [OrganizationId]
 using DB.Repositories.Grants, as: Grants
 
 # Stores a new user. Fails when the email is taken: the table's unique
@@ -60,7 +61,7 @@ foul createBot(bot: User, tokenDigest: String) -> User or! String do
 end
 
 # A person's bots, by name.
-foul botsOf(owner: String) -> [User] or! String do
+foul botsOf(owner: UserId) -> [User] or! String do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .where(DB.Schema.Users.ownerId == owner)
     .orderBy([:name, :id])
@@ -68,7 +69,7 @@ foul botsOf(owner: String) -> [User] or! String do
 end
 
 # An organization's bots, by name.
-foul botsOfOrganization(organizationId: String) -> [User] or! String do
+foul botsOfOrganization(organizationId: OrganizationId) -> [User] or! String do
   return Database.select(SHOWN).from(DB.Schema.Users)
     .where(DB.Schema.Users.ownerOrganizationId == organizationId)
     .orderBy([:name, :id])
@@ -77,7 +78,7 @@ end
 
 # Replaces the token of an organization's bot; whether it was that
 # organization's to change.
-foul rekeyOrganizationBot(botId: String, organizationId: String, tokenDigest: String) -> Bool or! String do
+foul rekeyOrganizationBot(botId: UserId, organizationId: OrganizationId, tokenDigest: String) -> Bool or! String do
   return Database.update(DB.Schema.Users)
     .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
     .where(DB.Schema.Users.ownerOrganizationId == organizationId)
@@ -95,7 +96,7 @@ foul findByToken(tokenDigest: String) -> User? or! String do
 end
 
 # Replaces a bot's token; whether it was this owner's bot to change.
-foul rekeyBot(botId: String, owner: String, tokenDigest: String) -> Bool or! String do
+foul rekeyBot(botId: UserId, owner: UserId, tokenDigest: String) -> Bool or! String do
   return Database.update(DB.Schema.Users)
     .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
     .where(DB.Schema.Users.ownerId == owner)
@@ -106,17 +107,17 @@ end
 
 # Deletes a bot — this owner's own — and everything of it: what it could do,
 # what it was in, and the places it had been. Whether it was there to delete.
-foul removeBot(botId: String, owner: String) -> Bool or! String do
+foul removeBot(botId: UserId, owner: UserId) -> Bool or! String do
   return removing(botId, owner, "")
 end
 
 # The same, for an organization's bot.
-foul removeOrganizationBot(botId: String, organizationId: String) -> Bool or! String do
+foul removeOrganizationBot(botId: UserId, organizationId: OrganizationId) -> Bool or! String do
   return removing(botId, "", organizationId)
 end
 
 # Sets what somebody says about themselves; "" and "" takes it back.
-foul setStatus(id: String, emoji: String, saying: String) -> Integer or! String do
+foul setStatus(id: UserId, emoji: String, saying: String) -> Integer or! String do
   return Database.update(DB.Schema.Users)
     .set({status_emoji: emoji, status_text: saying}, columns: [:status_emoji, :status_text])
     .where(DB.Schema.Users.id == id)
@@ -145,7 +146,7 @@ end
 
 # Hands details over to a sync, by column, or back with `[]`: what it has
 # taken over cannot be changed from a profile.
-foul markManaged(id: String, columns: [UserDetail]) -> Integer or! String do
+foul markManaged(id: UserId, columns: [UserDetail]) -> Integer or! String do
   let managed = columns.map { |column| Database.spelled(column) }.join(",")
   return Database.update(DB.Schema.Users)
     .set({managed: managed}, columns: [:managed])
@@ -153,7 +154,7 @@ foul markManaged(id: String, columns: [UserDetail]) -> Integer or! String do
     .run
 end
 
-foul find(id: String) -> User? or! String do
+foul find(id: UserId) -> User? or! String do
   return Database.select().from(DB.Schema.Users)
     .where(DB.Schema.Users.id == id)
     .first(as: User)
@@ -167,7 +168,7 @@ foul everyone -> [User] or! String do
 end
 
 # Every bot's id.
-foul botIds -> [String] or! String do
+foul botIds -> [UserId] or! String do
   return Database.select().from(DB.Schema.Users)
     .where(DB.Schema.Users.kind == Database.spelled(User.Bot))
     .pluck(:id)
@@ -179,7 +180,7 @@ private do
   # bot goes first, so nothing of it is taken from a bot that was not this
   # caller's; the rest is all or nothing, in the one transaction. What it
   # said stays, as what anybody who is gone has said does ("Someone").
-  foul removing(botId: String, owner: String, organizationId: String) -> Bool or! String do
+  foul removing(botId: UserId, owner: UserId, organizationId: OrganizationId) -> Bool or! String do
     let done : Bool or! String = Harmat.Database.transaction do
       let gone : Integer = (if owner.empty?
         Database.delete(DB.Schema.Users)

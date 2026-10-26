@@ -9,8 +9,8 @@ using App.Live.Outcome, only: [Outcome, refused, failed]
 using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.Team, only: [Team]
-using App.Models.User, only: [User]
+using App.Models.Team, only: [Team, TeamId]
+using App.Models.User, only: [User, UserId]
 
 let teamRules = rules do
   validates("name", "A team's name", [present, sized(2, 40)])
@@ -21,7 +21,7 @@ end
 let SYNCED = "kept in sync from your organization's directory: change it there."
 
 # Opens a team beside the conversation, in place of a thread or a profile.
-open : User -> Tab -> String -> Outcome
+open : User -> Tab -> TeamId -> Outcome
 foul open(user, tab, id) do
   let opened = beside(tab, id)
   return unchanged(current(user, opened).set? then opened else tab)
@@ -82,7 +82,7 @@ foul update(user, tab, name, description) do
 end
 
 # Puts people of the organization in the open team.
-addMembers : User -> Tab -> [String] -> Outcome
+addMembers : User -> Tab -> [UserId] -> Outcome
 foul addMembers(user, tab, picked) do
   match current(user, tab) do
     None => return unchanged(tab)
@@ -99,7 +99,7 @@ foul addMembers(user, tab, picked) do
 end
 
 # Takes somebody out of the open team.
-removeMember : User -> Tab -> String -> Outcome
+removeMember : User -> Tab -> UserId -> Outcome
 foul removeMember(user, tab, id) do
   match current(user, tab) do
     None => return unchanged(tab)
@@ -143,7 +143,7 @@ private do
   end
 
   # The tab with a team open beside the conversation, and nothing over it.
-  beside : Tab -> String -> Tab
+  beside : Tab -> TeamId -> Tab
   let beside(tab, id) = Tab {
     ...closed(tab),
     thread: "",

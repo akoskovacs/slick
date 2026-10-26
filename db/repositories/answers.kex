@@ -9,10 +9,13 @@ using Harmat.Database, as: Database
 # the HTTP library's own once the whole application is linked, and reading
 # a field of one then fails.
 using App.Models.Message, only: [Message]
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.User, only: [UserId]
 using App.Models.Answer, only: [Answer]
 
 # Every answer in a conversation.
-foul inConversation(conversationId: String) -> [Answer] or! String do
+foul inConversation(conversationId: ConversationId) -> [Answer] or! String do
   return Database.select().from(DB.Schema.Answers)
     .where(DB.Schema.Answers.conversationId == conversationId)
     .orderBy([:answered_at, :id])
@@ -21,7 +24,7 @@ end
 
 # Every answer, in an organization, to the forms somebody asked — a bot
 # reading what its own messages were answered with. Oldest first.
-foul askedBy(organizationId: String, askerId: String) -> [Answer] or! String do
+foul askedBy(organizationId: OrganizationId, askerId: UserId) -> [Answer] or! String do
   return Database.select().from(DB.Schema.Answers)
     .where(DB.Schema.Answers.organizationId == organizationId)
     .where(DB.Schema.Answers.askerId == askerId)
@@ -31,7 +34,7 @@ end
 
 # Records a person's answer to one form of a message. An earlier answer of
 # theirs to that form is replaced: a person has one.
-foul save(organizationId: String, message: Message, form: Integer, userId: String, answer: String) -> Answer or! String do
+foul save(organizationId: OrganizationId, message: Message, form: Integer, userId: UserId, answer: String) -> Answer or! String do
   let id = "${message.id}:${form}:${userId}"
   let answered = Answer {
     messageId: message.id,

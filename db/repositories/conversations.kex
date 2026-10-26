@@ -9,7 +9,10 @@
 module DB.Repositories.Conversations
 
 using Harmat.Database, as: Database
-using App.Models.Conversation, only: [Conversation, ConversationAccess, BotAccess, Channel, Group, Public, Private, Mentions]
+using App.Models.Conversation, only: [Conversation, ConversationId, ConversationAccess, BotAccess, Channel, Group, Public, Private, Mentions]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.Team, only: [TeamId]
+using App.Models.User, only: [UserId]
 using App.Models.Conversation, as: Conversation
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
@@ -17,7 +20,7 @@ using DB.Repositories.Grants, as: Grants
 
 # Every channel of an organization, by name: the private ones too, which
 # not everyone may read.
-foul channels(organizationId: String) -> [Conversation] or! String do
+foul channels(organizationId: OrganizationId) -> [Conversation] or! String do
   let rows = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.kind == Database.spelled(Channel))
     .where(DB.Schema.Conversations.organizationId == organizationId)
@@ -28,7 +31,7 @@ foul channels(organizationId: String) -> [Conversation] or! String do
 end
 
 # One conversation, or `None`.
-foul find(id: String) -> Conversation? or! String do
+foul find(id: ConversationId) -> Conversation? or! String do
   let row = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.id == id)
     .first(as: Conversation)
@@ -37,7 +40,7 @@ foul find(id: String) -> Conversation? or! String do
 end
 
 # An organization's channel of this name, or `None`.
-foul findChannel(organizationId: String, title: String) -> Conversation? or! String do
+foul findChannel(organizationId: OrganizationId, title: String) -> Conversation? or! String do
   let slug = "${organizationId}#${title}"
   let row = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.slug == slug)
@@ -51,11 +54,11 @@ end
 # of that name: the unique index on `slug`, which starts with the
 # organization, decides.
 foul create(
-  organizationId: String,
+  organizationId: OrganizationId,
   title: String,
-  by: String,
+  by: UserId,
   access: ConversationAccess = Public,
-  teamId: String = "",
+  teamId: TeamId = "",
   botAccess: BotAccess = Mentions
 ) -> Conversation or! String do
   let channel = Conversation {
@@ -99,7 +102,7 @@ end
 # The group chat between some people of an organization — whoever starts
 # it among them — created the first time it is asked for. The same people
 # have one group chat, as two people have one private chat.
-foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> Conversation or! String do
+foul findOrCreateGroup(organizationId: OrganizationId, people: [UserId], by: UserId) -> Conversation or! String do
   let everyone = (people + [by]).uniq.sort
   let slug = "${organizationId}${Conversation.gathering(everyone)}"
   let existing = Database.select().from(DB.Schema.Conversations)
@@ -140,7 +143,7 @@ foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> 
 end
 
 # The group chats a person is in, in an organization.
-foul groups(organizationId: String, userId: String) -> [Conversation] or! String do
+foul groups(organizationId: OrganizationId, userId: UserId) -> [Conversation] or! String do
   let ids : [String] = taking(userId).try
   return Ok([]) if ids.empty?
 
@@ -157,7 +160,7 @@ end
 # Makes a group chat a channel of this name, public or private; whoever
 # was in it is in the channel. Fails when the organization has a channel
 # of that name, or there is no such group chat.
-foul promote(id: String, title: String, access: ConversationAccess) -> Conversation or! String do
+foul promote(id: ConversationId, title: String, access: ConversationAccess) -> Conversation or! String do
   let found : Conversation? = find(id).try
   match found do
     Just(chat) => do
@@ -184,7 +187,7 @@ end
 
 # Lets people into a private channel or a group chat, leaving out whoever
 # is in it already. Each is granted membership of the conversation.
-foul admit(conversationId: String, userIds: [String]) -> Integer or! String do
+foul admit(conversationId: ConversationId, userIds: [UserId]) -> Integer or! String do
   let present : [String] = (participantsOf([conversationId]).try).get(conversationId).or([])
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   let failures = newcomers.flatMap do |userId|
@@ -199,7 +202,7 @@ end
 
 # The private chat between two people in an organization, created the
 # first time it is asked for.
-foul findOrCreateDirect(organizationId: String, one: String, other: String) -> Conversation or! String do
+foul findOrCreateDirect(organizationId: OrganizationId, one: UserId, other: UserId) -> Conversation or! String do
   let slug = "${organizationId}${Conversation.pairing(one, other)}"
   let existing = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.slug == slug)
@@ -238,7 +241,7 @@ end
 
 # The private chats a person has in an organization, whichever of the two
 # they are in it.
-foul directs(organizationId: String, userId: String) -> [Conversation] or! String do
+foul directs(organizationId: OrganizationId, userId: UserId) -> [Conversation] or! String do
   let asFirst = Database.select().from(DB.Schema.Conversations)
     .where(DB.Schema.Conversations.kind == Database.spelled(Conversation.PrivateChat))
     .where(DB.Schema.Conversations.organizationId == organizationId)
@@ -256,7 +259,7 @@ end
 
 # Sets a channel's topic; whether there was such a channel. A private chat
 # has no topic, and the condition on `kind` keeps it that way.
-foul setTopic(id: String, topic: String) -> Bool or! String do
+foul setTopic(id: ConversationId, topic: String) -> Bool or! String do
   return Database.update(DB.Schema.Conversations)
     .set({topic: topic}, columns: [:topic])
     .where(DB.Schema.Conversations.kind == Database.spelled(Channel))
@@ -266,7 +269,7 @@ foul setTopic(id: String, topic: String) -> Bool or! String do
 end
 
 # How much of a conversation its bots may read: "no_bots", "mentions" or "all_bots".
-foul setBotAccess(id: String, access: BotAccess) -> Bool or! String do
+foul setBotAccess(id: ConversationId, access: BotAccess) -> Bool or! String do
   return Database.update(DB.Schema.Conversations)
     .set({bot_access: access}, columns: [:bot_access])
     .where(DB.Schema.Conversations.id == id)
@@ -277,7 +280,7 @@ end
 # A channel's settings at once: who may read it, the team that owns it, and
 # how much its bots may read. Only a channel; a private chat or a group chat
 # has its own ways.
-foul configure(id: String, access: ConversationAccess, teamId: String, botAccess: BotAccess) -> Bool or! String do
+foul configure(id: ConversationId, access: ConversationAccess, teamId: TeamId, botAccess: BotAccess) -> Bool or! String do
   let found : Conversation? = find(id).try
   match found do
     None => return Error("that conversation is not there")
@@ -324,19 +327,19 @@ private do
     let closed = conversations.filter { |conversation| conversation.access == Private }
     return Ok(conversations) if closed.empty?
 
-    let byConversation : {String: [String]} = participantsOf(closed.map { |each| each.id }).try
+    let byConversation : {ConversationId: [UserId]} = participantsOf(closed.map { |each| each.id }).try
     return Ok(conversations.map do |conversation|
       Conversation { ...conversation, participants: byConversation.get(conversation.id).or([]) }
     end)
   end
 
   # Who takes part in some conversations, by conversation.
-  foul participantsOf(ids: [String]) -> {String: [String]} or! String do
+  foul participantsOf(ids: [ConversationId]) -> {ConversationId: [UserId]} or! String do
     return Grants.readersOf(Grant.ConversationResource, ids)
   end
 
   # The conversations a person takes part in, by id.
-  foul taking(userId: String) -> [String] or! String do
+  foul taking(userId: UserId) -> [ConversationId] or! String do
     return Grants.conversationsOf(userId)
   end
 end

@@ -8,7 +8,7 @@ using App.Live.Outcome, only: [Outcome, refused]
 using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.User, only: [User, UserDetail, Name]
+using App.Models.User, only: [User, UserDetail, UserId, Name]
 using App.Models.User, as: User
 using DB.Repositories.Users, as: Users
 
@@ -18,7 +18,7 @@ end
 
 # Opens somebody's profile beside the conversation, in place of a thread or
 # a team: only of somebody in the tab's organization.
-open : User -> Tab -> String -> Outcome
+open : User -> Tab -> UserId -> Outcome
 foul open(user, tab, id) do
   match home(user, tab) do
     None => return unchanged(tab)

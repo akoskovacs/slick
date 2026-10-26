@@ -12,9 +12,10 @@ using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
-using App.Models.Message, only: [Message]
+using App.Models.Message, only: [Message, MessageId]
 using App.Models.Reading, only: [Reading]
 using App.Models.User, only: [User]
+using App.Models.Attachment, only: [AttachmentId]
 using DB.Repositories.Answers, as: Answers
 using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Drafts, as: Drafts
@@ -112,7 +113,7 @@ end
 # Puts a reaction on a message of the conversation the tab is showing, or
 # takes it off again; nowhere else: the message is looked up, and has to
 # belong to it.
-react : User -> Tab -> String -> String -> Outcome
+react : User -> Tab -> MessageId -> String -> Outcome
 foul react(user, tab, messageId, emoji) do
   return unchanged(tab) if !App.Models.Emoji.reaction?(emoji)
 
@@ -163,7 +164,7 @@ end
 
 # A file somebody has uploaded waits in the tab's message box, to go with
 # the next message: only one of theirs that has not been sent.
-attach : User -> Tab -> String -> Outcome
+attach : User -> Tab -> AttachmentId -> Outcome
 foul attach(user, tab, id) do
   match Attachments.find(id) do
     Ok(Just(file)) => do
@@ -182,7 +183,7 @@ let refuseUpload(tab, filename, reason) = unchanged(Tab {
 })
 
 # Takes a file waiting in the message box back out of it.
-detach : Tab -> String -> Outcome
+detach : Tab -> AttachmentId -> Outcome
 let detach(tab, id) = unchanged(Tab {
   ...tab,
   pending: tab.pending.reject { |each| each == id }
@@ -229,7 +230,7 @@ private do
   # A message, with what goes with it, all or nothing: whoever starts a
   # thread follows it, the files waiting in the box go with it, and the
   # draft it was is gone.
-  post : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> [String] -> Message or! String
+  post : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> [AttachmentId] -> Message or! String
   foul post(events, user, conversation, body, pending) do
     let posted : Message or! String = Harmat.Database.transaction do
       let message : Message = DB.Repositories.Messages.create(conversation.id, user.id, body, "").try

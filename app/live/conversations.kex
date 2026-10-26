@@ -3,7 +3,7 @@
 # channel, and what a conversation is about.
 module App.Live.Conversations
 
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, ConversationId]
 using App.Models.Conversation, as: Conversation
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using Metro.Live.Socket, only: [unchanged, changed]
@@ -11,8 +11,9 @@ using App.Live.Outcome, only: [Outcome, refused, failed]
 using App.Live.Places, only: [home, visible, member?]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.Team, only: [Team]
-using App.Models.User, only: [User]
+using App.Models.Team, only: [Team, TeamId]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.User, only: [User, UserId]
 using DB.Repositories.Teams, as: Teams
 
 let channelRules = rules do
@@ -30,7 +31,7 @@ let topicRules = rules do
 end
 
 # Shows a conversation of the tab's organization this person may read.
-open : User -> Tab -> String -> Outcome
+open : User -> Tab -> ConversationId -> Outcome
 foul open(user, tab, id) do
   return unchanged(tab) if id.empty?
 
@@ -43,7 +44,7 @@ end
 # Opens the private chat with another person of the organization, starting
 # it if need be — or with themselves: a place of their own, where nobody
 # else looks, to keep notes in and try Slick out.
-openDirect : User -> Tab -> String -> Outcome
+openDirect : User -> Tab -> UserId -> Outcome
 foul openDirect(user, tab, other) do
   match home(user, tab) do
     None => return unchanged(tab)
@@ -61,7 +62,7 @@ end
 # A channel: public, or private — to whoever made it, and to the team that
 # owns it, if one does. Only a team somebody is in can be given a channel
 # by them.
-createChannel : User -> Tab -> String -> String -> String -> Outcome
+createChannel : User -> Tab -> String -> String -> TeamId -> Outcome
 foul createChannel(user, tab, title, access, teamId) do
   let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
   return refused(tab, App.Live.Tab.ChannelDialog, problems.first.or("")) if !problems.empty?
@@ -92,7 +93,7 @@ end
 
 # Starts a group chat with the people picked, or opens the one they already
 # have; with one person picked, the private chat with them.
-createGroup : User -> Tab -> [String] -> Outcome
+createGroup : User -> Tab -> [UserId] -> Outcome
 foul createGroup(user, tab, picked) do
   match home(user, tab) do
     None => return unchanged(tab)
@@ -134,7 +135,7 @@ foul makeChannel(user, tab, title, access) do
 end
 
 # Lets people of the organization into the private channel the tab shows.
-addPeople : User -> Tab -> [String] -> Outcome
+addPeople : User -> Tab -> [UserId] -> Outcome
 foul addPeople(user, tab, picked) do
   match visible(user, tab) do
     None => return unchanged(tab)
@@ -180,7 +181,7 @@ end
 # Changes a channel's settings at once: who may read it, the team that owns
 # it, and how much its bots may read. Only an administrator, and only a
 # channel.
-configure : User -> Tab -> String -> String -> String -> Outcome
+configure : User -> Tab -> String -> TeamId -> String -> Outcome
 foul configure(user, tab, access, teamId, botAccess) do
   let chosenAccess = Conversation.accessFrom(access)
   let chosenBotAccess = Conversation.botAccessFrom(botAccess)
@@ -230,7 +231,7 @@ foul on(_, event) = unchanged(event.tab)
 
 private do
   # A tab showing a conversation, and nothing else.
-  at : String -> String -> Tab
+  at : OrganizationId -> ConversationId -> Tab
   let at(organization, conversation) = Tab {
     organization: organization,
     conversation: conversation
