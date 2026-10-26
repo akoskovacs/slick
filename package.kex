@@ -18,5 +18,5 @@ package "slick" do
   command("odbc", run: "sh script/setup-odbc.sh db/odbc", description: "Build Erlang's ODBC port program into db/odbc, once")
 
   tey("harmat", git: "https://github.com/kexhq/harmat", tag: "v0.3.0")
-  tey("metro", git: "https://github.com/kexhq/metro", ref: "b99d0bf6efd4df4d5a8098b8102252ca7ab26cf6")
+  tey("metro", git: "https://github.com/kexhq/metro", ref: "f13769ce427f3532dbfbe922fb289ff9b476ba21")
 end

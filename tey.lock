@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "workspace": {"members": {"slick": "."}, "manifest_fingerprint": "ae5db494129b6eb009b0809725b1a07f0cd7519c5b64bb8de8dbcb0dde0dffd9"},
+  "workspace": {"members": {"slick": "."}, "manifest_fingerprint": "8337a02b88912849fe261239a69a909be7dc0e236cce24bcfe3bf048ad42a4f9"},
   "toolchain": {"kex": "0.4.0", "kex_requirement": ">= 0.4.0-rc.3", "otp": 29, "otp_requirement": ""},
   "packages": {
     "harmat": {"version": "0.3.0", "source": "git", "git": "https://github.com/kexhq/harmat", "resolved": "refs/tags/v0.3.0", "commit": "0c9fbf3990063aa66ef85ad4fce6ae01938a0f34", "subdir": ".", "path": "", "sha256": "c744f336f32de3092e17be9922387d0d1858351b7f344743d73e8cd274851500", "groups": [], "dependencies": [], "plugins": {"harmat": "e814519349d9bc6158e6dea50d58aa87d068450254e48daca770411ef2de9949"}, "workspace": false},
-    "metro": {"version": "0.1.0", "source": "git", "git": "https://github.com/kexhq/metro", "resolved": "b99d0bf6efd4df4d5a8098b8102252ca7ab26cf6", "commit": "b99d0bf6efd4df4d5a8098b8102252ca7ab26cf6", "subdir": ".", "path": "", "sha256": "8b369c1dab18ff6cd2f4a95498729bba13a5442cbc3a4a80dd680b8e9c565c3b", "groups": [], "dependencies": ["harmat"], "plugins": {"metro": "24dec164236925c6876de7909ea1933fcb7f57a699e725b6eb894bbfe90c51b8"}, "workspace": false},
+    "metro": {"version": "0.1.0", "source": "git", "git": "https://github.com/kexhq/metro", "resolved": "f13769ce427f3532dbfbe922fb289ff9b476ba21", "commit": "f13769ce427f3532dbfbe922fb289ff9b476ba21", "subdir": ".", "path": "", "sha256": "508939503d9ac6c475049f6f57f24ebc870d5765378a568fde2e4cd23b6d894a", "groups": [], "dependencies": ["harmat"], "plugins": {"metro": "24dec164236925c6876de7909ea1933fcb7f57a699e725b6eb894bbfe90c51b8"}, "workspace": false},
     "slick": {"version": "0.1.0", "source": "workspace", "git": "", "resolved": "", "commit": "", "subdir": "", "path": ".", "sha256": "", "groups": [], "dependencies": ["harmat", "metro"], "plugins": {}, "workspace": true}
   },
   "plugins": {"approvals": {"harmat": "e814519349d9bc6158e6dea50d58aa87d068450254e48daca770411ef2de9949", "metro": "24dec164236925c6876de7909ea1933fcb7f57a699e725b6eb894bbfe90c51b8"}}
