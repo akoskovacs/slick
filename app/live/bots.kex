@@ -12,8 +12,8 @@ using App.Live.Outcome, only: [Outcome, refused, failed]
 using App.Live.Places, only: [home, visible]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.Organization, only: [Organization]
-using App.Models.User, only: [User]
+using App.Models.Organization, only: [Organization, OrganizationId]
+using App.Models.User, only: [User, UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Users, as: Users
@@ -61,7 +61,7 @@ foul create(user, tab, name, owner) do
 end
 
 # Gives a bot a new token; the old one stops working.
-rotateToken : User -> Tab -> String -> Outcome
+rotateToken : User -> Tab -> UserId -> Outcome
 foul rotateToken(user, tab, id) do
   match home(user, tab) do
     None => return unchanged(tab)
@@ -77,7 +77,7 @@ foul rotateToken(user, tab, id) do
 end
 
 # Puts one of this person's bots into the tab's organization.
-add : User -> Tab -> String -> Outcome
+add : User -> Tab -> UserId -> Outcome
 foul add(user, tab, id) do
   return refused(tab, DIALOG, "That is not one of your bots.") if !ownsBot?(user, id)
 
@@ -92,7 +92,7 @@ end
 
 # Deletes a bot — this person's own, or the tab's organization's — and
 # takes its access with it.
-remove : User -> Tab -> String -> Outcome
+remove : User -> Tab -> UserId -> Outcome
 foul remove(user, tab, id) do
   match home(user, tab) do
     None => return unchanged(tab)
@@ -110,7 +110,7 @@ foul remove(user, tab, id) do
 end
 
 # Chooses the people, of the tab's organization, who operate a bot.
-setOperators : User -> Tab -> String -> [String] -> Outcome
+setOperators : User -> Tab -> UserId -> [UserId] -> Outcome
 foul setOperators(user, tab, botId, operators) do
   match home(user, tab) do
     None => return unchanged(tab)
@@ -118,7 +118,7 @@ foul setOperators(user, tab, botId, operators) do
       if !manageable(user, organization).any? { |bot| bot.id == botId }
         return refused(tab, DIALOG, "Only the bot owner or a workspace administrator can change its operators.")
       end
-      let roster : [String] = Memberships.roster(organization.id).or([])
+      let roster : [UserId] = Memberships.roster(organization.id).or([])
       let people = Users.everyone
         .or([])
         .filter { |person| roster.contains?(person.id) && !person.bot? }
@@ -171,14 +171,14 @@ foul on(_, event) = unchanged(event.tab)
 
 private do
   # Whether a bot is this person's own.
-  ownsBot? : User -> String -> Bool
+  ownsBot? : User -> UserId -> Bool
   foul ownsBot?(user, id) = Users.botsOf(user.id)
     .or([])
     .any? { |bot| bot.id == id }
 
   # Whether this person may manage a bot: their own, or any as an
   # administrator of the organization.
-  mayManage? : User -> Organization -> String -> Bool
+  mayManage? : User -> Organization -> UserId -> Bool
   foul mayManage?(user, organization, id) do
     return ownsBot?(user, id) || App.Services.Authority.canManage(user, organization.id)
   end
@@ -187,7 +187,7 @@ private do
   let notManager(organization) = "Only an administrator of ${organization.name} can manage its bots."
 
   # A bot's name, as this person sees it among those they look after.
-  nameOf : User -> Organization -> String -> String
+  nameOf : User -> Organization -> UserId -> String
   foul nameOf(user, organization, id) = manageable(user, organization)
     .find { |bot| bot.id == id }
     .map { |bot| bot.name }

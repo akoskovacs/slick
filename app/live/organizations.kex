@@ -10,7 +10,8 @@ using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Grant, only: [Grant, GrantRole]
 using App.Models.Grant, as: Grant
-using App.Models.User, only: [User]
+using App.Models.User, only: [User, UserId]
+using App.Models.Organization, only: [OrganizationId]
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Users, as: Users
@@ -20,7 +21,7 @@ let organizationRules = rules do
 end
 
 # Goes to another organization this person is in, at its #general.
-switch : User -> Tab -> String -> Outcome
+switch : User -> Tab -> OrganizationId -> Outcome
 foul switch(user, tab, id) do
   return unchanged(tab) if !member?(id, user.id)
   return unchanged(Tab { organization: id })
@@ -71,7 +72,7 @@ end
 # Gives a person a role in the tab's organization. Only an administrator
 # changes roles, only of someone in the organization, and the last
 # administrator cannot be demoted.
-setRole : User -> Tab -> String -> String -> Outcome
+setRole : User -> Tab -> UserId -> String -> Outcome
 foul setRole(user, tab, personId, role) do
   let selected = Grant.roleFrom(role)
   return unchanged(tab) if !selected.set?
@@ -107,7 +108,7 @@ end
 
 # Takes a person out of the tab's organization. Only an administrator does
 # it, and not to the last one.
-removeMember : User -> Tab -> String -> Outcome
+removeMember : User -> Tab -> UserId -> Outcome
 foul removeMember(user, tab, personId) do
   match home(user, tab) do
     None => return unchanged(tab)
