@@ -67,11 +67,11 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: Check out Kex with precompiled query support
+      - name: Check out Kex with precompiled query and enum support
         uses: actions/checkout@v4
         with:
           repository: kexhq/kex
-          ref: d20a580b5a9d9a768aa5641c9f1ecbe02a7dbef4
+          ref: 5ad462fc2db4685f76d71bb26a07dbef29ed1ec0
           path: .kex-source
 
       - name: Install Kex build dependencies
@@ -126,11 +126,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check out Kex with precompiled query support
+      - name: Check out Kex with precompiled query and enum support
         uses: actions/checkout@v4
         with:
           repository: kexhq/kex
-          ref: d20a580b5a9d9a768aa5641c9f1ecbe02a7dbef4
+          ref: 5ad462fc2db4685f76d71bb26a07dbef29ed1ec0
           path: .kex-source
 
       - name: Build the Kex toolchain image
