@@ -7,8 +7,8 @@ module App.Live.Places
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Conversation, as: Conversation
-using App.Models.Organization, only: [Organization]
-using App.Models.User, only: [User]
+using App.Models.Organization, only: [Organization, OrganizationId]
+using App.Models.User, only: [User, UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Organizations, as: Organizations
@@ -26,7 +26,7 @@ end
 # and otherwise the first one they are in. `None` is somebody in none.
 home : User -> Tab -> Organization?
 foul home(user, tab) do
-  let mine : [String] = Grants.organizationsOf(user.id).or([])
+  let mine : [OrganizationId] = Grants.organizationsOf(user.id).or([])
   let chosen = mine.contains?(tab.organization) then tab.organization else mine.first.or("")
   return None if chosen.empty?
 
@@ -58,7 +58,7 @@ end
 # The organizations a person is in, oldest membership first.
 organizations : User -> [Organization]
 foul organizations(user) do
-  let mine : [String] = Grants.organizationsOf(user.id).or([])
+  let mine : [OrganizationId] = Grants.organizationsOf(user.id).or([])
   return mine.flatMap do |id|
     match Organizations.find(id) do
       Ok(Just(organization)) => [organization]
@@ -68,7 +68,7 @@ foul organizations(user) do
 end
 
 # Whether a user is in an organization, by their grants.
-member? : String -> String -> Bool
+member? : OrganizationId -> UserId -> Bool
 foul member?(organizationId, userId) = Grants.organizationsOf(userId)
   .or([])
   .contains?(organizationId)
