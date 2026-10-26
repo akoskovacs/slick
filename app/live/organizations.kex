@@ -100,7 +100,7 @@ foul setRole(user, tab, personId, role) do
         role: selected.or(Grant.Member)
       }
       match Grants.grant(grant) do
-        Ok(_) => return changed(Tab { ...profile, notice: "Their role is ${role} now." })
+        Ok(_) => return changed(Tab { ...profile, notice: "Their role has been updated." })
         Error(reason) => return unchanged(Tab { ...profile, failure: reason })
       end
     end
