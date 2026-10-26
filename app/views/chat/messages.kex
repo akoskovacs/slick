@@ -33,9 +33,6 @@ record Room do
   channel? : Bool = false
   # The slash commands used here, oldest first: shown where they happened.
   invocations : [Invocation] = []
-  # Each member's role in the organization, and whether the viewer
-  # administers it.
-  roles : {String: String} = {}
   administrator : Bool = false
 end
 

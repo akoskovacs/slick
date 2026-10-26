@@ -112,7 +112,6 @@ let index(tab, user, sidebar, pane) do
     commands: pane.commands,
     channel?: pane.conversation.map { |open| !open.direct? }.or(false),
     invocations: pane.invocations,
-    roles: sidebar.roles,
     administrator: sidebar.administrator
   }
   let unsent = do |threadId|
