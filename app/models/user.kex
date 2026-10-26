@@ -11,6 +11,7 @@ using App.Models.Message, only: [MessageId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Grant, only: [Grant, GrantResourceType, GrantRole, Admin, Member, ReadOnly, UserSubject, TeamSubject, ServerResource, OrganizationResource, ConversationResource]
 using App.Models.Grant, as: Grant
+using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Conversations, as: Conversations
@@ -163,7 +164,7 @@ make User do
   let role(resourceType, resourceId) do
     let teams : [TeamId] = Grants.teamsOf(@id).or([])
     let grants = Grants.over(resourceType, resourceId).or([])
-    roleAmong(@id, teams, grants)
+    Grant.roleFor(@id, teams, grants)
   end
 
   # Whether this person belongs to an organization.
@@ -243,7 +244,7 @@ make User do
         else overConversations.get(conversation.id).or([])
       conversation.direct?
         then conversation.firstUser == @id || conversation.secondUser == @id
-        else roleAmong(@id, teams, over).set?
+        else Grant.roleFor(@id, teams, over).set?
     end
   end
 
@@ -344,21 +345,4 @@ make User do
 
   # Whether a sync has taken a detail over.
   let locked?(column: UserDetail) -> Bool = @managed.contains?(column)
-end
-
-private do
-  # The strongest role a user holds among grants: their own, or one of
-  # their teams'.
-  roleAmong : UserId -> [TeamId] -> [Grant] -> GrantRole?
-  let roleAmong(userId, teams, grants) do
-    let roles = grants.flatMap do |grant|
-      let held = grant.subjectType == UserSubject && grant.subjectId == userId
-      let viaTeam = grant.subjectType == TeamSubject && teams.contains?(grant.subjectId)
-      held || viaTeam then [grant.role] else []
-    end
-    return Just(Admin) if roles.contains?(Admin)
-    return Just(Member) if roles.contains?(Member)
-    return Just(ReadOnly) if roles.contains?(ReadOnly)
-    None
-  end
 end

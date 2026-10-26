@@ -1,7 +1,6 @@
 using Metro.Live.Presence, only: [Presence]
 using Metro.Environment, only: [Development, Test, Production]
 using App.Live.Tab, only: [Tab]
-using App.Services.Authority
 using App.Models.Conversation, only: [Conversation, Channel, PrivateChat]
 using App.Models.Conversation, as: Conversation
 using App.Models.Grant, only: [Grant]
@@ -681,7 +680,7 @@ describe("The events bus, telling bots what happens") do
   end
 end
 
-describe("App.Authority, deciding from grants") do
+describe("User, deciding from grants") do
   it("gives roles from grants, with teams carrying their roles to members") do
     with Harmat.Connection = fresh() do
       let ada = User { id: "u1", email: "ada@x", name: "Ada" }
@@ -741,7 +740,7 @@ describe("App.Authority, deciding from grants") do
   end
 end
 
-describe("App.Authority, roles an administrator gives") do
+describe("Organization, roles an administrator gives") do
   it("promotes, demotes and removes members, but not the last administrator") do
     with Harmat.Connection = fresh() do
       let statuses = Process.spawn(Metro.Live.Presence.Presence {})
@@ -791,7 +790,7 @@ describe("App.Authority, roles an administrator gives") do
   end
 end
 
-describe("App.Authority, what a channel lets its bots read") do
+describe("User, what a channel lets its bots read") do
   it("gates a bot by the setting, and by whether it is named or in the thread") do
     with Harmat.Connection = fresh() do
       let bot = User { id: "b1", email: "b1@x", name: "muse", kind: User.Bot }

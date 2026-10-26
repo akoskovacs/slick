@@ -8,6 +8,9 @@
 # chat), or a team. See docs/permissions.md.
 module App.Models.Grant
 
+using App.Models.Ids, only: [UserId]
+using App.Models.Team, only: [TeamId]
+
 type GrantId = String
 type GrantSubjectType = UserSubject | TeamSubject
 type GrantResourceType = ServerResource | OrganizationResource | ConversationResource | TeamResource
@@ -31,6 +34,21 @@ end
 make Grant do
   roleFrom : String -> GrantRole?
   let roleFrom(text) = Type.of(Admin).parse(text).optional
+
+  # The strongest role a person holds, directly or through one of their
+  # teams, among these grants.
+  roleFor : UserId -> [TeamId] -> [Grant] -> GrantRole?
+  let roleFor(userId, teamIds, grants) do
+    let roles = grants.flatMap do |grant|
+      let held = grant.subjectType == UserSubject && grant.subjectId == userId
+      let viaTeam = grant.subjectType == TeamSubject && teamIds.contains?(grant.subjectId)
+      held || viaTeam then [grant.role] else []
+    end
+    return Just(Admin) if roles.contains?(Admin)
+    return Just(Member) if roles.contains?(Member)
+    return Just(ReadOnly) if roles.contains?(ReadOnly)
+    None
+  end
 
   let admin? -> Bool = @role == Admin
   let readOnly? -> Bool = @role == ReadOnly
