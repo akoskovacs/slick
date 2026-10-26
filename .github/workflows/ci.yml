@@ -45,10 +45,16 @@ jobs:
   test:
     name: Build and specs
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     container:
       image: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:0.4.0-rc.2' }}
     env:
+      # The precompiler is merged in Kex main but has not shipped in a toolchain
+      # image yet. Build that compiler here and make Tey and Kex use it.
+      TEY_KEX: ${{ github.workspace }}/kex/build/kex
+      KEX: ${{ github.workspace }}/kex/build/kex
+      KEX_STDLIB_DIR: ${{ github.workspace }}/kex/src/stdlib
+      KEX_RUNTIME_DIR: ${{ github.workspace }}/kex/build/runtime/beam
       # The SQLite ODBC driver by the name Debian registers it under: the
       # specs make their databases with it.
       SQLITE_DRIVER: SQLite3
@@ -59,6 +65,23 @@ jobs:
           apt-get install -y --no-install-recommends git ca-certificates unixodbc libsqliteodbc
 
       - uses: actions/checkout@v4
+
+      - name: Check out Kex with precompiled query support
+        uses: actions/checkout@v4
+        with:
+          repository: kexhq/kex
+          ref: d20a580b5a9d9a768aa5641c9f1ecbe02a7dbef4
+          path: kex
+
+      - name: Install Kex build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential cmake libgmp-dev libpcre2-dev libreadline-dev libboost-context-dev libssl-dev erlang-dev
+
+      - name: Build Kex compiler
+        run: |
+          cmake -S kex -B kex/build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build kex/build --parallel 2
 
       - name: Let git fetch the private dependencies
         env:
@@ -80,12 +103,23 @@ jobs:
   docker:
     name: Container on PostgreSQL
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       # docker-compose.yml hands this to the build as a secret.
       GITHUB_TOKEN: ${{ secrets.DEPENDENCIES_TOKEN }}
+      KEX_IMAGE: kex:ci
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out Kex with precompiled query support
+        uses: actions/checkout@v4
+        with:
+          repository: kexhq/kex
+          ref: d20a580b5a9d9a768aa5641c9f1ecbe02a7dbef4
+          path: kex
+
+      - name: Build the Kex toolchain image
+        run: docker build -f kex/docker/Dockerfile -t kex:ci kex
 
       - name: Build the image
         run: docker compose build

@@ -12,7 +12,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/slick-precompiled.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 mkdir "$work/core"
 
-"$kex" -E --collapse-report --no-colors \
+"$kex" --emit-core --collapse-report --no-colors \
   --source-root "$repo" \
   --source-root "$harmat/src" \
   --source-root "$metro/src" \
@@ -63,7 +63,7 @@ if rg -n "call 'Kex.Harmat.Database':'(insert|values|preparedInsert|statement)'"
   exit 1
 fi
 
-"$kex" -E --collapse-report --no-colors \
+"$kex" --emit-core --collapse-report --no-colors \
   --source-root "$repo" \
   --source-root "$harmat/src" \
   --source-root "$metro/src" \
@@ -103,7 +103,7 @@ if rg -n "call 'Kex.Harmat.Database':'(select|from|where|prepared|statement)'" "
   exit 1
 fi
 
-"$kex" -E --collapse-report --no-colors \
+"$kex" --emit-core --collapse-report --no-colors \
   --source-root "$repo" \
   --source-root "$harmat/src" \
   --source-root "$metro/src" \
