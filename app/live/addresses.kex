@@ -17,7 +17,7 @@ using DB.Repositories.Conversations, as: Conversations
 tabFor : User -> String -> Tab
 foul tabFor(user, location) do
   let thread = Metro.Path.query(location, "thread").or("")
-  match App.Paths.channelPath.captured(location) do
+  match Config.RoutePaths.channel.captured(location) do
     Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
       None => return Tab {}
       Just(organization) => match Conversations.findChannel(organization.id, parts.get("name").or("")) do
@@ -25,7 +25,7 @@ foul tabFor(user, location) do
         _ => return Tab { organization: organization.id }
       end
     end
-    None => match App.Paths.directPath.captured(location) do
+    None => match Config.RoutePaths.direct.captured(location) do
       None => return groupTab(user, location, thread)
       Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
         None => return Tab {}
@@ -47,7 +47,7 @@ private do
   # The tab for the address of a group chat: only one this person is in.
   groupTab : User -> String -> String -> Tab
   foul groupTab(user, location, thread) do
-    match App.Paths.groupPath.captured(location) do
+    match Config.RoutePaths.group.captured(location) do
       None => return Tab {}
       Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
         None => return Tab {}

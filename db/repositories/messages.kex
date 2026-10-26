@@ -108,7 +108,7 @@ foul create(conversationId: String, userId: String, body: String, parent: String
   # A reply and its thread's count change together, or not at all.
   let stored : Integer or! String = Database.transaction do
     let inserted = Database.insert(DB.Schema.Messages)
-      .values(row, columns: [:id, :conversation_id, :user_id, :body, :sent_at, :parent_id])
+      .values(row)
       .run
       .try
     if parent.empty?

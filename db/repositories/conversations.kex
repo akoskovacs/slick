@@ -9,7 +9,7 @@
 module DB.Repositories.Conversations
 
 using Harmat.Database, as: Database
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, Channel, Direct, Group]
 using App.Models.Grant, only: [Grant]
 using DB.Repositories.Grants, as: Grants
 
@@ -58,7 +58,7 @@ foul create(
 ) -> Conversation or! String do
   let channel = Conversation {
     id: Metro.Id.generate(prefix: "c"),
-    kind: "channel",
+    kind: Channel,
     slug: "${organizationId}#${title}",
     title: title,
     organizationId: organizationId,
@@ -68,7 +68,7 @@ foul create(
   }
   let row = {
     id: channel.id,
-    kind: "channel",
+    kind: App.Models.Conversation.kindName(channel.kind),
     slug: channel.slug,
     title: title,
     organization_id: organizationId,
@@ -80,7 +80,7 @@ foul create(
   }
   let made : Conversation or! String = Database.transaction do
     Database.insert(DB.Schema.Conversations)
-      .values(row, columns: [:id, :kind, :slug, :title, :organization_id, :access, :team_id, :bot_access, :created_by, :created_at])
+      .values(row)
       .run
       .try
     let first = access == "private" then [by] else []
@@ -109,7 +109,7 @@ foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> 
     None => do
       let chat = Conversation {
         id: Metro.Id.generate(prefix: "g"),
-        kind: "group",
+        kind: Group,
         slug: slug,
         organizationId: organizationId,
         access: "private",
@@ -117,7 +117,7 @@ foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> 
       }
       let row = {
         id: chat.id,
-        kind: "group",
+        kind: App.Models.Conversation.kindName(chat.kind),
         slug: slug,
         organization_id: organizationId,
         access: "private",
@@ -126,7 +126,7 @@ foul findOrCreateGroup(organizationId: String, people: [String], by: String) -> 
       }
       let made : Conversation or! String = Database.transaction do
         Database.insert(DB.Schema.Conversations)
-          .values(row, columns: [:id, :kind, :slug, :organization_id, :access, :created_by, :created_at])
+          .values(row)
           .run
           .try
         admit(chat.id, everyone).try
@@ -170,7 +170,7 @@ foul promote(id: String, title: String, access: String) -> Conversation or! Stri
         .try
       return Ok(Conversation {
         ...chat,
-        kind: "channel",
+        kind: Channel,
         slug: slug,
         title: title,
         access: access
@@ -210,7 +210,7 @@ foul findOrCreateDirect(organizationId: String, one: String, other: String) -> C
       let second = one <= other then other else one
       let chat = Conversation {
         id: Metro.Id.generate(prefix: "d"),
-        kind: "direct",
+        kind: Direct,
         slug: slug,
         firstUser: first,
         secondUser: second,
@@ -227,7 +227,7 @@ foul findOrCreateDirect(organizationId: String, one: String, other: String) -> C
         created_at: Metro.Clock.milliseconds()
       }
       return Database.insert(DB.Schema.Conversations)
-        .values(row, columns: [:id, :kind, :slug, :organization_id, :first_user, :second_user, :created_by, :created_at])
+        .values(row)
         .run
         .map { |_| chat }
     end

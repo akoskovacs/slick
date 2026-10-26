@@ -2,7 +2,7 @@ using Metro.Live.Presence, only: [Presence]
 using Metro.Environment, only: [Development, Test, Production]
 using App.Live.Tab, only: [Tab]
 using App.Services.Authority
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, Channel, Direct]
 using App.Models.Grant, only: [Grant]
 using App.Models.User, only: [User]
 using Spec.Support, only: [World, stepped, shown, fresh, populated, said]
@@ -16,7 +16,7 @@ using Spec.Support, only: [World, stepped, shown, fresh, populated, said]
 # here is the rest.
 
 foul step(statuses: Server<Presence>, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
-  App.Live.Chat.handled(Config.Live.routes(), Process.spawn(App.Live.Events.Bus {}), statuses, user, tab, fields.map { |pair| match pair do (key, value) => (key, Just(value)) end })
+  App.Live.Chat.handled(Config.Live.routes([]), Process.spawn(App.Live.Events.Bus {}), statuses, user, tab, fields.map { |pair| match pair do (key, value) => (key, Just(value)) end })
 end
 
 describe("Slick") do
@@ -133,7 +133,7 @@ describe("Slick") do
 
   it("answers over HTTP: pages for people, JSON for bots, and neither for the wrong one") do
     with Harmat.Connection = fresh() do
-      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
+      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}), Process.spawn(Metro.Live.Presence.Presence {}), [])
       let here = [("Host", "slick.test"), ("Origin", "http://slick.test")]
 
       # Nobody signed in: sent to sign in, and the page there is not kept.
@@ -206,7 +206,7 @@ describe("Slick") do
 
       # The bot reads a channel through the API, and a thread when it asks
       # for one — but only a thread of the conversation it names.
-      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
+      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}), Process.spawn(Metro.Live.Presence.Presence {}), [])
       let asBot = [("Authorization", "Bearer ${DB.Seeds.BOT_TOKEN}")]
       let general = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/general/messages", asBot, ""))
       Assert.equal(general.code, 200)
@@ -686,9 +686,9 @@ describe("App.Authority, deciding from grants") do
       let carl = User { id: "u3", email: "carl@x", name: "Carl" }
       let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
 
-      let general = Conversation { id: "c1", kind: "channel", slug: "o1#general", title: "general", organizationId: "o1", access: "public" }
-      let secret = Conversation { id: "c2", kind: "channel", slug: "o1#secret", title: "secret", organizationId: "o1", access: "private" }
-      let dm = Conversation { id: "d1", kind: "direct", slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
+      let general = Conversation { id: "c1", kind: Channel, slug: "o1#general", title: "general", organizationId: "o1", access: "public" }
+      let secret = Conversation { id: "c2", kind: Channel, slug: "o1#secret", title: "secret", organizationId: "o1", access: "private" }
+      let dm = Conversation { id: "d1", kind: Direct, slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
 
       DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u1", resourceType: "organization", resourceId: "o1", role: "member" }).try
       DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "u2", resourceType: "organization", resourceId: "o1", role: "admin" }).try
@@ -769,8 +769,8 @@ describe("App.Authority, roles an administrator gives") do
       # Read-only: still in the organization, but cannot write.
       let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read-only")])
       Assert.truthy(muted)
-      Assert.truthy(App.Services.Authority.canRead(bob, Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
-      Assert.falsy(App.Services.Authority.canWrite(bob, Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
+      Assert.truthy(App.Services.Authority.canRead(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
+      Assert.falsy(App.Services.Authority.canWrite(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: "public" }))
 
       # The last administrator cannot be demoted or removed.
       let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
@@ -792,7 +792,7 @@ describe("App.Authority, what a channel lets its bots read") do
   it("gates a bot by the setting, and by whether it is named or in the thread") do
     with Harmat.Connection = fresh() do
       let bot = User { id: "b1", email: "b1@x", name: "muse", kind: "bot" }
-      let channel = Conversation { id: "c1", kind: "channel", slug: "o#g", title: "g", organizationId: "o1", access: "public", botAccess: "mentions" }
+      let channel = Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: "o1", access: "public", botAccess: "mentions" }
       DB.Repositories.Grants.grant(Grant { subjectType: "user", subjectId: "b1", resourceType: "organization", resourceId: "o1", role: "member" }).try
 
       let asked = DB.Repositories.Messages.create("c1", "u1", "a question", "").try

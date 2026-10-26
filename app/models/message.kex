@@ -1,16 +1,19 @@
 # Something somebody said.
 module App.Models.Message
 
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.User, only: [UserId]
+
 type MessageId = String
 record Message do
   id : MessageId
-  conversationId : String
-  userId : String
+  conversationId : ConversationId
+  userId : UserId
   body : String
   # Milliseconds since 1970: the order of a conversation.
   sentAt : Integer = 0
   # The message this one replies to; "" when it is not a reply.
-  parentId : String = ""
+  parentId : MessageId = ""
   # How many replies it has.
   replyCount : Integer = 0
 end

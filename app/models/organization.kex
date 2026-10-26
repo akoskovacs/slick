@@ -10,10 +10,6 @@ record Organization do
   name : String = ""
 end
 
-# Words an organization's address cannot be, because the application's own
-# addresses start with them.
-let RESERVED = ["signin", "signout", "register", "live", "metro", "public", "channels", "dm", "api"]
-
 # The address form of a name: its letters and digits, lower case.
 let slugged(name: String) -> String do
   let slug = name.trim.lowerCase.chars.filter { |char| char.lower? || char.digit? }

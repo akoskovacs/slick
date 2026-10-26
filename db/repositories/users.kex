@@ -18,7 +18,7 @@ foul enroll(user: User, passwordHash: String) -> User or! String do
     created_at: Metro.Clock.milliseconds()
   }
   return Database.insert(DB.Schema.Users)
-    .values(row, columns: [:id, :email, :name, :password_hash, :created_at])
+    .values(row)
     .run
     .map { |_| user }
 end
@@ -51,7 +51,7 @@ foul createBot(bot: User, tokenDigest: String) -> User or! String do
     api_token_digest: tokenDigest
   }
   return Database.insert(DB.Schema.Users)
-    .values(row, columns: [:id, :email, :name, :password_hash, :created_at, :kind, :owner_id, :owner_organization_id, :api_token_digest])
+    .values(row)
     .run
     .map { |_| bot }
 end

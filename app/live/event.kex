@@ -19,8 +19,11 @@ record Event do
 end
 
 # Which part of Slick answers an event, by the first word of its name:
-# config/live.kex. A handler is handed the event's whole name and the event.
-type Routes = [(String, String -> Event -> (Tab, Bool))]
+# config/live.kex. The root path segments are supplied by Metro.Router.
+record Routes do
+  handlers : [(String, String -> Event -> (Tab, Bool))]
+  rootSegments : [String]
+end
 
 # What came with an event, as it was sent.
 given : Event -> String -> String

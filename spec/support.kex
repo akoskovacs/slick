@@ -12,6 +12,7 @@ using App.Models.User, only: [User]
 # in each.
 record World do
   statuses : Server<Presence>
+  rootSegments : [String]
   ada : User
   bob : User
   eve : User
@@ -22,7 +23,7 @@ end
 
 foul stepped(world: World, user: User, tab: Tab, fields: [(String, String)]) -> (Tab, Bool) do
   let entries = fields.map { |pair| match pair do (key, value) => (key, Just(value)) end }
-  App.Live.Chat.handled(Config.Live.routes(), Process.spawn(App.Live.Events.Bus {}), world.statuses, user, tab, entries)
+  App.Live.Chat.handled(Config.Live.routes(world.rootSegments), Process.spawn(App.Live.Events.Bus {}), world.statuses, user, tab, entries)
 end
 
 foul shown(world: World, user: User, tab: Tab) -> String do
@@ -41,8 +42,11 @@ end
 
 # The people and organizations of `World`, made the way people make them.
 foul populated() -> World do
+  let statuses = Process.spawn(Presence {})
+  let probe = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}), statuses, [])
   let unpeopled = World {
-    statuses: Process.spawn(Presence {}),
+    statuses: statuses,
+    rootSegments: probe.rootSegments,
     ada: registered("Ada", "ada@example.com"),
     bob: registered("Bob", "bob@example.com"),
     eve: registered("Eve", "eve@example.com"),

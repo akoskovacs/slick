@@ -36,7 +36,7 @@ foul markRead(userId: String, reading: Reading) -> Integer or! String do
       .run
       .try
     Database.insert(DB.Schema.Readings)
-      .values(row, columns: [:id, :user_id, :conversation_id, :thread_id, :read_at])
+      .values(row)
       .run
   end
   return swapped

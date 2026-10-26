@@ -2,11 +2,15 @@
 # conversation, or in one of its threads.
 module App.Models.Draft
 
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+using App.Models.User, only: [UserId]
+
 record Draft do
-  conversationId : String
+  conversationId : ConversationId
   # The message the thread starts with; "" for the conversation's own box.
-  threadId : String = ""
+  threadId : MessageId = ""
   # Who a private chat is with; "" in a channel.
-  personId : String = ""
+  personId : UserId = ""
   body : String
 end

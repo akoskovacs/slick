@@ -7,6 +7,7 @@
 module App.Models.Team
 
 using App.Models.Organization, only: [OrganizationId]
+using App.Models.User, only: [UserId]
 
 type TeamId = String
 record Team do
@@ -21,7 +22,7 @@ record Team do
   # Whether a sync has it: it has an `externalId`.
   managed? : Bool = false
   # The ids of the people in it.
-  members : [String] = []
+  members : [UserId] = []
 end
 
 # How long a handle and a description may be.

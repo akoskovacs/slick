@@ -35,7 +35,7 @@ foul grant(grant: Grant) -> Grant or! String do
   let made : Grant or! String = Database.transaction do
     Database.delete(DB.Schema.Grants).where(DB.Schema.Grants.id == id).run.try
     Database.insert(DB.Schema.Grants)
-      .values(row, columns: [:id, :subject_type, :subject_id, :resource_type, :resource_id, :role, :granted_at])
+      .values(row)
       .run
       .try
     Ok(stored)

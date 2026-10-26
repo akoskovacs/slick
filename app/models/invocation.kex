@@ -3,14 +3,20 @@
 # bot it was for, which answers as it likes.
 module App.Models.Invocation
 
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.User, only: [UserId]
+
+type InvocationId = String
 record Invocation do
-  id : String
-  organizationId : String
-  conversationId : String
+  id : InvocationId
+  organizationId : OrganizationId
+  conversationId : ConversationId
   # The message the thread starts with; "" in the conversation itself.
-  threadId : String = ""
-  botId : String
-  userId : String
+  threadId : MessageId = ""
+  botId : UserId
+  userId : UserId
   # Without the slash: "mode".
   command : String
   # What was written after it: "auto", or "".

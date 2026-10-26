@@ -60,7 +60,7 @@ foul save(organizationId: String, message: Message, form: Integer, userId: Strin
       .run
       .try
     Database.insert(DB.Schema.Answers)
-      .values(row, columns: [:id, :message_id, :conversation_id, :organization_id, :asker_id, :user_id, :form, :answer, :answered_at])
+      .values(row)
       .run
   end
   return swapped.map { |_| answered }

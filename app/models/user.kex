@@ -19,7 +19,7 @@ record User do
   kind : String = "person"
   # A bot belongs to a person or to an organization: one of these is set
   # on a bot, and neither on a person.
-  ownerId : String = ""
+  ownerId : UserId = ""
   ownerOrganizationId : OrganizationId = ""
   # What they say about themselves: an emoji and a few words, either or
   # both, or neither.

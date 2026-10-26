@@ -27,8 +27,8 @@ end
 
 # Makes an organization, with this person as its first member, and goes
 # there.
-create : User -> Tab -> String -> Outcome
-foul create(user, tab, name) do
+create : User -> Tab -> String -> [String] -> Outcome
+foul create(user, tab, name, rootSegments) do
   let problems = Metro.Validation.checked(organizationRules, {"name": name}).messages
   return refused(tab, "organization", problems.first.or("")) if !problems.empty?
 
@@ -36,7 +36,7 @@ foul create(user, tab, name) do
   if slug.chars.count < 2
     return refused(tab, "organization", "A name needs at least two letters or digits.")
   end
-  if App.Models.Organization.RESERVED.contains?(slug)
+  if rootSegments.contains?(slug)
     return refused(tab, "organization", "${name} cannot be used as a name. Try another.")
   end
 
@@ -130,10 +130,10 @@ end
 
 # What this part answers, of the events config/live.kex routes to it, by
 # their whole names; any other does nothing.
-on : String -> Event -> Outcome
-foul on("organization-switch", event) = switch(event.user, event.tab, given(event, "id"))
-foul on("organization-create", event) = create(event.user, event.tab, typed(event, "name"))
-foul on("invite-send", event) = invite(event.user, event.tab, typed(event, "email").lowerCase)
-foul on("role-set", event) = setRole(event.user, event.tab, given(event, "user"), given(event, "role"))
-foul on("member-remove", event) = removeMember(event.user, event.tab, given(event, "user"))
-foul on(_, event) = unchanged(event.tab)
+on : String -> Event -> [String] -> Outcome
+foul on("organization-switch", event, _) = switch(event.user, event.tab, given(event, "id"))
+foul on("organization-create", event, rootSegments) = create(event.user, event.tab, typed(event, "name"), rootSegments)
+foul on("invite-send", event, _) = invite(event.user, event.tab, typed(event, "email").lowerCase)
+foul on("role-set", event, _) = setRole(event.user, event.tab, given(event, "user"), given(event, "role"))
+foul on("member-remove", event, _) = removeMember(event.user, event.tab, given(event, "user"))
+foul on(_, event, _) = unchanged(event.tab)

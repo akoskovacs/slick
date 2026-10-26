@@ -22,7 +22,7 @@ foul create(name: String, slug: String, by: String) -> Organization or! String d
     created_at: Metro.Clock.milliseconds()
   }
   return Database.insert(DB.Schema.Organizations)
-    .values(row, columns: [:id, :slug, :name, :created_by, :created_at])
+    .values(row)
     .run
     .map { |_| organization }
 end

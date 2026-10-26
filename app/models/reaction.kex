@@ -1,8 +1,11 @@
 # An emoji one person put on one message.
 module App.Models.Reaction
 
+using App.Models.Message, only: [MessageId]
+using App.Models.User, only: [UserId]
+
 record Reaction do
-  messageId : String
-  userId : String
+  messageId : MessageId
+  userId : UserId
   emoji : String
 end

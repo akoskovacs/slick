@@ -2,8 +2,10 @@
 # words. The bot declares them; Slick only offers them in the composer.
 module App.Models.Command
 
+using App.Models.User, only: [UserId]
+
 record Command do
-  botId : String
+  botId : UserId
   # Without the slash: "model".
   name : String
   description : String = ""

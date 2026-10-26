@@ -37,7 +37,7 @@ foul save(userId: String, draft: Draft) -> Integer or! String do
       Ok(cleared)
     else
       Database.insert(DB.Schema.Drafts)
-        .values(row, columns: [:id, :user_id, :conversation_id, :thread_id, :person_id, :body, :saved_at])
+        .values(row)
         .run
     end
   end

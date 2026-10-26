@@ -426,7 +426,7 @@ private do
   organizationFor : WebRequest -> String or! WebRequest
   foul organizationFor(request) do
     let slug = request.param("organization").or("")
-    let tab = App.Live.Addresses.tabFor(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+    let tab = App.Live.Addresses.tabFor(userFor(request), Config.RoutePaths.channel.filled({"organization": slug, "name": "general"}))
     return Error(failed(request, 404, "There is no such organization, or this bot is not in it.")) if tab.organization.empty?
     return Ok(tab.organization)
   end
@@ -438,9 +438,9 @@ private do
   foul placed(request, thread) do
     let bot = userFor(request)
     let slug = request.param("organization").or("")
-    let channel = App.Paths.channelPath.filled({"organization": slug, "name": request.param("name").or("")})
-    let direct = App.Paths.directPath.filled({"organization": slug, "person": request.param("person").or("")})
-    let group = App.Paths.groupPath.filled({"organization": slug, "group": request.param("group").or("")})
+    let channel = Config.RoutePaths.channel.filled({"organization": slug, "name": request.param("name").or("")})
+    let direct = Config.RoutePaths.direct.filled({"organization": slug, "person": request.param("person").or("")})
+    let group = Config.RoutePaths.group.filled({"organization": slug, "group": request.param("group").or("")})
     let address = if request.param("person").set?
       direct
     elif request.param("group").set?

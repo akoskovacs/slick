@@ -38,7 +38,7 @@ foul toggle(message: Message, userId: String, emoji: String) -> Bool or! String 
         emoji: emoji
       }
       return Database.insert(DB.Schema.Reactions)
-        .values(row, columns: [:id, :conversation_id, :message_id, :user_id, :emoji])
+        .values(row)
         .run
         .map { |_| true }
     end

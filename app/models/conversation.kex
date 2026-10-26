@@ -3,29 +3,38 @@
 module App.Models.Conversation
 
 using App.Models.Organization, only: [OrganizationId]
+using App.Models.Team, only: [TeamId]
+using App.Models.User, only: [UserId]
 
 type ConversationId = String
+type ConversationKind = Channel | Direct | Group
+
+# A text column stores the kind by its existing database spelling.
+kindName : ConversationKind -> String
+let kindName(Channel) = "channel"
+let kindName(Direct) = "direct"
+let kindName(Group) = "group"
+
 record Conversation do
   id : ConversationId
-  # "channel", "direct" or "group".
-  kind : String = "channel"
+  kind : ConversationKind = Channel
   slug : String = ""
   title : String = ""
   topic : String = ""
-  firstUser : String = ""
-  secondUser : String = ""
+  firstUser : UserId = ""
+  secondUser : UserId = ""
   organizationId : OrganizationId = ""
   # "public" for a channel anyone in the organization may read; "private"
   # for one only its participants may — as a group chat always is.
   access : String = "public"
   # The team that owns a channel; "" for none.
-  teamId : String = ""
+  teamId : TeamId = ""
   # How much of it its bots may read: "none", "mentions" or "all".
   botAccess : String = "mentions"
   # Who may read a private channel or a group chat: its participants and,
   # for a channel a team owns, the team's members. The repository fills it
   # in; it is empty for the rest.
-  participants : [String] = []
+  participants : [UserId] = []
 end
 
 # The channel every workspace starts with.
@@ -42,12 +51,12 @@ gathering : [String] -> String
 let gathering(people) = "&${people.uniq.sort.join(",")}"
 
 make Conversation do
-  let channel? -> Bool = @kind == "channel"
-  let group? -> Bool = @kind == "group"
-  let direct? -> Bool = @kind == "direct"
+  let channel? -> Bool = @kind == Channel
+  let group? -> Bool = @kind == Group
+  let direct? -> Bool = @kind == Direct
 
   # Whether anyone in the organization may read it: a public channel.
-  let public? -> Bool = @kind == "channel" && @access == "public"
+  let public? -> Bool = @kind == Channel && @access == "public"
 
   # Whether bots may read nothing of it.
   let botsForbidden? -> Bool = @botAccess == "none"
@@ -59,13 +68,13 @@ make Conversation do
   # organization: anyone in a public channel, the two people of a private
   # chat, and the participants of anything else.
   let admits?(userId: String) -> Bool do
-    return true if @kind == "channel" && @access == "public"
-    return @firstUser == userId || @secondUser == userId if @kind == "direct"
+    return true if @kind == Channel && @access == "public"
+    return @firstUser == userId || @secondUser == userId if @kind == Direct
     @participants.contains?(userId)
   end
 
   # Whether it is somebody's chat with themselves.
-  let solo? -> Bool = @kind == "direct" && @firstUser == @secondUser
+  let solo? -> Bool = @kind == Direct && @firstUser == @secondUser
 
   # The other person of a private chat.
   let counterpart(userId: String) -> String = @firstUser == userId then @secondUser else @firstUser

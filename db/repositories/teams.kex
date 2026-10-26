@@ -27,7 +27,7 @@ foul create(team: Team, by: String) -> Team or! String do
   }
   let stored : Team or! String = Database.transaction do
     Database.insert(DB.Schema.Teams)
-      .values(row, columns: [:id, :organization_id, :handle, :name, :description, :created_by, :created_at])
+      .values(row)
       .run
       .try
     addMembers(made.id, made.members).try

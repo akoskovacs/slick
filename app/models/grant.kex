@@ -8,8 +8,9 @@
 # chat), or a team. See docs/permissions.md.
 module App.Models.Grant
 
+type GrantId = String
 record Grant do
-  id : String = ""
+  id : GrantId = ""
   # Who holds the grant: a "user" (person or bot) or a "team".
   subjectType : String = "user"
   subjectId : String

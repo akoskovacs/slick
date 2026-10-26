@@ -3,12 +3,16 @@
 module App.Models.Attachment
 
 using Units.Data
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+using App.Models.User, only: [UserId]
 
+type AttachmentId = String
 record Attachment do
-  id : String
-  userId : String
-  conversationId : String = ""
-  messageId : String = ""
+  id : AttachmentId
+  userId : UserId
+  conversationId : ConversationId = ""
+  messageId : MessageId = ""
   filename : String
   contentType : String
   byteSize : Integer

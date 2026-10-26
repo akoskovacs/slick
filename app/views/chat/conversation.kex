@@ -4,7 +4,7 @@
 module App.Views.Chat.Conversation
 
 using App.Live.Tab, only: [Tab]
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, Direct, Group]
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Team, only: [Team]
@@ -126,8 +126,8 @@ private do
   let noted(conversation) do
     let count = conversation.participants.count
     match conversation.kind do
-      "direct" => "Private: only the two of you can read this."
-      "group" => "Private: only the ${count} of you can read this."
+      Direct => "Private: only the two of you can read this."
+      Group => "Private: only the ${count} of you can read this."
       _ => do
         let people = count == 1 then "1 person" else "${count} people"
         conversation.public? then "" else "🔒 Private: only its ${people} can read this."

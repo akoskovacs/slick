@@ -118,7 +118,7 @@ foul handled(routes, bus, statuses, user, tab, entries) do
     tab: tab,
     entries: entries
   }
-  return Metro.Live.Router.answering(routes, name)
+  return Metro.Live.Router.answering(routes.handlers, name)
     .map { |answer| answer(name, event) }
     .or((tab, false))
 end

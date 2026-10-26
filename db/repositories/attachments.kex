@@ -27,7 +27,7 @@ foul create(userId: String, blob: Metro.Storage.Blob) -> Attachment or! String d
     uploaded_at: file.uploadedAt
   }
   return Database.insert(DB.Schema.Files)
-    .values(row, columns: [:id, :user_id, :filename, :content_type, :byte_size, :checksum, :uploaded_at])
+    .values(row)
     .run
     .map { |_| file }
 end
