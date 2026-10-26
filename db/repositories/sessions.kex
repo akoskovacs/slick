@@ -36,7 +36,7 @@ end
 private do
   # Only the fields authentication needs; token digests stay in the query.
   record Session do
-    userId : String
+    userId : UserId
     expiresAt : Integer
   end
 end

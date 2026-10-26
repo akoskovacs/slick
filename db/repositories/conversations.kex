@@ -144,7 +144,7 @@ end
 
 # The group chats a person is in, in an organization.
 foul groups(organizationId: OrganizationId, userId: UserId) -> [Conversation] or! String do
-  let ids : [String] = taking(userId).try
+  let ids : [ConversationId] = taking(userId).try
   return Ok([]) if ids.empty?
 
   let rows = Database.select().from(DB.Schema.Conversations)

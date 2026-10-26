@@ -67,7 +67,7 @@ using App.Live.Tab, only: [Tab]
 using App.Models.Command, only: [Command]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message, MessageId]
-using App.Models.Organization, only: [Organization]
+using App.Models.Organization, only: [Organization, OrganizationId]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Messages, as: Messages
@@ -341,7 +341,7 @@ evented : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
 foul evented(request, socket) do
   let bot = userFor(request)
   let mine : [Organization] = App.Live.Places.organizations(bot)
-  let ids : [String] = mine.map { |each| each.id }
+  let ids : [OrganizationId] = mine.map { |each| each.id }
   let after = request.query("after").or("0").to(Integer).or(0)
   let seat = "${Metro.Id.serial()}"
   eventsFor(request).joined(seat, bot.id, bot.name, ids, after, socket)
