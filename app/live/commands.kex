@@ -68,7 +68,7 @@ foul run(events, user, conversation, threadId, body) do
     Drafts.save(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
   end
   if kept.ok?
-    App.Live.Events.publish(events, conversation, "command", "", used.threadId, used.invokedAt, command.botId, "")
+    App.Live.Events.publish(events, conversation, App.Live.Events.Command, "", used.threadId, used.invokedAt, command.botId, "")
   end
   return kept.ok?
 end

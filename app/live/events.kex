@@ -30,11 +30,13 @@ using JSON
 using App.Models.Conversation, only: [Conversation, ConversationId, BotAccess]
 using App.Models.Conversation, as: Conversation
 
+type EventKind = Message | Answer | Command
+
 # One thing that happened. `kind` is "message", "answer" or "command".
 record Event do
   # One more every time anything happens; 0 until the bus says it.
   cursor : Integer = 0
-  kind : String
+  kind : EventKind
   # The organization it happened in: its id, and its address as the API
   # takes it.
   organizationId : OrganizationId = ""
@@ -161,7 +163,7 @@ told : Seat -> Event -> String
 let told(seat, event) do
   let fields : {String: Any} = {
     "cursor": event.cursor,
-    "kind": event.kind,
+    "kind": Harmat.Database.spelled(event.kind),
     "organization": event.organization,
     "place": placed(event, seat.bot),
     "thread": event.thread,
@@ -186,11 +188,11 @@ end
 # the API as ever. A bot "" is no bot: the event is for whoever may read
 # the conversation. `body` is the message said, kept on the server only so
 # the bus can tell which bots it names.
-publish : Server<Bus> -> Conversation -> String -> MessageId -> MessageId -> Integer -> UserId -> String -> Void
+publish : Server<Bus> -> Conversation -> EventKind -> MessageId -> MessageId -> Integer -> UserId -> String -> Void
 foul publish(events, conversation, kind, messageId, threadId, at, bot, body) do
   match DB.Repositories.Organizations.find(conversation.organizationId) do
     Ok(Just(organization)) => do
-      let replied = if kind == "message" && !threadId.empty?
+      let replied = if kind == Message && !threadId.empty?
         DB.Repositories.Messages.botAuthors(threadId, DB.Repositories.Users.botIds().or([])).or([])
       else
         []

@@ -149,7 +149,7 @@ foul answer(events, user, tab, entries) do
             Ok(given) => do
               # Only the bot whose form it was is told, and it is told only
               # where to look.
-              App.Live.Events.publish(events, conversation, "answer", message.id, message.parentId, given.answeredAt, message.userId, "")
+              App.Live.Events.publish(events, conversation, App.Live.Events.Answer, message.id, message.parentId, given.answeredAt, message.userId, "")
               return changed(tab)
             end
             Error(reason) => return unchanged(Tab { ...tab, failure: "Not answered: ${reason}" })
@@ -207,7 +207,7 @@ private do
   foul replyTo(events, statuses, user, tab, conversation, first, body) do
     match DB.Repositories.Messages.create(conversation.id, user.id, body, first.id) do
       Ok(reply) => do
-        App.Live.Events.publish(events, conversation, "message", reply.id, first.id, reply.sentAt, "", body)
+        App.Live.Events.publish(events, conversation, App.Live.Events.Message, reply.id, first.id, reply.sentAt, "", body)
         statuses.lifted(conversation.id, user.id)
         # Who replies in a thread follows it, and has read it so far.
         Readings.markRead(user.id, Reading {
@@ -243,7 +243,7 @@ private do
       Ok(message)
     end
     match posted do
-      Ok(message) => App.Live.Events.publish(events, conversation, "message", message.id, "", message.sentAt, "", body)
+      Ok(message) => App.Live.Events.publish(events, conversation, App.Live.Events.Message, message.id, "", message.sentAt, "", body)
       Error(_) => ()
     end
     return posted

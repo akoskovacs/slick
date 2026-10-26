@@ -622,7 +622,7 @@ describe("The events bus, telling bots what happens") do
     # A message in a public channel of Acme that lets bots read everything:
     # every bot of Acme's, and none of another organization's.
     let publicMessage = App.Live.Events.Event {
-      kind: "message", organizationId: acme, organization: "acme",
+      kind: App.Live.Events.Message, organizationId: acme, organization: "acme",
       conversationId: "c1", channel: "general", message: "m1", at: 100, public?: true, botAccess: Conversation.AllBots
     }
     # A message in a private channel of Acme: only its participants.
@@ -631,11 +631,11 @@ describe("The events bus, telling bots what happens") do
     }
     # An answer to a form: the one bot whose form it was.
     let answered = App.Live.Events.Event {
-      ...publicMessage, kind: "answer", message: "m9", bot: "b1"
+      ...publicMessage, kind: App.Live.Events.Answer, message: "m9", bot: "b1"
     }
     # A command: the one bot it was used for.
     let commanded = App.Live.Events.Event {
-      ...publicMessage, kind: "command", message: "", bot: "b2"
+      ...publicMessage, kind: App.Live.Events.Command, message: "", bot: "b2"
     }
     # A channel that only tells bots what names them, and a mention in it.
     let mentioned = App.Live.Events.Event {
