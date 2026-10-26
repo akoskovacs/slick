@@ -75,11 +75,11 @@ end
 # The bot authors of a thread's messages — the root and its replies — by id,
 # from among `botIds`.
 foul botAuthors(rootId: MessageId, botIds: [UserId]) -> [UserId] or! String do
-  let root = Database.select([:user_id]).from(DB.Schema.Messages)
+  let root = Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.id == rootId)
     .pluck(:user_id)
     .or([])
-  let replies = Database.select([:user_id]).from(DB.Schema.Messages)
+  let replies = Database.select().from(DB.Schema.Messages)
     .where(DB.Schema.Messages.parentId == rootId)
     .pluck(:user_id)
     .or([])
