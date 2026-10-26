@@ -8,7 +8,7 @@ using Harmat.Database, as: Database
 using Harmat.Schema, only: [Cond]
 using App.Models.Message, only: [Message, MessageId]
 using App.Models.Conversation, only: [ConversationId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 # The newest `limit` messages of a conversation, oldest first. Replies are
 # not among them: they are read with the thread they belong to.

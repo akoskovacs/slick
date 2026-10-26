@@ -5,7 +5,7 @@ module DB.Repositories.Organizations
 
 using Harmat.Database, as: Database
 using App.Models.Organization, only: [Organization, OrganizationId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 # Creates an organization. Fails when the address is taken: the unique
 # index on `slug` decides.

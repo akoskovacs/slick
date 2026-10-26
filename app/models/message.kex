@@ -2,7 +2,7 @@
 module App.Models.Message
 
 using App.Models.Conversation, only: [ConversationId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 type MessageId = String
 record Message do

@@ -1,0 +1,5 @@
+# Shared scalar identifiers, kept outside the models that refer to one
+# another so their record definitions do not introduce import cycles.
+module App.Models.Ids
+
+type UserId = String

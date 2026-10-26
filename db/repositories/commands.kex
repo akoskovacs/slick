@@ -5,7 +5,7 @@ module DB.Repositories.Commands
 
 using Harmat.Database, as: Database
 using App.Models.Command, only: [Command]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 # Replaces a bot's commands with these, all at once.
 foul declare(botId: UserId, commands: [Command]) -> Integer or! String do

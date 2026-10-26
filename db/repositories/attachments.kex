@@ -7,7 +7,7 @@ using Harmat.Database, as: Database
 using App.Models.Attachment, only: [Attachment, AttachmentId]
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Message, only: [MessageId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 # Notes a file somebody has just uploaded: theirs alone, until it is sent.
 foul create(userId: UserId, blob: Metro.Storage.Blob) -> Attachment or! String do

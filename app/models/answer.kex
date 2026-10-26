@@ -5,7 +5,7 @@ module App.Models.Answer
 
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Message, only: [MessageId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 record Answer do
   messageId : MessageId

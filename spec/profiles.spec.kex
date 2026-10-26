@@ -53,7 +53,7 @@ describe("App.Live.Profiles, opening one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       stepped(world, world.ada, Tab {}, [("event", "message-send"), ("body", "a thread")])
-      let general = App.Live.Places.visible(world.ada, Tab {}).map { |chat| chat.id }.or("")
+      let general = world.ada.visible("", "").map { |chat| chat.id }.or("")
       let said : [App.Models.Message.Message] = DB.Repositories.Messages.latest(general, 1).or([])
       let id = said.first.map { |message| message.id }.or("")
       let profile = bobsProfile(world)

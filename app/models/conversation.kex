@@ -4,7 +4,7 @@ module App.Models.Conversation
 
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Team, only: [TeamId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 type ConversationId = String
 type ConversationKind = Channel | PrivateChat | Group

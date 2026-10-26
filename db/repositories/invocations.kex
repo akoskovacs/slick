@@ -7,7 +7,7 @@ using Harmat.Database, as: Database
 using App.Models.Invocation, only: [Invocation]
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Organization, only: [OrganizationId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 # Keeps one, as it is.
 foul save(invocation: Invocation) -> Integer or! String do

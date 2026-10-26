@@ -5,7 +5,7 @@ module App.Live.Tab
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Message, only: [MessageId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Attachment, only: [AttachmentId]
 

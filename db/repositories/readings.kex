@@ -9,7 +9,7 @@ module DB.Repositories.Readings
 
 using Harmat.Database, as: Database
 using App.Models.Reading, only: [Reading]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 # Everywhere a person has read: each conversation, and each thread they
 # follow.

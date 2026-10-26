@@ -10,7 +10,7 @@ module DB.Repositories.Teams
 using Harmat.Database, as: Database
 using App.Models.Team, only: [Team, TeamId]
 using App.Models.Organization, only: [OrganizationId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants

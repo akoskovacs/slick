@@ -9,7 +9,8 @@ module App.Services.Authentication
 
 using DB.Repositories.Sessions, as: Sessions
 using DB.Repositories.Users, as: Users
-using App.Models.User, only: [User, UserId]
+using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 
 # How long a sign-in lasts: thirty days.
 let LIFETIME = 2592000

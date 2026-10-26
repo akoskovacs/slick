@@ -3,12 +3,12 @@
 # to its end.
 module App.Live.Unread
 
-using App.Live.Places, only: [readable]
 using App.Models.Conversation, only: [Conversation, ConversationId]
 using App.Models.Message, only: [Message, MessageId]
 using App.Models.Organization, only: [Organization, OrganizationId]
 using App.Models.Reading, only: [Reading]
-using App.Models.User, only: [User, UserId]
+using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
@@ -86,7 +86,7 @@ private do
     openThread: MessageId
   ) -> ({ConversationId: Integer}, {UserId: Integer}, {ConversationId: Integer}) do
     let since = Memberships.joinedAt(organization.id, user.id)
-    let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
+    let channels : [Conversation] = user.readable(Conversations.channels(organization.id).or([]))
     let chats : [Conversation] = Conversations.directs(organization.id, user.id).or([])
     let groups : [Conversation] = Conversations.groups(organization.id, user.id).or([])
     let places = (channels + chats + groups).map { |conversation| conversation.id }

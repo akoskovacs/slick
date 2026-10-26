@@ -5,10 +5,10 @@ module App.Live.Profiles
 using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, sized]
 using App.Live.Outcome, only: [Outcome, refused]
-using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.User, only: [User, UserDetail, UserId, Name]
+using App.Models.User, only: [User, UserDetail, Name]
+using App.Models.Ids, only: [UserId]
 using App.Models.User, as: User
 using App.Models.Emoji, as: Emoji
 using DB.Repositories.Users, as: Users
@@ -21,10 +21,10 @@ end
 # a team: only of somebody in the tab's organization.
 open : User -> Tab -> UserId -> Outcome
 foul open(user, tab, id) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      return unchanged(tab) if !member?(organization.id, id)
+      return unchanged(tab) if !organization.member?(id)
       return unchanged(Tab { ...closed(tab), thread: "", profile: id, team: "" })
     end
   end

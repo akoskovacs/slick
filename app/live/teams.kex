@@ -6,12 +6,13 @@ module App.Live.Teams
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
-using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Team, only: [Team, TeamId]
 using App.Models.Team, as: Team
-using App.Models.User, only: [User, UserId]
+using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
+using DB.Repositories.Memberships, as: Memberships
 
 let teamRules = rules do
   validates("name", "A team's name", [present, sized(2, 40)])
@@ -40,10 +41,10 @@ foul create(user, tab, name, description, given) do
     return refused(tab, App.Live.Tab.TeamDialog, "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter.")
   end
 
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      if !App.Services.Authority.canCreate(user, organization.id)
+      if !user.canCreate?(organization.id)
         return refused(tab, App.Live.Tab.TeamDialog, "You may not make a team in ${organization.name}.")
       end
       let team = Team {
@@ -90,7 +91,7 @@ foul addMembers(user, tab, picked) do
     Just(team) => do
       return failed(tab, "@${team.handle} is ${SYNCED}") if team.managed?
 
-      let newcomers = picked.filter { |id| member?(team.organizationId, id) }
+      let newcomers = picked.filter { |id| Memberships.member?(team.organizationId, id) }
       match DB.Repositories.Teams.addMembers(team.id, newcomers) do
         Ok(count) => return (closed(tab), count > 0)
         Error(reason) => return failed(tab, reason)
@@ -134,7 +135,7 @@ private do
   foul current(user, tab) do
     return None if tab.team.empty?
 
-    match home(user, tab) do
+    match user.home(tab.organization) do
       None => return None
       Just(organization) => match DB.Repositories.Teams.find(tab.team) do
         Ok(Just(team)) => return team.organizationId == organization.id then Just(team) else None

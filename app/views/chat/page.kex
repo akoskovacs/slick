@@ -15,7 +15,7 @@ using App.Models.Organization, only: [Organization]
 using App.Models.Reaction, only: [Reaction]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using App.Models.Grant, only: [GrantRole]
 using Metro.Live.Presence, only: [Note]
 

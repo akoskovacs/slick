@@ -12,7 +12,7 @@ using Harmat.Database, as: Database
 using App.Models.Conversation, only: [Conversation, ConversationId, ConversationAccess, BotAccess, Channel, Group, Public, Private, Mentions]
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Team, only: [TeamId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using App.Models.Conversation, as: Conversation
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant

@@ -7,7 +7,6 @@ using Metro.Live.Presence, only: [Presence]
 using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, present, sized]
 using App.Live.Outcome, only: [Outcome, failed]
-using App.Live.Places, only: [visible]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
@@ -40,10 +39,10 @@ foul send(events, statuses, user, tab, body) do
   let unfit = tab.pending.empty? || body.chars.count > Message.LONGEST
   return unchanged(tab) if !problems.empty? && unfit
 
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
-      return unchanged(tab) if !App.Services.Authority.canWrite(user, conversation)
+      return unchanged(tab) if !user.canWrite?(conversation)
       # A command for a bot is used, not said; the files waiting stay.
       if App.Live.Commands.run(events, user, conversation, "", body)
         statuses.lifted(conversation.id, user.id)
@@ -68,10 +67,10 @@ foul reply(events, statuses, user, tab, body) do
   let problems = Metro.Validation.checked(messageRules, {"body": body}).messages
   return unchanged(tab) if !problems.empty?
 
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
-      return unchanged(tab) if !App.Services.Authority.canWrite(user, conversation)
+      return unchanged(tab) if !user.canWrite?(conversation)
 
       match App.Live.Threads.root(conversation, tab.thread) do
         None => return unchanged(tab)
@@ -94,7 +93,7 @@ end
 # browser's. Nobody else is shown it, so no other tab is told.
 saveDraft : User -> Tab -> String -> String -> Outcome
 foul saveDraft(user, tab, place, body) do
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
       let root = App.Live.Threads.root(conversation, tab.thread).map { |first| first.id }.or("")
@@ -119,7 +118,7 @@ react : User -> Tab -> MessageId -> String -> Outcome
 foul react(user, tab, messageId, emoji) do
   return unchanged(tab) if !Emoji.reaction?(emoji)
 
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => match DB.Repositories.Messages.find(messageId) do
       Ok(Just(message)) => do
@@ -140,7 +139,7 @@ end
 # to the same form. The tab stays as it is.
 answer : Server<App.Live.Events.Bus> -> User -> Tab -> [(String, String?)] -> Outcome
 foul answer(events, user, tab, entries) do
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => match DB.Repositories.Messages.find(field(entries, "message")) do
       Ok(Just(message)) => do

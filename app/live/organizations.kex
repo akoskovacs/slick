@@ -5,12 +5,12 @@ module App.Live.Organizations
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused]
-using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Grant, only: [Grant, GrantRole]
 using App.Models.Grant, as: Grant
-using App.Models.User, only: [User, UserId]
+using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Organization, as: Organization
 using DB.Repositories.Grants, as: Grants
@@ -24,7 +24,7 @@ end
 # Goes to another organization this person is in, at its #general.
 switch : User -> Tab -> OrganizationId -> Outcome
 foul switch(user, tab, id) do
-  return unchanged(tab) if !member?(id, user.id)
+  return unchanged(tab) if !user.memberOf?(id)
   return unchanged(Tab { organization: id })
 end
 
@@ -43,7 +43,7 @@ foul create(user, tab, name, rootSegments) do
     return refused(tab, App.Live.Tab.OrganizationDialog, "${name} cannot be used as a name. Try another.")
   end
 
-  match App.Services.Organizations.create(user, name, slug) do
+  match user.createOrganization(name, slug) do
     Error(_) => return refused(tab, App.Live.Tab.OrganizationDialog, "There is already an organization called ${name}.")
     Ok(organization) => return changed(Tab { organization: organization.id })
   end
@@ -52,10 +52,10 @@ end
 # Puts somebody who has registered into the tab's organization.
 invite : User -> Tab -> String -> Outcome
 foul invite(user, tab, email) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      if !App.Services.Authority.canManage(user, organization.id)
+      if !user.canManage?(organization.id)
         return refused(tab, App.Live.Tab.InviteDialog, "Only an administrator of ${organization.name} can invite people.")
       end
 
@@ -79,16 +79,16 @@ foul setRole(user, tab, personId, role) do
   return unchanged(tab) if !selected.set?
   return unchanged(tab) if personId == user.id
 
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
       let profile = Tab { ...closed(tab), profile: personId }
-      if !App.Services.Authority.canManage(user, organization.id)
+      if !user.canManage?(organization.id)
         return unchanged(Tab { ...profile, failure: "Only an administrator can change a member's role." })
       end
       let was = App.Services.Authority.role(personId, Grant.OrganizationResource, organization.id)
       return unchanged(Tab { ...profile, failure: "They are not in ${organization.name}." }) if !was.set?
-      if selected != Just(Grant.Admin) && was == Just(Grant.Admin) && App.Services.Authority.admins(organization.id).count <= 1
+      if selected != Just(Grant.Admin) && was == Just(Grant.Admin) && organization.admins.count <= 1
         return unchanged(Tab { ...profile, failure: "The last administrator cannot be demoted." })
       end
 
@@ -111,16 +111,16 @@ end
 # it, and not to the last one.
 removeMember : User -> Tab -> UserId -> Outcome
 foul removeMember(user, tab, personId) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
       let away = Tab { ...closed(tab), profile: "" }
-      if !App.Services.Authority.canManage(user, organization.id)
+      if !user.canManage?(organization.id)
         return unchanged(Tab { ...away, failure: "Only an administrator can remove a member." })
       end
       let was = App.Services.Authority.role(personId, Grant.OrganizationResource, organization.id)
       return unchanged(Tab { ...away, failure: "They are not in ${organization.name}." }) if !was.set?
-      if was == Just(Grant.Admin) && App.Services.Authority.admins(organization.id).count <= 1
+      if was == Just(Grant.Admin) && organization.admins.count <= 1
         return unchanged(Tab { ...away, failure: "The last administrator cannot be removed." })
       end
 

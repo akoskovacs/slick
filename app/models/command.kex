@@ -2,7 +2,7 @@
 # words. The bot declares them; Slick only offers them in the composer.
 module App.Models.Command
 
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 record Command do
   botId : UserId

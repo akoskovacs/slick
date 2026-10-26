@@ -7,7 +7,7 @@
 module App.Models.Team
 
 using App.Models.Organization, only: [OrganizationId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 
 type TeamId = String
 record Team do

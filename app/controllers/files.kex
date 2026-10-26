@@ -6,7 +6,7 @@ module App.Controllers.Files
 using Metro.WebRequest, only: [WebRequest]
 using App.Controllers.Application, only: [userFor]
 using App.Models.Attachment, only: [Attachment]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships

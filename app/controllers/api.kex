@@ -90,7 +90,7 @@ let STATUS_LONGEST = 80
 whoami : WebRequest -> WebRequest
 foul whoami(request) do
   let bot = userFor(request)
-  let mine : [Organization] = App.Live.Places.organizations(bot)
+  let mine : [Organization] = bot.organizations
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
   let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed, "operators": DB.Repositories.BotOperators.forBot(bot.id).or([])}
   return request.json(answer)
@@ -138,7 +138,7 @@ foul channelList(request) do
   let organization = organizationFor(request).try
   let bot = userFor(request)
   let found : [Conversation] = Conversations.channels(organization).or([])
-  let listed : [Any] = App.Services.Authority.readable(bot, found)
+  let listed : [Any] = bot.readable(found)
     .map do |channel|
       let entry : {String: Any} = {
         "id": channel.id,
@@ -244,7 +244,7 @@ history : WebRequest -> WebRequest
 foul history(request) do
   let thread = request.query("thread").or("").trim
   let (tab, conversation) = placed(request, thread).try
-  if !App.Services.Authority.botMayRead(userFor(request), conversation, tab.thread)
+  if !userFor(request).botMayRead?(conversation, tab.thread)
     return request.json([])
   end
   return request.json(unfolded(conversation, tab.thread)) if !thread.empty?
@@ -344,7 +344,7 @@ end
 evented : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
 foul evented(request, socket) do
   let bot = userFor(request)
-  let mine : [Organization] = App.Live.Places.organizations(bot)
+  let mine : [Organization] = bot.organizations
   let ids : [OrganizationId] = mine.map { |each| each.id }
   let after = request.query("after").or("0").to(Integer).or(0)
   let seat = "${Metro.Id.serial()}"
@@ -455,7 +455,7 @@ foul unfolded(conversation: Conversation, rootId: MessageId) -> [Any] do
     let tab = App.Live.Addresses.tabFor(bot, App.Paths.threaded(address, thread))
     return Error(failed(request, 404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
 
-    match App.Live.Places.visible(bot, tab) do
+    match bot.visible(tab.organization, tab.conversation) do
       Just(conversation) => return Ok((tab, conversation))
       None => return Error(failed(request, 404, "There is no such conversation, or this bot is not in it."))
     end

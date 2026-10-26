@@ -2,7 +2,12 @@
 # one organization can be seen from another.
 module App.Models.Organization
 
+using App.Models.Ids, only: [UserId]
+using App.Models.Grant, only: [Admin, OrganizationResource]
+using DB.Repositories.Grants, as: Grants
+
 type OrganizationId = String
+let GENERAL_TOPIC = "Company-wide announcements and chatter"
 record Organization do
   id : OrganizationId
   # The name as it appears in addresses: /acme/channels/general.
@@ -11,10 +16,16 @@ record Organization do
 end
 
 make Organization do
+  # Whether this person belongs to the organization.
+  let member?(userId: UserId) -> Bool = Grants.organizationsOf(userId).or([]).contains?(@id)
+
   # The address form of a name: its letters and digits, lower case.
   slugged : String -> String
   let slugged(name) do
     let slug = name.trim.lowerCase.chars.filter { |char| char.lower? || char.digit? }
     return slug.map { |char| "${char}" }.join("")
   end
+
+  # The administrators of this organization, by id.
+  let admins -> [UserId] = Grants.roleHolders(OrganizationResource, @id, Admin).or([])
 end

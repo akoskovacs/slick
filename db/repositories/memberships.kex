@@ -6,7 +6,7 @@ module DB.Repositories.Memberships
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
 using App.Models.Organization, only: [OrganizationId]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Grants, as: Grants
 
 # Puts a person in an organization as a member. Fails when they are already

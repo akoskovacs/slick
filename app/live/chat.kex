@@ -5,7 +5,7 @@
 # Every event is checked against who sent it. A tab names an organization
 # and a conversation by id, and an id is not a permission: `home` only ever
 # answers with an organization its person is in, and `visible` only with a
-# conversation of that organization they may read (App.Live.Places). Every
+# conversation of that organization they may read (User). Every
 # part asks them before anything is read or written, so the id of another
 # organization's channel, or of somebody else's private chat, gets a tab
 # nothing.
@@ -14,14 +14,13 @@ module App.Live.Chat
 using App.Models.Grant, only: [Grant, GrantRole]
 using App.Models.Grant, as: Grant
 using Metro.Live.Presence, only: [Presence, Note]
-using App.Live.Places, only: [home, visible, organizations]
 using App.Live.Event, only: [Event, Routes]
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Drafts, as: Drafts
 using DB.Repositories.Memberships, as: Memberships
@@ -42,12 +41,12 @@ let WINDOW = 200
 # whatever a bot says it is doing: `Metro.Live.Presence`.
 markup : Server<Presence> -> User -> Tab -> String
 foul markup(statuses, user, tab) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return App.Views.Chat.welcome(tab, user)
     Just(organization) => do
       let marks : [Reading] = Readings.marks(user.id).or([])
       let sidebar = sidebarOf(statuses, user, tab, organization)
-      let pane = visible(user, tab)
+      let pane = user.visible(tab.organization, tab.conversation)
         .map { |conversation| paneOf(statuses, user, tab, sidebar.people, conversation) }
         .or(App.Views.Chat.Page.Pane {})
       # Looking at a conversation reads it, before what is unread is counted.
@@ -67,15 +66,15 @@ private do
   foul sidebarOf(statuses, user, tab, organization) do
     let roster : [String] = Memberships.roster(organization.id).or([])
     let everyone : [User] = Users.everyone.or([])
-    let bots : [User] = tab.dialog == App.Live.Tab.BotsDialog then App.Live.Bots.manageable(user, organization) else []
+    let bots : [User] = tab.dialog == App.Live.Tab.BotsDialog then user.manageableBots(organization) else []
     let roles : {UserId: GrantRole} = Grants.over(Grant.OrganizationResource, organization.id)
       .or([])
       .filter { |grant| grant.subjectType == Grant.UserSubject }
       .reduce({}) { |found, grant| found.put(grant.subjectId, grant.role) }
     return App.Views.Chat.Page.Sidebar {
-      organizations: organizations(user),
+      organizations: user.organizations,
       organization: organization,
-      channels: App.Live.Places.readable(user, Conversations.channels(organization.id).or([])),
+      channels: user.readable(Conversations.channels(organization.id).or([])),
       groups: Conversations.groups(organization.id, user.id).or([]),
       teams: Teams.inOrganization(organization.id).or([]),
       people: everyone.filter { |person| roster.contains?(person.id) },
@@ -84,7 +83,7 @@ private do
       operators: bots.reduce({}) { |found, bot| found.put(bot.id, DB.Repositories.BotOperators.forBot(bot.id).or([])) },
       drafts: Drafts.pending(user.id).or([]),
       roles: roles,
-      administrator: App.Services.Authority.canManage(user, organization.id)
+      administrator: user.canManage?(organization.id)
     }
   end
 

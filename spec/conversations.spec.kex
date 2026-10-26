@@ -54,7 +54,7 @@ describe("App.Live.Conversations, channels") do
       Assert.truthy(shown(world, world.ada, Tab {}).contains?("🔒 secret"))
       Assert.truthy(shown(world, world.ada, secret).contains?("Private: only its 1 person can read this."))
       Assert.falsy(shown(world, world.bob, Tab {}).contains?("secret"))
-      Assert.equal(App.Live.Places.visible(world.bob, secret), None)
+      Assert.equal(world.bob.visible(secret.organization, secret.conversation), None)
       let (bobOpens, _) = stepped(world, world.bob, Tab {}, [("event", "conversation-open"), ("id", secret.conversation)])
       Assert.truthy(bobOpens.conversation != secret.conversation)
       let (_, bobSent) = stepped(world, world.bob, secret, [("event", "message-send"), ("body", "let me in")])
@@ -72,10 +72,10 @@ describe("App.Live.Conversations, channels") do
       let (added, changed) = stepped(world, world.ada, secret, [("event", "channel-add"), ("person", world.bob.id), ("person", world.mal.id)])
       Assert.truthy(changed)
       Assert.truthy(added.notice.contains?("Added one person."))
-      Assert.truthy(App.Live.Places.visible(world.bob, secret).set?)
+      Assert.truthy(world.bob.visible(secret.organization, secret.conversation).set?)
       Assert.truthy(shown(world, world.bob, Tab {}).contains?("🔒 secret"))
-      Assert.equal(App.Live.Places.visible(world.mal, Tab { conversation: secret.conversation }), None)
-      Assert.equal(App.Live.Places.visible(world.eve, secret), None)
+      Assert.equal(world.mal.visible(secret.organization, secret.conversation), None)
+      Assert.equal(world.eve.visible(secret.organization, secret.conversation), None)
       let (_, publicAdded) = stepped(world, world.ada, Tab {}, [("event", "channel-add"), ("person", world.eve.id)])
       Assert.falsy(publicAdded)
     end
@@ -89,7 +89,7 @@ describe("App.Live.Conversations, channels") do
       let (bobTries, changed) = stepped(world, world.bob, secret, [("event", "channel-add"), ("person", world.eve.id)])
       Assert.falsy(changed)
       Assert.truthy(bobTries.dialogProblem.contains?("Only an administrator"))
-      Assert.equal(App.Live.Places.visible(world.eve, secret), None)
+      Assert.equal(world.eve.visible(secret.organization, secret.conversation), None)
     end
   end
 end
@@ -114,7 +114,7 @@ describe("App.Live.Conversations, private chats") do
       let (adas, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
       stepped(world, world.ada, adas, [("event", "message-send"), ("body", "between us")])
       let eveTries = Tab { conversation: adas.conversation }
-      Assert.equal(App.Live.Places.visible(world.eve, eveTries), None)
+      Assert.equal(world.eve.visible(eveTries.organization, eveTries.conversation), None)
       Assert.falsy(shown(world, world.eve, eveTries).contains?("between us"))
       let (eveOpened, _) = stepped(world, world.eve, Tab {}, [("event", "conversation-open"), ("id", adas.conversation)])
       Assert.equal(eveOpened.conversation, "")
@@ -137,7 +137,7 @@ describe("App.Live.Conversations, private chats") do
       Assert.truthy(own.contains?("Ada (you)"))
       Assert.truthy(own.contains?("data-live-path=\"/acmecorp/dm/${world.ada.id}\""))
       Assert.equal(App.Live.Addresses.tabFor(world.ada, "/acmecorp/dm/${world.ada.id}").conversation, alone.conversation)
-      Assert.equal(App.Live.Places.visible(world.bob, alone), None)
+      Assert.equal(world.bob.visible(alone.organization, alone.conversation), None)
       Assert.falsy(shown(world, world.ada, Tab {}).contains?("This is your space"))
     end
   end
@@ -162,7 +162,7 @@ describe("App.Live.Conversations, group chats") do
       Assert.truthy(changed)
       let (again, _) = stepped(world, world.bob, Tab {}, [("event", "group-create"), ("person", world.eve.id), ("person", world.ada.id)])
       Assert.equal(again.conversation, trio.conversation)
-      Assert.equal(App.Live.Places.visible(world.mal, Tab { conversation: trio.conversation }), None)
+      Assert.equal(world.mal.visible(trio.organization, trio.conversation), None)
     end
   end
 
@@ -170,7 +170,7 @@ describe("App.Live.Conversations, group chats") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let (pair, _) = stepped(world, world.ada, Tab {}, [("event", "group-create"), ("person", world.bob.id)])
-      Assert.truthy(App.Live.Places.visible(world.ada, pair).map { |chat| chat.direct? }.or(false))
+      Assert.truthy(world.ada.visible(pair.organization, pair.conversation).map { |chat| chat.direct? }.or(false))
     end
   end
 
@@ -247,7 +247,7 @@ describe("App.Live.Conversations, other organizations") do
       let random = createChannel(world, "random", "public")
       stepped(world, world.bob, random, [("event", "topic-set"), ("topic", "Anything goes")])
       let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
-      Assert.equal(App.Live.Places.visible(world.mal, forged), None)
+      Assert.equal(world.mal.visible(forged.organization, forged.conversation), None)
       Assert.falsy(shown(world, world.mal, forged).contains?("Anything goes"))
       let (malOpened, _) = stepped(world, world.mal, Tab {}, [("event", "conversation-open"), ("id", random.conversation)])
       Assert.equal(malOpened.conversation, "")
@@ -274,7 +274,7 @@ describe("App.Live.Conversations, a channel's settings") do
       Assert.truthy(changed)
       Assert.equal(saved.view, App.Live.Tab.ConversationView)
       Assert.truthy(saved.notice.contains?("saved"))
-      Assert.equal(App.Live.Places.visible(world.bob, random), None)
+      Assert.equal(world.bob.visible(random.organization, random.conversation), None)
     end
   end
 
@@ -305,7 +305,7 @@ describe("App.Live.Conversations, a channel's settings") do
       Assert.truthy(odd.failure.contains?("Pick who may read it"))
       let (oddBots, _) = stepped(world, world.ada, random, [("event", "channel-configure"), ("access", "public"), ("bot-access", "some"), ("team", "")])
       Assert.truthy(oddBots.failure.contains?("Pick what bots may read"))
-      Assert.truthy(App.Live.Places.visible(world.eve, random).set?)
+      Assert.truthy(world.eve.visible(random.organization, random.conversation).set?)
     end
   end
 end

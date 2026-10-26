@@ -23,7 +23,7 @@ describe("App.Live.Organizations, making one") do
       let (made, changed) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "Initech")])
       Assert.truthy(changed)
       Assert.truthy(!made.organization.empty?)
-      Assert.truthy(App.Services.Authority.canManage(zed, made.organization))
+      Assert.truthy(zed.canManage?(made.organization))
       let first = shown(world, zed, made)
       Assert.truthy(first.contains?("# general"))
       Assert.truthy(first.contains?("Company-wide announcements"))

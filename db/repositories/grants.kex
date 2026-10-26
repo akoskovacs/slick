@@ -6,7 +6,7 @@ module DB.Repositories.Grants
 
 using Harmat.Database, as: Database
 using App.Models.Grant, only: [Grant, GrantId, GrantSubjectType, GrantResourceType, GrantRole, UserSubject, TeamSubject, OrganizationResource, ConversationResource, TeamResource]
-using App.Models.User, only: [UserId]
+using App.Models.Ids, only: [UserId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Conversation, only: [ConversationId]

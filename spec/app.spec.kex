@@ -441,7 +441,7 @@ describe("Organizations, kept apart") do
       let (switched, _) = stepped(world, world.mal, Tab {}, [("event", "organization-switch"), ("id", world.acme.organization)])
       Assert.equal(switched.organization, "")
       let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
-      Assert.equal(App.Live.Places.visible(world.mal, forged), None)
+      Assert.equal(world.mal.visible(forged.organization, forged.conversation), None)
       let (_, sent) = stepped(world, world.mal, forged, [("event", "message-send"), ("body", "mallory was here")])
       Assert.falsy(sent)
       let (_, reacted) = stepped(world, world.mal, forged, [("event", "message-react"), ("message", id), ("emoji", "🎉")])
@@ -700,43 +700,43 @@ describe("App.Authority, deciding from grants") do
 
       # A public channel: members, admins and read-only users read it; only
       # members and admins write.
-      Assert.truthy(App.Services.Authority.canRead(ada, general))
-      Assert.truthy(App.Services.Authority.canRead(carl, general))
-      Assert.truthy(App.Services.Authority.canWrite(ada, general))
-      Assert.falsy(App.Services.Authority.canWrite(carl, general))
-      Assert.truthy(App.Services.Authority.canWrite(bob, general))
+      Assert.truthy(ada.canRead?(general))
+      Assert.truthy(carl.canRead?(general))
+      Assert.truthy(ada.canWrite?(general))
+      Assert.falsy(carl.canWrite?(general))
+      Assert.truthy(bob.canWrite?(general))
 
       # A private channel: nobody until granted — not even an org admin, who
       # may manage it but does not read it.
-      Assert.falsy(App.Services.Authority.canRead(ada, secret))
-      Assert.falsy(App.Services.Authority.canRead(bob, secret))
-      Assert.truthy(App.Services.Authority.canAdminister(bob, secret))
+      Assert.falsy(ada.canRead?(secret))
+      Assert.falsy(bob.canRead?(secret))
+      Assert.truthy(bob.canAdminister?(secret))
 
       DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.ConversationResource, resourceId: "c2", role: Grant.Member }).try
-      Assert.truthy(App.Services.Authority.canRead(ada, secret))
-      Assert.truthy(App.Services.Authority.canWrite(ada, secret))
-      Assert.falsy(App.Services.Authority.canAdminister(ada, secret))
+      Assert.truthy(ada.canRead?(secret))
+      Assert.truthy(ada.canWrite?(secret))
+      Assert.falsy(ada.canAdminister?(secret))
 
       # A team that owns the channel hands its members the channel.
       DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.TeamResource, resourceId: "t1", role: Grant.Member }).try
       DB.Repositories.Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: "t1", resourceType: Grant.ConversationResource, resourceId: "c2", role: Grant.Admin }).try
-      Assert.truthy(App.Services.Authority.canAdminister(ada, secret))
-      Assert.falsy(App.Services.Authority.canRead(carl, secret))
+      Assert.truthy(ada.canAdminister?(secret))
+      Assert.falsy(carl.canRead?(secret))
 
       # A private chat: the two of them, and nobody else.
-      Assert.truthy(App.Services.Authority.canRead(ada, dm))
-      Assert.truthy(App.Services.Authority.canWrite(bob, dm))
-      Assert.falsy(App.Services.Authority.canRead(carl, dm))
+      Assert.truthy(ada.canRead?(dm))
+      Assert.truthy(bob.canWrite?(dm))
+      Assert.falsy(carl.canRead?(dm))
 
       # Making channels and teams, and managing the organization.
-      Assert.truthy(App.Services.Authority.canCreate(ada, "o1"))
-      Assert.falsy(App.Services.Authority.canCreate(carl, "o1"))
-      Assert.truthy(App.Services.Authority.canManage(bob, "o1"))
-      Assert.falsy(App.Services.Authority.canManage(ada, "o1"))
+      Assert.truthy(ada.canCreate?("o1"))
+      Assert.falsy(carl.canCreate?("o1"))
+      Assert.truthy(bob.canManage?("o1"))
+      Assert.falsy(ada.canManage?("o1"))
 
       # Bots are users: a bot that is a member reads what a member reads.
-      Assert.truthy(App.Services.Authority.canRead(bot, general))
-      Assert.truthy(App.Services.Authority.canWrite(bot, general))
+      Assert.truthy(bot.canRead?(general))
+      Assert.truthy(bot.canWrite?(general))
     end
   end
 end
@@ -757,36 +757,36 @@ describe("App.Authority, roles an administrator gives") do
       step(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "bob@example.com")])
       step(statuses, ada, Tab {}, [("event", "invite-send"), ("email", "eve@example.com")])
 
-      Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
-      Assert.falsy(App.Services.Authority.canManage(bob, acme.organization))
+      Assert.truthy(ada.canManage?(acme.organization))
+      Assert.falsy(bob.canManage?(acme.organization))
 
       # A member cannot change roles; an administrator can.
       let (_, bobTries) = step(statuses, bob, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
       Assert.falsy(bobTries)
-      Assert.falsy(App.Services.Authority.canManage(eve, acme.organization))
+      Assert.falsy(eve.canManage?(acme.organization))
 
       let (_, promoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
       Assert.truthy(promoted)
-      Assert.truthy(App.Services.Authority.canManage(eve, acme.organization))
+      Assert.truthy(eve.canManage?(acme.organization))
 
       # Read-only: still in the organization, but cannot write.
       let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read_only")])
       Assert.truthy(muted)
-      Assert.truthy(App.Services.Authority.canRead(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
-      Assert.falsy(App.Services.Authority.canWrite(bob, Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
+      Assert.truthy(bob.canRead?(Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
+      Assert.falsy(bob.canWrite?(Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
 
       # The last administrator cannot be demoted or removed.
       let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
       Assert.truthy(demoted)
-      Assert.equal(App.Services.Authority.admins(acme.organization).count, 1)
+      Assert.equal(acme.admins.count, 1)
 
       let (_, selfDemote) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", ada.id), ("role", "member")])
       Assert.falsy(selfDemote)
-      Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
+      Assert.truthy(ada.canManage?(acme.organization))
 
       let (_, removedLast) = step(statuses, ada, Tab {}, [("event", "member-remove"), ("user", ada.id)])
       Assert.falsy(removedLast)
-      Assert.truthy(App.Services.Authority.canManage(ada, acme.organization))
+      Assert.truthy(ada.canManage?(acme.organization))
     end
   end
 end
@@ -804,17 +804,17 @@ describe("App.Authority, what a channel lets its bots read") do
 
       # "mentions": the newest messages are not listed, a thread it is named
       # in is read, and a thread it has replied in is read.
-      Assert.falsy(App.Services.Authority.botMayRead(bot, channel, ""))
-      Assert.truthy(App.Services.Authority.botMayRead(bot, channel, named.id))
-      Assert.truthy(App.Services.Authority.botMayRead(bot, channel, asked.id))
+      Assert.falsy(bot.botMayRead?(channel, ""))
+      Assert.truthy(bot.botMayRead?(channel, named.id))
+      Assert.truthy(bot.botMayRead?(channel, asked.id))
 
       # "all": everything.
       DB.Repositories.Conversations.setBotAccess("c1", Conversation.AllBots).try
-      Assert.truthy(App.Services.Authority.botMayRead(bot, Conversation { ...channel, botAccess: Conversation.AllBots }, ""))
+      Assert.truthy(bot.botMayRead?(Conversation { ...channel, botAccess: Conversation.AllBots }, ""))
 
       # "none": nothing.
       let none = Conversation { ...channel, botAccess: Conversation.NoBots }
-      Assert.falsy(App.Services.Authority.botMayRead(bot, none, named.id))
+      Assert.falsy(bot.botMayRead?(none, named.id))
     end
   end
 end

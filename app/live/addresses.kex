@@ -5,9 +5,9 @@ module App.Live.Addresses
 using Metro.Live.Socket, only: [unchanged]
 using App.Live.Event, only: [Event, given]
 using App.Live.Outcome, only: [Outcome]
-using App.Live.Places, only: [visible, memberOrganization]
 using App.Live.Tab, only: [Tab]
-using App.Models.User, only: [User, UserId]
+using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Message, only: [MessageId]
 using DB.Repositories.Conversations, as: Conversations
@@ -20,7 +20,7 @@ tabFor : User -> String -> Tab
 foul tabFor(user, location) do
   let thread : MessageId = Metro.Path.query(location, "thread").or("")
   match Config.RoutePaths.channel.captured(location) do
-    Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
+    Just(parts) => match user.organization(parts.get("organization").or("")) do
       None => return Tab {}
       Just(organization) => match Conversations.findChannel(organization.id, parts.get("name").or("")) do
         Ok(Just(channel)) => return Tab { organization: organization.id, conversation: channel.id, thread: thread }
@@ -29,7 +29,7 @@ foul tabFor(user, location) do
     end
     None => match Config.RoutePaths.direct.captured(location) do
       None => return groupTab(user, location, thread)
-      Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
+      Just(parts) => match user.organization(parts.get("organization").or("")) do
         None => return Tab {}
         Just(organization) => do
           let person : UserId = parts.get("person").or("")
@@ -52,12 +52,12 @@ private do
   foul groupTab(user, location, thread) do
     match Config.RoutePaths.group.captured(location) do
       None => return Tab {}
-      Just(parts) => match memberOrganization(user, parts.get("organization").or("")) do
+      Just(parts) => match user.organization(parts.get("organization").or("")) do
         None => return Tab {}
         Just(organization) => do
           let group : ConversationId = parts.get("group").or("")
           let tab = Tab { organization: organization.id, conversation: group, thread: thread }
-          match visible(user, tab) do
+          match user.visible(tab.organization, tab.conversation) do
             Just(conversation) => return conversation.group? then tab else Tab { organization: organization.id }
             None => return Tab { organization: organization.id }
           end

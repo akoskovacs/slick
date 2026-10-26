@@ -9,11 +9,11 @@ using App.Models.Conversation, as: Conversation
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
-using App.Live.Places, only: [home, visible]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Organization, only: [Organization, OrganizationId]
-using App.Models.User, only: [User, UserId]
+using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Users, as: Users
@@ -24,17 +24,6 @@ let botRules = rules do
   validates("name", "A bot's name", [present, sized(2, 40)])
 end
 
-# The bots a person may look after from a tab: their own, and — for an
-# administrator — those of the organization the tab is in.
-manageable : User -> Organization -> [User]
-foul manageable(user, organization) do
-  let own : [User] = Users.botsOf(user.id).or([])
-  if App.Services.Authority.canManage(user, organization.id)
-    return Users.botsOfOrganization(organization.id).or([]) + own
-  end
-  return own
-end
-
 # Makes a bot in the tab's organization: this person's own when `owner` is
 # "me", and otherwise the organization's.
 create : User -> Tab -> String -> String -> Outcome
@@ -42,14 +31,14 @@ foul create(user, tab, name, owner) do
   let problems = Metro.Validation.checked(botRules, {"name": name}).messages
   return refused(tab, DIALOG, problems.first.or("")) if !problems.empty?
 
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      if owner != "me" && !App.Services.Authority.canManage(user, organization.id)
+      if owner != "me" && !user.canManage?(organization.id)
         return refused(tab, DIALOG, "Only an administrator of ${organization.name} can make a bot for it.")
       end
       let ownerOrganization = owner == "me" then "" else organization.id
-      match App.Services.Bots.built(user, ownerOrganization, name) do
+      match user.buildBot(ownerOrganization, name) do
         Error(reason) => return refused(tab, DIALOG, reason)
         Ok((bot, token)) => do
           Memberships.add(organization.id, bot.id)
@@ -63,13 +52,13 @@ end
 # Gives a bot a new token; the old one stops working.
 rotateToken : User -> Tab -> UserId -> Outcome
 foul rotateToken(user, tab, id) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      return refused(tab, DIALOG, notManager(organization)) if !mayManage?(user, organization, id)
+      return refused(tab, DIALOG, notManager(organization)) if !user.mayManageBot?(organization, id)
 
-      match App.Services.Bots.renewed(user, organization.id, id) do
-        Ok(token) => return unchanged(revealed(tab, nameOf(user, organization, id), token))
+      match user.renewBotToken(organization.id, id) do
+        Ok(token) => return unchanged(revealed(tab, user.managedBotName(organization, id), token))
         Error(reason) => return refused(tab, DIALOG, reason)
       end
     end
@@ -79,9 +68,9 @@ end
 # Puts one of this person's bots into the tab's organization.
 add : User -> Tab -> UserId -> Outcome
 foul add(user, tab, id) do
-  return refused(tab, DIALOG, "That is not one of your bots.") if !ownsBot?(user, id)
+  return refused(tab, DIALOG, "That is not one of your bots.") if !user.ownsBot?(id)
 
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
       Memberships.add(organization.id, id)
@@ -94,13 +83,13 @@ end
 # takes its access with it.
 remove : User -> Tab -> UserId -> Outcome
 foul remove(user, tab, id) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      return refused(tab, DIALOG, notManager(organization)) if !mayManage?(user, organization, id)
+      return refused(tab, DIALOG, notManager(organization)) if !user.mayManageBot?(organization, id)
 
-      let name = nameOf(user, organization, id)
-      match App.Services.Bots.removed(user, organization.id, id) do
+      let name = user.managedBotName(organization, id)
+      match user.removeBot(organization.id, id) do
         Ok(true) => return changed(Tab { ...opened(tab), notice: "${name} was removed." })
         Ok(false) => return refused(tab, DIALOG, "That is not one of your bots, or of this organization's.")
         Error(reason) => return refused(tab, DIALOG, reason)
@@ -112,10 +101,10 @@ end
 # Chooses the people, of the tab's organization, who operate a bot.
 setOperators : User -> Tab -> UserId -> [UserId] -> Outcome
 foul setOperators(user, tab, botId, operators) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      if !manageable(user, organization).any? { |bot| bot.id == botId }
+      if !user.manageableBots(organization).any? { |bot| bot.id == botId }
         return refused(tab, DIALOG, "Only the bot owner or a workspace administrator can change its operators.")
       end
       let roster : [UserId] = Memberships.roster(organization.id).or([])
@@ -141,11 +130,11 @@ foul setAccess(user, tab, access) do
   let selected = Conversation.botAccessFrom(access)
   return unchanged(tab) if !selected.set?
 
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
       return unchanged(tab) if !conversation.channel? && !conversation.group?
-      if !App.Services.Authority.canAdminister(user, conversation)
+      if !user.canAdminister?(conversation)
         return failed(tab, "Only an administrator can change what bots read here.")
       end
 
@@ -170,28 +159,8 @@ foul on("bot-access-set", event) = setAccess(event.user, event.tab, given(event,
 foul on(_, event) = unchanged(event.tab)
 
 private do
-  # Whether a bot is this person's own.
-  ownsBot? : User -> UserId -> Bool
-  foul ownsBot?(user, id) = Users.botsOf(user.id)
-    .or([])
-    .any? { |bot| bot.id == id }
-
-  # Whether this person may manage a bot: their own, or any as an
-  # administrator of the organization.
-  mayManage? : User -> Organization -> UserId -> Bool
-  foul mayManage?(user, organization, id) do
-    return ownsBot?(user, id) || App.Services.Authority.canManage(user, organization.id)
-  end
-
   notManager : Organization -> String
   let notManager(organization) = "Only an administrator of ${organization.name} can manage its bots."
-
-  # A bot's name, as this person sees it among those they look after.
-  nameOf : User -> Organization -> UserId -> String
-  foul nameOf(user, organization, id) = manageable(user, organization)
-    .find { |bot| bot.id == id }
-    .map { |bot| bot.name }
-    .or("the bot")
 
   # The tab with the bots dialog open, and nothing else over it.
   opened : Tab -> Tab

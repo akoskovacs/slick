@@ -74,7 +74,7 @@ describe("App.Live.Bots, making one") do
       Assert.truthy(shown(world, world.ada, Tab {}).contains?("deployed 🚀"))
       Assert.equal(App.Live.Addresses.tabFor(bot, "/other/channels/general"), Tab {})
       let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
-      Assert.equal(App.Live.Places.visible(bot, chat), None)
+      Assert.equal(bot.visible(chat.organization, chat.conversation), None)
     end
   end
 end
