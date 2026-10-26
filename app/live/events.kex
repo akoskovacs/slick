@@ -21,11 +21,13 @@
 # (`reset`): one full look, as a bot that polls would take now and then.
 module App.Live.Events
 
-using App.Models.User, only: [User]
+using App.Models.User, only: [User, UserId]
 using App.Models.User, as: User
+using App.Models.Message, only: [MessageId]
+using App.Models.Organization, only: [OrganizationId]
 using Net.HTTP.WebSocket, only: [Text]
 using JSON
-using App.Models.Conversation, only: [Conversation, BotAccess]
+using App.Models.Conversation, only: [Conversation, ConversationId, BotAccess]
 using App.Models.Conversation, as: Conversation
 
 # One thing that happened. `kind` is "message", "answer" or "command".
@@ -35,21 +37,21 @@ record Event do
   kind : String
   # The organization it happened in: its id, and its address as the API
   # takes it.
-  organizationId : String = ""
+  organizationId : OrganizationId = ""
   organization : String = ""
-  conversationId : String = ""
+  conversationId : ConversationId = ""
   # The conversation as the API addresses it: a channel by its title, and a
   # group chat by its id. A private chat is addressed by who it is with, so
   # instead the two of it are kept, and each bot is told its own address.
   channel : String = ""
-  group : String = ""
-  first : String = ""
-  second : String = ""
+  group : ConversationId = ""
+  first : UserId = ""
+  second : UserId = ""
   # The thread it happened in; "" for the conversation itself.
-  thread : String = ""
+  thread : MessageId = ""
   # The message at the middle of it: the one said, or the one a form was
   # answered in. "" for a command, which is no message.
-  message : String = ""
+  message : MessageId = ""
   # When it happened, in milliseconds since 1970.
   at : Integer = 0
   # Who may be told of it: a message, whoever could read it — a whole
@@ -57,8 +59,8 @@ record Event do
   # private chat or the participants of a private channel or a group chat;
   # an answer or a command, the one bot it is for.
   public? : Bool = false
-  people : [String] = []
-  bot : String = ""
+  people : [UserId] = []
+  bot : UserId = ""
   # The message said — kept on the server only, so the bus can tell which
   # bots it names; never sent out.
   body : String = ""
@@ -67,16 +69,16 @@ record Event do
   botAccess : BotAccess = Conversation.Mentions
   # The bots that have replied in this thread: a reply reaches them even
   # when it does not name them.
-  replied : [String] = []
+  replied : [UserId] = []
 end
 
 # One connected bot: who it is, the organizations it is in, and where it is
 # told of what happens.
 record Seat do
   id : String
-  bot : String
+  bot : UserId
   name : String = ""
-  organizations : [String] = []
+  organizations : [OrganizationId] = []
   socket : Net.HTTP.WebSocket.Connection
 end
 
@@ -106,7 +108,7 @@ serving Bus do
   # Seats a connected bot, and tells it where it stands: what has happened
   # since it last looked — `after` — while the bus still remembers that far,
   # and otherwise to start again. Whether the bot is starting again.
-  slot joined(id: String, bot: String, name: String, organizations: [String], after: Integer, socket: Net.HTTP.WebSocket.Connection) -> Reply<Bool> do
+  slot joined(id: String, bot: UserId, name: String, organizations: [OrganizationId], after: Integer, socket: Net.HTTP.WebSocket.Connection) -> Reply<Bool> do
     let seat = Seat { id: id, bot: bot, name: name, organizations: organizations, socket: socket }
     let current = @cursor
     let oldest = @log.first.map { |first| first.cursor }.or(1)
@@ -136,7 +138,7 @@ for? : Event -> Seat -> Bool
 let for?(event, seat) = heard?(event, seat.bot, seat.name, seat.organizations)
 
 # The same, for a bot by its id, its name and the ids of its organizations.
-heard? : Event -> String -> String -> [String] -> Bool
+heard? : Event -> UserId -> String -> [OrganizationId] -> Bool
 let heard?(event, bot, name, organizations) do
   return bot == event.bot && organizations.contains?(event.organizationId) if event.bot != ""
   return false if !organizations.contains?(event.organizationId)
@@ -172,7 +174,7 @@ end
 
 # Where an event happened, as the API of the bot asked takes it: a channel
 # by its title, a group chat by its id, and a private chat by who it is with.
-placed : Event -> String -> String
+placed : Event -> UserId -> String
 let placed(event, bot) do
   return "dm/${event.first == bot then event.second else event.first}" if event.first != ""
   return "channels/${event.channel}" if event.channel != ""
@@ -184,7 +186,7 @@ end
 # the API as ever. A bot "" is no bot: the event is for whoever may read
 # the conversation. `body` is the message said, kept on the server only so
 # the bus can tell which bots it names.
-publish : Server<Bus> -> Conversation -> String -> String -> String -> Integer -> String -> String -> Void
+publish : Server<Bus> -> Conversation -> String -> MessageId -> MessageId -> Integer -> UserId -> String -> Void
 foul publish(events, conversation, kind, messageId, threadId, at, bot, body) do
   match DB.Repositories.Organizations.find(conversation.organizationId) do
     Ok(Just(organization)) => do

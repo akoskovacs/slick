@@ -53,12 +53,12 @@ let GENERAL = "general"
 
 # The slug of the private chat between two people, whichever way round they
 # are given.
-pairing : String -> String -> String
+pairing : UserId -> UserId -> String
 let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:${one}"
 
 # The slug of the group chat between some people, in whatever order they
 # are given.
-gathering : [String] -> String
+gathering : [UserId] -> String
 let gathering(people) = "&${people.uniq.sort.join(",")}"
 
 make Conversation do
@@ -78,7 +78,7 @@ make Conversation do
   # Whether this person may read and write here, given that they are in its
   # organization: anyone in a public channel, the two people of a private
   # chat, and the participants of anything else.
-  let admits?(userId: String) -> Bool do
+  let admits?(userId: UserId) -> Bool do
     return true if @kind == Channel && @access == Public
     return @firstUser == userId || @secondUser == userId if @kind == PrivateChat
     @participants.contains?(userId)
@@ -88,5 +88,5 @@ make Conversation do
   let solo? -> Bool = @kind == PrivateChat && @firstUser == @secondUser
 
   # The other person of a private chat.
-  let counterpart(userId: String) -> String = @firstUser == userId then @secondUser else @firstUser
+  let counterpart(userId: UserId) -> UserId = @firstUser == userId then @secondUser else @firstUser
 end

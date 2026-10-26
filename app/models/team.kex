@@ -50,5 +50,5 @@ let handled(name) do
 end
 
 make Team do
-  let includes?(userId: String) -> Bool = @members.contains?(userId)
+  let includes?(userId: UserId) -> Bool = @members.contains?(userId)
 end
