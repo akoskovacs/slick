@@ -82,7 +82,8 @@ foul createChannel(user, tab, title, access, teamId) do
         .or(teamId.empty?)
       return refused(tab, App.Live.Tab.ChannelDialog, "A channel can only be made for a team you are in.") if !owns
 
-      let kept = match Conversation.accessFrom(access) do
+      let requestedAccess = access.empty? then Just(Conversation.Public) else Conversation.accessFrom(access)
+      let kept = match requestedAccess do
         Just(access) => access
         None => return refused(tab, App.Live.Tab.ChannelDialog, "Pick who may read the channel.")
       end
@@ -128,7 +129,8 @@ foul makeChannel(user, tab, title, access) do
         return refused(tab, App.Live.Tab.PromoteDialog, "Only an administrator can make this a channel.")
       end
 
-      let kept = match Conversation.accessFrom(access) do
+      let requestedAccess = access.empty? then Just(Conversation.Private) else Conversation.accessFrom(access)
+      let kept = match requestedAccess do
         Just(access) => access
         None => return refused(tab, App.Live.Tab.PromoteDialog, "Pick who may read the channel.")
       end
