@@ -66,6 +66,7 @@ private do
   foul sidebarOf(statuses, user, tab, organization) do
     let roster : [String] = Memberships.roster(organization.id).or([])
     let everyone : [User] = Users.everyone.or([])
+    let serverAdmins : [UserId] = Grants.serverAdmins().or([])
     let bots : [User] = tab.dialog == App.Live.Tab.BotsDialog then user.manageableBots(organization) else []
     let roles : {UserId: GrantRole} = Grants.over(Grant.OrganizationResource, organization.id)
       .or([])
@@ -77,13 +78,15 @@ private do
       channels: user.readable(Conversations.channels(organization.id).or([])),
       groups: Conversations.groups(organization.id, user.id).or([]),
       teams: Teams.inOrganization(organization.id).or([]),
-      people: everyone.filter { |person| roster.contains?(person.id) },
+      people: everyone.filter { |person| person.id == user.id || roster.contains?(person.id) || serverAdmins.contains?(person.id) },
+      serverAdmins: serverAdmins,
       online: Metro.Live.Presence.online(statuses),
       bots: bots,
       operators: bots.reduce({}) { |found, bot| found.put(bot.id, DB.Repositories.BotOperators.forBot(bot.id).or([])) },
       drafts: Drafts.pending(user.id).or([]),
       roles: roles,
-      administrator: user.canManage?(organization.id)
+      administrator: user.canManage?(organization.id),
+      serverAdmin?: user.serverAdmin?
     }
   end
 

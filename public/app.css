@@ -475,6 +475,22 @@ body.chat main > .failure { margin: 0; border-radius: 0; padding: 0.4rem 1rem; }
 .picks-list { list-style: none; max-height: 16rem; overflow-y: auto; margin: 0; padding: 0; }
 .picks-list li { padding: 0.3rem 0; border-top: 1px solid var(--line); }
 .asking .picks-list input, .asking .access input { width: auto; margin: 0; }
+.manage-people { width: min(52rem, 100%); }
+.people-invite { margin: 1rem 0; }
+.people-invite-row { display: flex; gap: 0.5rem; margin-top: 0.35rem; }
+.people-invite-row input { flex: 1 1 auto; min-width: 0; }
+.managed-people { list-style: none; max-height: 48vh; overflow-y: auto; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.managed-person { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 0.8fr) auto; align-items: center; gap: 0.65rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.managed-person-name { min-width: 0; }
+.managed-person-name strong, .managed-person-name span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.managed-person-name span { color: var(--muted); font-size: 0.8rem; }
+.managed-person-role { display: flex; align-items: center; gap: 0.35rem; }
+.managed-person-role select { min-width: 0; }
+.remove-person { color: var(--owed); }
+@media (max-width: 40rem) {
+  .managed-person { grid-template-columns: 1fr auto; }
+  .managed-person-role { grid-column: 1 / -1; }
+}
 .team h3 { margin: 1.25rem 0 0.4rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .mates { list-style: none; margin: 0; padding: 0; }
 .mates li { display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0; }

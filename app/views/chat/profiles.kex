@@ -62,11 +62,13 @@ let pane(tab, user, sidebar) do
         sidebar.organization.name
       end
       let role = sidebar.roles.get(person.id).or(Grant.Member)
-      let roleShown = role == Grant.Admin then "Administrator" else (role == Grant.ReadOnly then "Read-only" else "Member")
+      let roleShown = sidebar.serverAdmins.contains?(person.id)
+        then "Server administrator"
+        else (role == Grant.Admin then "Administrator" else (role == Grant.ReadOnly then "Read-only" else "Member"))
       let admin? = role == Grant.Admin
       let member? = role == Grant.Member
       let readOnly? = role == Grant.ReadOnly
-      let mayManage = sidebar.administrator && !person.bot? && person.id != user.id
+      let mayManage = sidebar.administrator && !person.bot? && person.id != user.id && sidebar.roles.get(person.id).set?
       profilePartial(Card {
         key: person.id,
         caption: person.shown,

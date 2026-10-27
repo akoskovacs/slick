@@ -47,7 +47,9 @@ record Sidebar do
   drafts : [Draft] = []
   unread : Unread = Unread {}
   roles : {UserId: GrantRole} = {}
+  serverAdmins : [UserId] = []
   administrator : Bool = false
+  serverAdmin? : Bool = false
 end
 
 # The conversation a tab shows, and what is beside it; `Pane {}` when it

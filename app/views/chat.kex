@@ -150,6 +150,7 @@ let index(tab, user, sidebar, pane) do
     tab.notice,
     badges.join("\n"),
     sidebar.organization.name,
+    sidebar.administrator,
     channelLines.join("\n"),
     ([selfLine] + groupLines + personLines).join("\n"),
     robotLines.join("\n"),

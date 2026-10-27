@@ -8,13 +8,19 @@ using App.Live.Outcome, only: [Outcome]
 using App.Live.Tab, only: [
   Tab, closed, ConversationView, FilesView, SettingsView,
   ChannelDialog, GroupDialog, PromoteDialog, AdmitDialog, TeamDialog,
-  TeamEditDialog, OrganizationDialog, InviteDialog, StatusDialog,
+  TeamEditDialog, OrganizationDialog, InviteDialog, PeopleDialog, StatusDialog,
   ProfileDialog, BotsDialog
 ]
 
 # The dialogs a tab opens by name (`dialog-open` with `dialog`).
 on : String -> Event -> Outcome
-foul on("dialog-open", event) = unchanged(opened(event.tab, given(event, "dialog")))
+foul on("dialog-open", event) do
+  let name = given(event, "dialog")
+  if name == "people" && !event.user.canManage?(event.tab.organization)
+    return unchanged(event.tab)
+  end
+  return unchanged(opened(event.tab, name))
+end
 # Closing whatever is open over the conversation: `cancel`, from a button,
 # or from Metro's live.js on Escape or a click beside a dialog.
 foul on("cancel", event) = unchanged(closed(event.tab))
@@ -36,6 +42,7 @@ private do
   let opened(tab, "team-edit") = Tab { ...closed(tab), dialog: TeamEditDialog }
   let opened(tab, "organization") = Tab { ...closed(tab), dialog: OrganizationDialog }
   let opened(tab, "invite") = Tab { ...closed(tab), dialog: InviteDialog }
+  let opened(tab, "people") = Tab { ...closed(tab), dialog: PeopleDialog }
   let opened(tab, "status") = Tab { ...closed(tab), dialog: StatusDialog }
   let opened(tab, "profile") = Tab { ...closed(tab), dialog: ProfileDialog }
   let opened(tab, "bots") = Tab { ...closed(tab), dialog: BotsDialog }

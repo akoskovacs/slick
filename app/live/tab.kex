@@ -9,7 +9,7 @@ using App.Models.Ids, only: [UserId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Attachment, only: [AttachmentId]
 
-type Dialog = NoDialog | ChannelDialog | GroupDialog | PromoteDialog | AdmitDialog | TeamDialog | TeamEditDialog | OrganizationDialog | InviteDialog | StatusDialog | ProfileDialog | BotsDialog
+type Dialog = NoDialog | ChannelDialog | GroupDialog | PromoteDialog | AdmitDialog | TeamDialog | TeamEditDialog | OrganizationDialog | InviteDialog | PeopleDialog | StatusDialog | ProfileDialog | BotsDialog
 type View = ConversationView | FilesView | SettingsView
 
 record Tab do

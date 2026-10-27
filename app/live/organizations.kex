@@ -6,7 +6,7 @@ using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused]
 using App.Live.Event, only: [Event, given, typed]
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Tab, only: [Tab, Dialog, closed, PeopleDialog]
 using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using App.Models.Ids, only: [UserId]
@@ -14,6 +14,7 @@ using App.Models.Organization, only: [OrganizationId]
 using App.Models.Organization, as: Organization
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Memberships, as: Memberships
+using DB.Repositories.Organizations, as: Organizations
 using DB.Repositories.Users, as: Users
 
 let organizationRules = rules do
@@ -43,7 +44,10 @@ foul create(user, tab, name, rootSegments) do
   end
 
   match user.createOrganization(name, slug) do
-    Error(_) => return refused(tab, App.Live.Tab.OrganizationDialog, "There is already an organization called ${name}.")
+    Error(reason) => do
+      let taken = Organizations.findBySlug(slug).map { |found| found.set? }.or(false)
+      return refused(tab, App.Live.Tab.OrganizationDialog, taken then "There is already an organization called ${name}." else reason)
+    end
     Ok(organization) => return changed(Tab { organization: organization.id })
   end
 end
@@ -51,19 +55,27 @@ end
 # Puts somebody who has registered into the tab's organization.
 invite : User -> Tab -> String -> Outcome
 foul invite(user, tab, email) do
+  let manager = tab.dialog == PeopleDialog
+  let dialog : Dialog = manager then PeopleDialog else App.Live.Tab.InviteDialog
   match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
       if !user.canManage?(organization.id)
-        return refused(tab, App.Live.Tab.InviteDialog, "Only an administrator of ${organization.name} can invite people.")
+        return refused(tab, dialog, "Only an administrator of ${organization.name} can invite people.")
       end
 
       match Users.credentials(email) do
         Ok(Just((person, _))) => match Memberships.add(organization.id, person.id) do
-          Ok(_) => return changed(Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." })
-          Error(_) => return refused(tab, App.Live.Tab.InviteDialog, "${person.shown} is already in ${organization.name}.")
+          Ok(_) => return manager
+            then changed(Tab { ...tab, dialogProblem: "", notice: "${person.shown} is now in ${organization.name}." })
+            else changed(Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." })
+          Error(reason) => return refused(tab, dialog,
+            reason == "${person.id} is already in ${organization.id}"
+              then "${person.shown} is already in ${organization.name}."
+              else reason)
         end
-        _ => return refused(tab, App.Live.Tab.InviteDialog, "Nobody has registered with ${email}. They need an account first.")
+        Ok(None) => return refused(tab, dialog, "Nobody has registered with ${email}. They need an account first.")
+        Error(reason) => return refused(tab, dialog, reason)
       end
     end
   end
@@ -81,14 +93,23 @@ foul setRole(user, tab, personId, role) do
   match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      let profile = Tab { ...closed(tab), profile: personId }
+      let managingPeople = tab.dialog == PeopleDialog
+      let profile = managingPeople then tab else Tab { ...closed(tab), profile: personId }
       if !user.canManage?(organization.id)
-        return unchanged(Tab { ...profile, failure: "Only an administrator can change a member's role." })
+        return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: "Only an administrator can change a member's role." })
+          else unchanged(Tab { ...profile, failure: "Only an administrator can change a member's role." })
       end
       let was = organization.roleOf(personId)
-      return unchanged(Tab { ...profile, failure: "They are not in ${organization.name}." }) if !was.set?
-      if selected != Just(Grant.Admin) && was == Just(Grant.Admin) && organization.admins.count <= 1
-        return unchanged(Tab { ...profile, failure: "The last administrator cannot be demoted." })
+      if !was.set?
+        return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: "They are not in ${organization.name}." })
+          else unchanged(Tab { ...profile, failure: "They are not in ${organization.name}." })
+      end
+      if selected != Just(Grant.Admin) && was == Just(Grant.Admin) && organization.admins.count <= 1 && !user.serverAdmin?
+        return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: "The last administrator cannot be demoted." })
+          else unchanged(Tab { ...profile, failure: "The last administrator cannot be demoted." })
       end
 
       let grant = Grant {
@@ -100,7 +121,9 @@ foul setRole(user, tab, personId, role) do
       }
       match Grants.grant(grant) do
         Ok(_) => return changed(Tab { ...profile, notice: "Their role has been updated." })
-        Error(reason) => return unchanged(Tab { ...profile, failure: reason })
+        Error(reason) => return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: reason })
+          else unchanged(Tab { ...profile, failure: reason })
       end
     end
   end
@@ -113,19 +136,30 @@ foul removeMember(user, tab, personId) do
   match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      let away = Tab { ...closed(tab), profile: "" }
+      let managingPeople = tab.dialog == PeopleDialog
+      let away = managingPeople then tab else Tab { ...closed(tab), profile: "" }
       if !user.canManage?(organization.id)
-        return unchanged(Tab { ...away, failure: "Only an administrator can remove a member." })
+        return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: "Only an administrator can remove a member." })
+          else unchanged(Tab { ...away, failure: "Only an administrator can remove a member." })
       end
       let was = organization.roleOf(personId)
-      return unchanged(Tab { ...away, failure: "They are not in ${organization.name}." }) if !was.set?
-      if was == Just(Grant.Admin) && organization.admins.count <= 1
-        return unchanged(Tab { ...away, failure: "The last administrator cannot be removed." })
+      if !was.set?
+        return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: "They are not in ${organization.name}." })
+          else unchanged(Tab { ...away, failure: "They are not in ${organization.name}." })
+      end
+      if was == Just(Grant.Admin) && organization.admins.count <= 1 && !user.serverAdmin?
+        return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: "The last administrator cannot be removed." })
+          else unchanged(Tab { ...away, failure: "The last administrator cannot be removed." })
       end
 
       match Grants.revoke(Grants.key(Grant.UserSubject, personId, Grant.OrganizationResource, organization.id)) do
         Ok(_) => return changed(Tab { ...away, notice: "They are no longer in ${organization.name}." })
-        Error(reason) => return unchanged(Tab { ...away, failure: reason })
+        Error(reason) => return managingPeople
+          then unchanged(Tab { ...tab, dialogProblem: reason })
+          else unchanged(Tab { ...away, failure: reason })
       end
     end
   end

@@ -172,7 +172,7 @@ end
 foul botIds -> [UserId] or! String do
   return Database.select([:id]).from(DB.Schema.Users.definition)
     .where(DB.Schema.Users.kind == Database.spelled(User.Bot))
-    .all(as: UserId)
+    .all(as: String)
 end
 
 private do
@@ -212,23 +212,21 @@ end
 # What is read of a user when nobody is signing in: everything but the
 # password line and the token digest. Known while compiling, so the queries
 # that read it are written then.
-compiled do
-  let SHOWN = [
-    :id,
-    :email,
-    :name,
-    :kind,
-    :owner_id,
-    :owner_organization_id,
-    :status_emoji,
-    :status_text,
-    :title,
-    :department,
-    :phone,
-    :time_zone,
-    :bio,
-    :nickname,
-    :nickname_shown,
-    :managed
-  ]
-end
+let SHOWN = [
+  :id,
+  :email,
+  :name,
+  :kind,
+  :owner_id,
+  :owner_organization_id,
+  :status_emoji,
+  :status_text,
+  :title,
+  :department,
+  :phone,
+  :time_zone,
+  :bio,
+  :nickname,
+  :nickname_shown,
+  :managed
+]

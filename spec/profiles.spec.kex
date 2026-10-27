@@ -1,4 +1,6 @@
 using App.Live.Tab, only: [Tab]
+using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using Spec.Support, only: [World, stepped, shown, fresh, populated]
 
@@ -24,6 +26,39 @@ foul bobsProfile(world: World) -> Tab do
 end
 
 describe("App.Live.Profiles, opening one") do
+  it("opens the server administrator's own profile outside the organization roster") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let token = App.Services.Authentication.register("Server Admin", "admin@example.com", "a long enough phrase").try
+      let admin : User = App.Services.Authentication.current(Just(token)).try
+      DB.Repositories.Grants.grant(Grant {
+        subjectType: Grant.UserSubject,
+        subjectId: admin.id,
+        resourceType: Grant.ServerResource,
+        resourceId: "",
+        role: Grant.Admin
+      }).try
+
+      let (profile, _) = stepped(world, admin, Tab { organization: world.acme.organization }, [
+        ("event", "profile-open"), ("user", admin.id)
+      ])
+      Assert.equal(profile.profile, admin.id)
+      let card = shown(world, admin, profile)
+      Assert.truthy(card.contains?("aria-label=\"Profile of Server Admin\""))
+      Assert.truthy(card.contains?("Server administrator"))
+      Assert.truthy(card.contains?("Edit profile"))
+
+      let (_, changed) = stepped(world, admin, profile, [
+        ("event", "profile-update"), ("name", "Admin Updated")
+      ])
+      Assert.truthy(changed)
+      Assert.equal(
+        DB.Repositories.Users.find(admin.id).map { |found| found.map { |user| user.name } },
+        Ok(Just("Admin Updated"))
+      )
+    end
+  end
+
   it("opens somebody's profile beside the conversation") do
     with Harmat.Connection = fresh() do
       let world = populated()
@@ -33,6 +68,7 @@ describe("App.Live.Profiles, opening one") do
       Assert.truthy(card.contains?("aria-label=\"Profile of Bob\""))
       Assert.truthy(card.contains?("mailto:bob@example.com"))
       Assert.truthy(card.contains?("data-event=\"direct-open\" data-user=\"${world.bob.id}\""))
+      Assert.truthy(card.contains?("Manage member"))
     end
   end
 

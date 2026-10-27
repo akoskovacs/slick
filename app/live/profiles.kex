@@ -24,7 +24,7 @@ foul open(user, tab, id) do
   match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      return unchanged(tab) if !organization.member?(id)
+      return unchanged(tab) if id != user.id && !organization.member?(id)
       return unchanged(Tab { ...closed(tab), thread: "", profile: id, team: "" })
     end
   end

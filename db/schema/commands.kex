@@ -6,12 +6,14 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 # Known while compiling: a query over this table is written then.
-let definition = Table.define :commands do |t|
-  t.text(:id, primaryKey: true)
-  t.text(:bot_id)
-  t.text(:name)
-  t.text(:description, default: "")
-end
+compiled do
+  let definition = Table.define :commands do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:bot_id)
+    t.text(:name)
+    t.text(:description, default: "")
+  end
 
-let id = definition.textColumn(:id)
-let botId = definition.textColumn(:bot_id)
+  let id = definition.textColumn(:id)
+  let botId = definition.textColumn(:bot_id)
+end

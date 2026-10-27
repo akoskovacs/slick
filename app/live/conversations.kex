@@ -50,7 +50,7 @@ foul openDirect(user, tab, other) do
   match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      return unchanged(tab) if !organization.member?(other)
+      return unchanged(tab) if other != user.id && !organization.member?(other)
 
       match DB.Repositories.Conversations.findOrCreateDirect(organization.id, user.id, other) do
         Ok(conversation) => return unchanged(at(organization.id, conversation.id))

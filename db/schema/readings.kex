@@ -7,15 +7,17 @@ using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
 # Known while compiling: a query over this table is written then.
-let definition = Table.define :readings do |t|
-  t.text(:id, primaryKey: true)
-  t.text(:user_id)
-  t.text(:conversation_id)
-  t.bigint(:read_at)
-  t.text(:thread_id, default: "")
-end
+compiled do
+  let definition = Table.define :readings do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:user_id)
+    t.text(:conversation_id)
+    t.bigint(:read_at)
+    t.text(:thread_id, default: "")
+  end
 
-let id = definition.textColumn(:id)
-let userId = definition.textColumn(:user_id)
-let conversationId = definition.textColumn(:conversation_id)
-let readAt = definition.wholeColumn(:read_at)
+  let id = definition.textColumn(:id)
+  let userId = definition.textColumn(:user_id)
+  let conversationId = definition.textColumn(:conversation_id)
+  let readAt = definition.wholeColumn(:read_at)
+end
