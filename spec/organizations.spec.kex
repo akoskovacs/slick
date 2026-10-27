@@ -1,11 +1,27 @@
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
+using Metro.Live.Presence, only: [Presence]
 using Spec.Support, only: [World, stepped, shown, fresh, populated, registered]
 
 # Organizations from a tab. Each example starts from a world of its own
 # (Spec.Support).
 
 describe("App.Live.Organizations, making one") do
+  it("shows a new founder the organization's general channel and its address") do
+    with Harmat.Connection = fresh() do
+      let founder = registered("Ada", "ada@example.com")
+      let (tab, changed) = App.Live.Organizations.create(founder, Tab {}, "Acme", [])
+      assert(changed, "organization-create did not report a changed tab")
+      Assert.equal(DB.Repositories.Organizations.find(tab.organization).map { |found| found.map { |org| org.id } }, Ok(Just(tab.organization)))
+      Assert.equal(DB.Repositories.Grants.organizationsOf(founder.id), Ok([tab.organization]))
+      Assert.equal(founder.organizations.map { |org| org.id }, [tab.organization])
+      Assert.equal(founder.home("").map { |org| org.id }, Just(tab.organization))
+      let html = App.Live.Chat.markup(Process.spawn(Presence {}), founder, tab)
+      assert(html.contains?("# general"), "created organization did not render #general")
+      assert(html.contains?("data-live-path=\"/acme/channels/general\""), "created organization did not navigate to #general")
+    end
+  end
+
   it("asks somebody in no organization to make one, and shows nothing else") do
     with Harmat.Connection = fresh() do
       let world = populated()

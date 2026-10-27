@@ -11,7 +11,7 @@ foul forBot(botId: UserId) -> [UserId] or! String do
     .from(DB.Schema.BotOperators.definition)
     .where(DB.Schema.BotOperators.botId == botId)
     .orderBy([:user_id])
-    .all(as: UserId)
+    .all(as: String)
 end
 
 # A bot's operators, all of them at once: the old ones and the new ones are

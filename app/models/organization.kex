@@ -18,7 +18,17 @@ end
 
 make Organization do
   # Whether this person belongs to the organization.
-  let member?(userId: UserId) -> Bool = Grants.organizationsOf(userId).or([]).contains?(@id)
+  foul member?(userId: UserId) -> Bool do
+    return true if Grants.organizationsOf(userId).or([]).contains?(@id)
+
+    let teams = Grants.teamsOf(userId).or([])
+    return Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
+      grant.role == Grant.Admin && (
+        (grant.subjectType == Grant.UserSubject && grant.subjectId == userId) ||
+        (grant.subjectType == Grant.TeamSubject && teams.contains?(grant.subjectId))
+      )
+    end
+  end
 
   # The address form of a name: its letters and digits, lower case.
   slugged : String -> String
@@ -28,7 +38,7 @@ make Organization do
   end
 
   # The administrators of this organization, by id.
-  let admins -> [UserId] = Grants.roleHolders(Grant.OrganizationResource, @id, Grant.Admin).or([])
+  foul admins -> [UserId] = Grants.roleHolders(Grant.OrganizationResource, @id, Grant.Admin).or([])
 
   # The role a person holds here, directly or through one of their teams.
   foul roleOf(userId: UserId) -> GrantRole? do

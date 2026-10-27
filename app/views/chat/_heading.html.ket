@@ -1,9 +1,12 @@
 ---
-params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String, note: String, admitting?: Bool, promotable?: Bool, botAccess: String, canAdminister: Bool, setting?: Bool]
+params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?: Bool, filed: String, note: String, admitting?: Bool, promotable?: Bool, botAccess: String, canAdminister: Bool, setting?: Bool, direct?: Bool, profileUser: String]
 ---
 <header class="heading">
   <div class="heading-row">
     <h1><%= title %></h1>
+    <% if direct? %>
+      <button type="button" class="quiet" data-event="profile-open" data-user="<%= profileUser %>">View profile</button>
+    <% end %>
   </div>
   <% if retitling? %>
     <form class="topic-form" data-live="topic-set" data-live-quiet>

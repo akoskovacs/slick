@@ -160,27 +160,30 @@ make User do
   # The strongest role held over a resource, directly or through the teams
   # this person belongs to; `None` when they hold none.
   role : GrantResourceType -> String -> GrantRole?
-  let role(resourceType, resourceId) do
+  foul role(resourceType, resourceId) do
+    return Just(Grant.Admin) if resourceType == Grant.OrganizationResource && @serverAdmin?
     let teams : [TeamId] = Grants.teamsOf(@id).or([])
     let grants = Grants.over(resourceType, resourceId).or([])
     Grant.roleFor(@id, teams, grants)
   end
 
   # Whether this person belongs to an organization.
-  let memberOf?(organizationId: OrganizationId) -> Bool do
+  foul memberOf?(organizationId: OrganizationId) -> Bool do
+    return true if @serverAdmin?
     Grants.organizationsOf(@id).or([]).contains?(organizationId)
   end
 
   # The organization at an address, if this person belongs to it.
-  let organization(slug: String) -> Organization? do
+  foul organization(slug: String) -> Organization? do
     match Organizations.findBySlug(slug) do
-      Ok(Just(organization)) => return organization.member?(@id) then Just(organization) else None
+      Ok(Just(organization)) => return memberOf?(organization.id) then Just(organization) else None
       _ => return None
     end
   end
 
   # The organizations this person belongs to, oldest membership first.
-  let organizations -> [Organization] do
+  foul organizations -> [Organization] do
+    return Organizations.all().or([]) if @serverAdmin?
     let mine = Grants.organizationsOf(@id).or([])
     mine.flatMap do |id|
       match Organizations.find(id) do
@@ -192,7 +195,14 @@ make User do
 
   # The organization named by an id, or the first this person belongs to
   # when the id is empty or does not belong to them.
-  let home(organizationId: OrganizationId) -> Organization? do
+  foul home(organizationId: OrganizationId) -> Organization? do
+    if @serverAdmin?
+      let all = Organizations.all().or([])
+      match all.find { |organization| organization.id == organizationId } do
+        Just(organization) => return Just(organization)
+        None => return all.first
+      end
+    end
     let mine : [OrganizationId] = Grants.organizationsOf(@id).or([])
     let chosen = mine.contains?(organizationId) then organizationId else mine.first.or("")
     return None if chosen.empty?
@@ -204,7 +214,7 @@ make User do
 
   # The conversation named in an organization, if this person may read it.
   # An empty id means that organization's #general.
-  let visible(organizationId: OrganizationId, conversationId: ConversationId) -> Conversation? do
+  foul visible(organizationId: OrganizationId, conversationId: ConversationId) -> Conversation? do
     match home(organizationId) do
       None => return None
       Just(organization) => do
@@ -225,7 +235,7 @@ make User do
   # Which of these conversations this person may read. Grants are fetched
   # once for each kind of resource, then used across all conversations.
   readable : [Conversation] -> [Conversation]
-  let readable(conversations) do
+  foul readable(conversations) do
     return conversations if @serverAdmin?
     let teams : [TeamId] = Grants.teamsOf(@id).or([])
     let organizationIds : [OrganizationId] = conversations
@@ -248,7 +258,7 @@ make User do
   end
 
   # Whether this person may make a channel or team in an organization.
-  let canCreate?(organizationId: OrganizationId) -> Bool do
+  foul canCreate?(organizationId: OrganizationId) -> Bool do
     return true if @serverAdmin?
     let at = role(Grant.OrganizationResource, organizationId)
     at == Just(Grant.Member) || at == Just(Grant.Admin)
@@ -256,13 +266,13 @@ make User do
 
   # Whether this person may administer an organization: invites, bots,
   # teams and channels.
-  let canManage?(organizationId: OrganizationId) -> Bool do
+  foul canManage?(organizationId: OrganizationId) -> Bool do
     return true if @serverAdmin?
     role(Grant.OrganizationResource, organizationId) == Just(Grant.Admin)
   end
 
   # Whether this person may read a conversation.
-  let canRead?(conversation: Conversation) -> Bool do
+  foul canRead?(conversation: Conversation) -> Bool do
     return true if @serverAdmin?
     if conversation.direct?
       return conversation.firstUser == @id || conversation.secondUser == @id
@@ -274,7 +284,7 @@ make User do
   end
 
   # Whether this person may say something in a conversation.
-  let canWrite?(conversation: Conversation) -> Bool do
+  foul canWrite?(conversation: Conversation) -> Bool do
     return true if @serverAdmin?
     if conversation.direct?
       return conversation.firstUser == @id || conversation.secondUser == @id
@@ -287,7 +297,7 @@ make User do
 
   # Whether this person may manage a conversation: its topic, members and
   # bot access.
-  let canAdminister?(conversation: Conversation) -> Bool do
+  foul canAdminister?(conversation: Conversation) -> Bool do
     return true if @serverAdmin?
     return true if role(Grant.OrganizationResource, conversation.organizationId) == Just(Grant.Admin)
     role(Grant.ConversationResource, conversation.id) == Just(Grant.Admin)
@@ -296,7 +306,7 @@ make User do
   # Whether this bot may read a conversation's thread — `root` "" for its
   # newest messages. People are never gated here, and a private chat is
   # the bot's own.
-  let botMayRead?(conversation: Conversation, root: MessageId) -> Bool do
+  foul botMayRead?(conversation: Conversation, root: MessageId) -> Bool do
     return true if !@bot?
     return true if conversation.direct?
     return false if conversation.botsForbidden?
@@ -314,7 +324,7 @@ make User do
 
   # Whether this user holds the server-wide administrator role, directly or
   # through a team.
-  let serverAdmin? -> Bool do
+  foul serverAdmin? -> Bool do
     let teams = Grants.teamsOf(@id).or([])
     Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
       grant.role == Grant.Admin && (

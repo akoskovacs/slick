@@ -93,9 +93,10 @@ tey seed             # once: the development workspace in the screenshot
 tey server           # http://127.0.0.1:4000
 ```
 
-Sign in as `ada@example.com`, `bob@example.com` or `eve@example.com` with
-the password `correct horse` — or register, and create an organization of
-your own.
+Sign in as `admin@example.com`, `ada@example.com`, `bob@example.com` or
+`eve@example.com` with the password `a better password` — or register, and
+create an organization of your own. The seeded server administrator can
+manage organizations across the server; Ada administers Acme.
 
 | Command | |
 | --- | --- |
@@ -103,16 +104,46 @@ your own.
 | `tey migrate` | run the migrations this database has not run |
 | `tey rollback` | undo the newest migration; `tey rollback 3` undoes three |
 | `tey seed` | migrate, then plant what the environment's database starts with |
+| `tey db:create` | create the environment's SQLite database file |
+| `tey db:drop` | drop the environment's SQLite database file |
 | `tey console` | the application in Kex's REPL, its queries logged (`bin/console`) |
 | `tey test` | the specs |
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
 | `tey dev` | the server, then the bot beside it — [slick-ai-bot](../slick-ai-bot) — once it answers; Ctrl-C stops all of them |
+
+The browser specs use Chrome and a temporary SQLite database. With the
+dependencies and ODBC port program set up as above, run them with:
+
+```sh
+tey test spec/browser/slick.spec.kex
+SHAKESPEARE_WATCH=1 tey test spec/browser/slick.spec.kex  # watch in Chrome
+```
+
+The browser dependency is the adjacent `../shakespeare` checkout. Run
+`tey install` again after changing it to refresh the locked snapshot. In
+watch mode a failed test leaves Chrome open for inspection until Enter is
+pressed in the terminal.
 
  `tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and
  `BOT_OPERATORS`, the Slick ids of the people who may allow the bot's tools
  and choose what each conversation asks. The bot uses its development token
  — `tey seed` plants one — unless `BOT_TOKEN` says otherwise, and is skipped
  when its folder (`SLICK_BOT_DIR`) is not there.
+
+The development seed creates `claude`, `muse`, and `opencode` identities.
+`tey dev` starts one bot, using the `claude` identity; the other identities
+need their own bot processes. Its default provider is Muse; for example,
+`PROVIDERS=opencode tey dev` makes that bot use OpenCode instead.
+
+To run the three identities separately alongside `tey server`, start each
+command in its own terminal from `../slick-ai-bot`. Each bot needs its own
+state file:
+
+```sh
+CLAUDE_TOKEN=slick_bot_development_claude SLICK_STATE=work/claude.json tey claude
+MUSE_TOKEN=slick_bot_development_muse SLICK_STATE=work/muse.json tey muse
+OPENCODE_TOKEN=slick_bot_development_opencode SLICK_STATE=work/opencode.json tey opencode
+```
 
 ## Settings
 
@@ -126,6 +157,11 @@ your own.
 | `LOG_SQL` | `on` or `off`: whether each query is printed, highlighted and timed, as Rails does; on in development unless set |
 | `NO_COLOR` | `1` prints queries without colors (Kex's own); they are plain anyway when the output is not a terminal |
 | `METRO_STORAGE_ROOT` | the folder uploaded files are kept in; `storage` unless set (a volume in Docker) |
+
+`tey db:create` and `tey db:drop` support SQLite: the default development or
+test database, or a SQLite ODBC `DATABASE_DSN`. They refuse a database file
+that is currently open by a process. PostgreSQL databases are managed by
+PostgreSQL and are not affected by these commands.
 
 ## Writing a message
 
@@ -216,7 +252,7 @@ README for setup.
 ```sh
 tey migrate
 tey rollback
-tey seed       # development: Acme, ada@example.com / "correct horse", a bot
+tey seed       # development: admin@example.com plus Acme and its demo users
 ```
 
 Seeds are apart from the migrations (`db/seeds.kex`), and planting them

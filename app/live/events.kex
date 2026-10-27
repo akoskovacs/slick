@@ -157,6 +157,16 @@ let heard?(event, bot, name, organizations) do
   admitted && (User.mentioned?(name, event.body) || event.replied.contains?(bot))
 end
 
+# The bot API's access values are words, rather than the database's snake
+# case enum names. In particular, slick-ai-bot uses "all" to answer in a
+# channel instead of treating a whole-channel message as a thread reply.
+accessFor : Event -> String
+let accessFor(event) do
+  return "all" if event.first != "" || event.botAccess == Conversation.AllBots
+  return "mentions" if event.botAccess == Conversation.Mentions
+  "none"
+end
+
 # An event as the bot told of it is shown it: where, as the API takes it,
 # how much of it the bot may read there ("all" in a private chat), and
 # never more than that.
@@ -170,7 +180,7 @@ let told(seat, event) do
     "thread": event.thread,
     "message": event.message,
     "at": event.at,
-    "access": event.first != "" then "all_bots" else Harmat.Database.spelled(event.botAccess)
+    "access": accessFor(event)
   }
   JSON.stringify(fields)
 end

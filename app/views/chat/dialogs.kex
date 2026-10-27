@@ -6,9 +6,10 @@ module App.Views.Chat.Dialogs
 using App.Live.Tab, only: [
   Tab, Dialog, StatusDialog, ProfileDialog, BotsDialog, ChannelDialog,
   PromoteDialog, GroupDialog, AdmitDialog, TeamDialog, TeamEditDialog,
-  OrganizationDialog, InviteDialog
+  OrganizationDialog, InviteDialog, PeopleDialog
 ]
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using App.Models.User, as: User
 using App.Models.Emoji, as: Emoji
@@ -67,6 +68,7 @@ let teamFormPartial = Template.html(Kex.embed("_team_form.html.ket"))
 let moodPartial = Template.html(Kex.embed("_mood.html.ket"))
 let detailsPartial = Template.html(Kex.embed("_details.html.ket"))
 let detailPartial = Template.html(Kex.embed("_detail.html.ket"))
+let managePeoplePartial = Template.html(Kex.embed("_manage_people.html.ket"))
 
 # The dialog a tab has open, if any.
 dialog : Tab -> Sidebar -> User -> Conversation? -> String
@@ -248,6 +250,35 @@ private do
       tab.dialogProblem,
       "Add"
     )
+  end
+  let shown(PeopleDialog, tab, sidebar, me, conversation) do
+    let rows = sidebar.people
+      .filter { |person| !person.bot? && person.id != me.id && sidebar.roles.get(person.id).set? }
+      .map do |person|
+        let role = sidebar.roles.get(person.id).or(Grant.Member)
+        let id = Template.escapeHtml(person.id)
+        let name = Template.escapeHtml(person.shown)
+        let email = Template.escapeHtml(person.email)
+        let memberSelected = role == Grant.Member then " selected" else ""
+        let adminSelected = role == Grant.Admin then " selected" else ""
+        let readOnlySelected = role == Grant.ReadOnly then " selected" else ""
+        [
+          "<li class='managed-person'><div class='managed-person-name'>",
+          "<strong>${name}</strong><span>${email}</span></div>",
+          "<form class='managed-person-role' data-live='role-set' data-live-quiet>",
+          "<input type='hidden' name='user' value='${id}'>",
+          "<label><span class='visually-hidden'>Role for ${name}</span><select name='role' aria-label='Role for ${name}'>",
+          "<option value='member'${memberSelected}>Member</option>",
+          "<option value='admin'${adminSelected}>Administrator</option>",
+          "<option value='read_only'${readOnlySelected}>Read-only</option>",
+          "</select></label><button type='submit' class='quiet'>Save</button></form>",
+          "<button type='button' class='quiet remove-person' data-event='member-remove' ",
+          "data-user='${id}' aria-label='Remove ${name}'>Remove</button></li>"
+        ].join("")
+      end
+      .join("\n")
+    let empty = rows.empty? then "<li class='empty'>No other people in this organization yet.</li>" else rows
+    return managePeoplePartial(sidebar.organization.name, empty, tab.dialogProblem)
   end
   let shown(_, tab, sidebar, me, conversation) = ""
 

@@ -77,11 +77,11 @@ end
 foul botAuthors(rootId: MessageId, botIds: [UserId]) -> [UserId] or! String do
   let root = Database.select([:user_id]).from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.id == rootId)
-    .all(as: UserId)
+    .all(as: String)
     .or([])
   let replies = Database.select([:user_id]).from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.parentId == rootId)
-    .all(as: UserId)
+    .all(as: String)
     .or([])
   return Ok((root + replies).filter { |id| botIds.contains?(id) }.uniq)
 end

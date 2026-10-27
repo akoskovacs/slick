@@ -193,7 +193,7 @@ describe("Slick") do
     with Harmat.Connection = fresh() do
       Assert.equal(DB.Seeds.planted(Test), Ok([]))
       Assert.equal(DB.Seeds.planted(Production), Ok([]))
-      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(5))
+      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(6))
       Assert.equal(DB.Seeds.planted(Development), Ok([]))
 
       let token = App.Services.Authentication.signIn("ada@example.com", DB.Seeds.PASSWORD).try
@@ -210,6 +210,10 @@ describe("Slick") do
       # for one — but only a thread of the conversation it names.
       let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}), Process.spawn(Metro.Live.Presence.Presence {}), [])
       let asBot = [("Authorization", "Bearer ${DB.Seeds.BOT_TOKEN}")]
+      let identity = site.call(Metro.WebRequest.asked("GET", "/api/me", asBot, ""))
+      Assert.equal(identity.code, 200)
+      let identityJson = identity.payload.to(String).or("")
+      Assert.truthy(identityJson.contains?("\"organizations\":[{\"name\":\"Acme\",\"slug\":\"acme\"}]"))
       let general = site.call(Metro.WebRequest.asked("GET", "/api/acme/channels/general/messages", asBot, ""))
       Assert.equal(general.code, 200)
       let said = general.payload.to(String).or("")
@@ -673,6 +677,10 @@ describe("The events bus, telling bots what happens") do
     let between = App.Live.Events.Event {
       ...publicMessage, channel: "", first: "u1", second: "b1"
     }
+    Assert.equal(App.Live.Events.accessFor(publicMessage), "all")
+    Assert.equal(App.Live.Events.accessFor(mentioned), "mentions")
+    Assert.equal(App.Live.Events.accessFor(forbidden), "none")
+    Assert.equal(App.Live.Events.accessFor(between), "all")
     Assert.equal(App.Live.Events.placed(publicMessage, "b1"), "channels/general")
     Assert.equal(App.Live.Events.placed(privateMessage, "b1"), "groups/c2")
     Assert.equal(App.Live.Events.placed(between, "b1"), "dm/u1")
@@ -736,6 +744,96 @@ describe("User, deciding from grants") do
       # Bots are users: a bot that is a member reads what a member reads.
       Assert.truthy(bot.canRead?(general))
       Assert.truthy(bot.canWrite?(general))
+
+      # A server administrator can hold that role through a team, while a
+      # lesser server grant must not add its holder to the admin roster.
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: "t1", resourceType: Grant.ServerResource, resourceId: "", role: Grant.Admin }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u2", resourceType: Grant.ServerResource, resourceId: "", role: Grant.Admin }).try
+      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u3", resourceType: Grant.ServerResource, resourceId: "", role: Grant.Member }).try
+      let serverAdmins = DB.Repositories.Grants.serverAdmins().try
+      Assert.truthy(ada.serverAdmin?)
+      Assert.truthy(serverAdmins.contains?("u1"))
+      Assert.truthy(serverAdmins.contains?("u2"))
+      Assert.falsy(serverAdmins.contains?("u3"))
+      Assert.equal(serverAdmins.count, 2)
+    end
+  end
+
+  it("seeds an explicit server administrator, including on an existing development database") do
+    with Harmat.Connection = fresh() do
+      DB.Seeds.planted(Development).try
+      let isAdmin = DB.Repositories.Users.credentials("admin@example.com").try
+        .map { |pair| match pair do (admin, _) => admin.serverAdmin? end }
+        .or(false)
+      Assert.truthy(isAdmin)
+
+      # Seeding again is safe and retains the server-wide grant.
+      DB.Seeds.planted(Development).try
+      let isStillAdmin = DB.Repositories.Users.credentials("admin@example.com").try
+        .map { |pair| match pair do (admin, _) => admin.serverAdmin? end }
+        .or(false)
+      Assert.truthy(isStillAdmin)
+    end
+  end
+
+  it("lets a server administrator manage users in every organization") do
+    with Harmat.Connection = fresh() do
+      DB.Seeds.planted(Development).try
+      let adminToken = App.Services.Authentication.signIn("admin@example.com", DB.Seeds.PASSWORD).try
+      let admin : User = App.Services.Authentication.current(Just(adminToken)).try
+      let adaToken = App.Services.Authentication.signIn("ada@example.com", DB.Seeds.PASSWORD).try
+      let ada : User = App.Services.Authentication.current(Just(adaToken)).try
+      let bobToken = App.Services.Authentication.signIn("bob@example.com", DB.Seeds.PASSWORD).try
+      let bob : User = App.Services.Authentication.current(Just(bobToken)).try
+      let other = ada.createOrganization("Other", "other").try
+      let statuses = Process.spawn(Metro.Live.Presence.Presence {})
+
+      Assert.truthy(admin.memberOf?(other.id))
+      Assert.truthy(admin.canManage?(other.id))
+      Assert.equal(admin.role(Grant.OrganizationResource, other.id), Just(Grant.Admin))
+      Assert.equal(admin.home(other.id).map { |organization| organization.id }, Just(other.id))
+      Assert.truthy(admin.organizations.any? { |organization| organization.id == other.id })
+      Assert.truthy(App.Live.Chat.markup(statuses, admin, Tab { organization: other.id }).contains?("Manage people"))
+
+      let (manager, _) = step(statuses, admin, Tab { organization: other.id }, [
+        ("event", "dialog-open"), ("dialog", "people")
+      ])
+      Assert.equal(manager.dialog, App.Live.Tab.PeopleDialog)
+      Assert.truthy(App.Live.Chat.markup(statuses, admin, manager).contains?("Manage people in Other"))
+
+      let (_, invited) = step(statuses, admin, manager, [
+        ("event", "invite-send"), ("email", "bob@example.com")
+      ])
+      Assert.truthy(invited)
+      Assert.truthy(DB.Repositories.Memberships.member?(other.id, bob.id))
+
+      let (_, changedRole) = step(statuses, admin, Tab { organization: other.id }, [
+        ("event", "role-set"), ("user", bob.id), ("role", "read_only")
+      ])
+      Assert.truthy(changedRole)
+      Assert.equal(other.roleOf(bob.id), Just(Grant.ReadOnly))
+
+      let (_, removed) = step(statuses, admin, Tab { organization: other.id }, [
+        ("event", "member-remove"), ("user", bob.id)
+      ])
+      Assert.truthy(removed)
+      Assert.falsy(DB.Repositories.Memberships.member?(other.id, bob.id))
+
+      # Server-wide rights remain in force even when the last explicit
+      # organization administrator is demoted or removed.
+      let (_, demotedLastOrgAdmin) = step(statuses, admin, Tab { organization: other.id }, [
+        ("event", "role-set"), ("user", ada.id), ("role", "member")
+      ])
+      Assert.truthy(demotedLastOrgAdmin)
+      Assert.equal(other.roleOf(ada.id), Just(Grant.Member))
+      Assert.truthy(admin.canManage?(other.id))
+
+      let (_, removedLastOrgAdmin) = step(statuses, admin, Tab { organization: other.id }, [
+        ("event", "member-remove"), ("user", ada.id)
+      ])
+      Assert.truthy(removedLastOrgAdmin)
+      Assert.falsy(DB.Repositories.Memberships.member?(other.id, ada.id))
+      Assert.truthy(admin.canManage?(other.id))
     end
   end
 end
@@ -777,7 +875,10 @@ describe("Organization, roles an administrator gives") do
       # The last administrator cannot be demoted or removed.
       let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
       Assert.truthy(demoted)
-      Assert.equal(acme.admins.count, 1)
+      let admins = DB.Repositories.Organizations.find(acme.organization).try
+        .map { |organization| organization.admins.count }
+        .or(0)
+      Assert.equal(admins, 1)
 
       let (_, selfDemote) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", ada.id), ("role", "member")])
       Assert.falsy(selfDemote)

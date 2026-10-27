@@ -1,5 +1,7 @@
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation, Channel]
+using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using Spec.Support, only: [World, stepped, shown, fresh, populated]
 
@@ -102,9 +104,58 @@ describe("App.Live.Conversations, private chats") do
       let (bobs, _) = stepped(world, world.bob, Tab {}, [("event", "direct-open"), ("user", world.ada.id)])
       Assert.truthy(!adas.conversation.empty?)
       Assert.equal(adas.conversation, bobs.conversation)
+      Assert.truthy(shown(world, world.ada, adas).contains?("data-event=\"profile-open\" data-user=\"${world.bob.id}\">View profile"))
       stepped(world, world.ada, adas, [("event", "message-send"), ("body", "between us")])
       Assert.truthy(shown(world, world.bob, bobs).contains?("between us"))
       Assert.truthy(shown(world, world.ada, adas).contains?("only the two of you"))
+    end
+  end
+
+  it("lets a server administrator chat with themselves without an organization membership") do
+    with Harmat.Connection = fresh() do
+      let world = populated()
+      let token = App.Services.Authentication.register("Server Admin", "admin@example.com", "a long enough phrase").try
+      let admin : User = App.Services.Authentication.current(Just(token)).try
+      DB.Repositories.Grants.grant(Grant {
+        subjectType: Grant.UserSubject,
+        subjectId: admin.id,
+        resourceType: Grant.ServerResource,
+        resourceId: "",
+        role: Grant.Admin
+      }).try
+
+      let (_, sentToChannel) = stepped(world, admin, Tab { organization: world.acme.organization }, [
+        ("event", "message-send"), ("body", "server admin channel message")
+      ])
+      Assert.truthy(sentToChannel)
+      let channel = shown(world, world.ada, Tab {})
+      Assert.truthy(channel.contains?("data-user=\"${admin.id}\"><strong>Server Admin</strong>"))
+      Assert.falsy(channel.contains?("data-user=\"${admin.id}\"><strong>Someone</strong>"))
+
+      let (alone, _) = stepped(world, admin, Tab { organization: world.acme.organization }, [
+        ("event", "direct-open"), ("user", admin.id)
+      ])
+      Assert.truthy(!alone.conversation.empty?)
+      let (_, sent) = stepped(world, admin, alone, [("event", "message-send"), ("body", "my private note")])
+      Assert.truthy(sent)
+      Assert.truthy(shown(world, admin, alone).contains?("my private note"))
+
+      let (adaToAdmin, _) = stepped(world, world.ada, Tab {}, [
+        ("event", "direct-open"), ("user", admin.id)
+      ])
+      let (adminToAda, _) = stepped(world, admin, Tab { organization: world.acme.organization }, [
+        ("event", "direct-open"), ("user", world.ada.id)
+      ])
+      Assert.truthy(!adaToAdmin.conversation.empty?)
+      Assert.equal(adaToAdmin.conversation, adminToAda.conversation)
+
+      let (adminProfile, _) = stepped(world, world.ada, Tab {}, [
+        ("event", "profile-open"), ("user", admin.id)
+      ])
+      let card = shown(world, world.ada, adminProfile)
+      Assert.truthy(card.contains?("aria-label=\"Profile of Server Admin\""))
+      Assert.truthy(card.contains?("Server administrator"))
+      Assert.truthy(card.contains?("data-event=\"direct-open\" data-user=\"${admin.id}\""))
     end
   end
 

@@ -70,7 +70,9 @@ let pane(
         open.group?,
         Harmat.Database.spelled(open.botAccess),
         room.administrator && (open.channel? || open.group?),
-        setting
+        setting,
+        open.direct?,
+        open.direct? then open.counterpart(room.viewer.id) else ""
       )
       let queued = cabinet.queued
         .map { |file| queuedPartial(enclosed(file, room.people, "")) }

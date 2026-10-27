@@ -5,7 +5,7 @@
 module DB.Repositories.Grants
 
 using Harmat.Database, as: Database
-using App.Models.Grant, only: [Grant, GrantId, GrantSubjectType, GrantResourceType, GrantRole, UserSubject, TeamSubject, OrganizationResource, ConversationResource, TeamResource]
+using App.Models.Grant, only: [Grant, GrantId, GrantSubjectType, GrantResourceType, GrantRole, UserSubject, TeamSubject, OrganizationResource, ConversationResource, TeamResource, ServerResource]
 using App.Models.Ids, only: [UserId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Organization, only: [OrganizationId]
@@ -85,23 +85,27 @@ end
 
 # The teams a user is in, by id.
 foul teamsOf(userId: UserId) -> [TeamId] or! String do
-  return Database.select([:resource_id]).from(DB.Schema.Grants.definition)
+  # The Kex query decoder needs the concrete String type; keep the ID alias
+  # in the repository result so callers don't lose the domain type.
+  let found : Result<[TeamId], String> = Database.select([:resource_id]).from(DB.Schema.Grants.definition)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
     .where(DB.Schema.Grants.resourceType == Database.spelled(TeamResource))
     .orderBy([:granted_at, :id])
-    .all(as: TeamId)
+    .all(as: String)
+  return found
 end
 
 # The organizations a user is in, by id — in any role, so a read-only
 # member is still in their organization — oldest grant first.
 foul organizationsOf(userId: UserId) -> [OrganizationId] or! String do
-  return Database.select([:resource_id]).from(DB.Schema.Grants.definition)
+  let found : Result<[OrganizationId], String> = Database.select([:resource_id]).from(DB.Schema.Grants.definition)
     .where(DB.Schema.Grants.subjectType == Database.spelled(UserSubject))
     .where(DB.Schema.Grants.subjectId == userId)
     .where(DB.Schema.Grants.resourceType == Database.spelled(OrganizationResource))
     .orderBy([:granted_at, :id])
-    .all(as: OrganizationId)
+    .all(as: String)
+  return found
 end
 
 # The users holding any grant over a resource, by id.
@@ -111,7 +115,23 @@ foul members(resourceType: GrantResourceType, resourceId: String) -> [UserId] or
     .where(DB.Schema.Grants.resourceType == Database.spelled(resourceType))
     .where(DB.Schema.Grants.resourceId == resourceId)
     .orderBy([:granted_at, :id])
-    .all(as: UserId)
+    .all(as: String)
+end
+
+# Users holding the server-wide administrator role, directly or through an
+# administrator team. Resolve them in a few queries rather than asking each
+# user's model separately while rendering a chat roster.
+foul serverAdmins() -> [UserId] or! String do
+  let grants = over(ServerResource, "").try
+  let direct = grants
+    .filter { |grant| grant.subjectType == UserSubject && grant.role == Grant.Admin }
+    .map { |grant| grant.subjectId }
+  let teams = grants
+    .filter { |grant| grant.subjectType == TeamSubject && grant.role == Grant.Admin }
+    .map { |grant| grant.subjectId }
+  let memberships = membersOf(TeamResource, teams).try
+  let viaTeams = teams.flatMap { |teamId| memberships.get(teamId).or([]) }
+  return Ok((direct + viaTeams).uniq)
 end
 
 # The users holding any grant over each of some resources, by resource.
@@ -160,7 +180,7 @@ foul conversationsOf(userId: UserId) -> [ConversationId] or! String do
     .where(DB.Schema.Grants.subjectId == userId)
     .where(DB.Schema.Grants.resourceType == Database.spelled(ConversationResource))
     .orderBy([:granted_at, :id])
-    .all(as: ConversationId)
+    .all(as: String)
 end
 
 # Whether a subject holds any grant over a resource.
@@ -185,7 +205,7 @@ foul roleHolders(resourceType: GrantResourceType, resourceId: String, role: Gran
     .where(DB.Schema.Grants.resourceId == resourceId)
     .where(DB.Schema.Grants.role == Database.spelled(role))
     .orderBy([:granted_at, :id])
-    .all(as: UserId)
+    .all(as: String)
 end
 
 # When a subject was granted a role over a resource, in milliseconds since
