@@ -27,13 +27,14 @@ WORKDIR /app
 # again. A dependency in a private repository needs a GitHub token to be
 # fetched: it is handed over as a build secret (GITHUB_TOKEN, through
 # docker-compose.yml), used for this one step, and is in no layer afterwards.
+# The browser specs' dependency is left out: the image runs no specs.
 COPY package.kex tey.lock ./
 RUN --mount=type=secret,id=github_token \
     token="$(cat /run/secrets/github_token 2>/dev/null || true)" \
     && if [ -n "$token" ]; then \
          git config --global url."https://x-access-token:${token}@github.com/".insteadOf "https://github.com/"; \
        fi \
-    && tey install --approve-plugins \
+    && tey install --approve-plugins --without browser \
     && rm -f "$HOME/.gitconfig"
 
 COPY . .

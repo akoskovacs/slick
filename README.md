@@ -119,9 +119,9 @@ tey test spec/browser/slick.spec.kex
 SHAKESPEARE_WATCH=1 tey test spec/browser/slick.spec.kex  # watch in Chrome
 ```
 
-The browser dependency is the adjacent `../shakespeare` checkout, locked as
-a snapshot: run `tey update shakespeare` after changing it. In
-watch mode a failed test leaves Chrome open for inspection until Enter is
+The browser dependency is a pinned Shakespeare release. To try a change to
+Shakespeare first, point `package.kex` at the adjacent checkout with
+`tey("shakespeare", path: "../shakespeare")`. In watch mode a failed test leaves Chrome open for inspection until Enter is
 pressed in the terminal.
 
  `tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and

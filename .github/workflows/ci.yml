@@ -2,7 +2,9 @@
 # they do on main or on a release tag, the image published.
 #
 #   test     in the Kex toolchain image: tey install, tey build, tey test
-#            (the specs keep their data in SQLite files)
+#            (the specs keep their data in SQLite files), then the browser
+#            specs in Debian's Chromium; when one fails, the evidence
+#            Shakespeare saved (screenshot, page HTML, address) is attached
 #   docker   docker compose builds the image and starts it beside PostgreSQL;
 #            script/smoke.sh then uses it from outside, before and after a
 #            restart
@@ -59,11 +61,14 @@ jobs:
       # The SQLite ODBC driver by the name Debian registers it under: the
       # specs make their databases with it.
       SQLITE_DRIVER: SQLite3
+      CHROME_PATH: /usr/bin/chromium
     steps:
-      - name: Install git and the ODBC drivers
+      # procps: Shakespeare's supervisor watches its parent with `ps`, and
+      # stops a stuck browser with `pkill`.
+      - name: Install git, the ODBC drivers and Chromium
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates jq ripgrep unixodbc libsqliteodbc
+          apt-get install -y --no-install-recommends git ca-certificates jq ripgrep unixodbc libsqliteodbc chromium fonts-liberation procps
 
       - uses: actions/checkout@v4
 
@@ -100,6 +105,17 @@ jobs:
 
       - name: Specs
         run: tey test
+
+      - name: Browser specs
+        run: tey test spec/browser/slick.spec.kex
+
+      - name: Keep the browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shakespeare-evidence
+          path: /tmp/shakespeare-failure-*
+          if-no-files-found: ignore
 
       - name: Precompiled query acceptance
         run: |

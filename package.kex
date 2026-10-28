@@ -23,6 +23,6 @@ package "slick" do
   tey("metro", git: "https://github.com/kexhq/metro", ref: "f13769ce427f3532dbfbe922fb289ff9b476ba21")
 
   group :browser do
-    tey("shakespeare", path: "../shakespeare")
+    tey("shakespeare", git: "https://github.com/kexhq/shakespeare", ref: "ddb58d9c0c51f7112526535d280d12d0e24c3ac0")
   end
 end
