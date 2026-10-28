@@ -10,13 +10,23 @@ record FailingDirectory do
   store : Server<DB.Store.StoreState>
 end
 
+# The store's own connection, except that looking people up fails.
 make FailingDirectory, implement: Harmat.Connection do
   foul ask(statement: Harmat.Odbc.Statement) -> [[String]] or! String do
     return Error("directory unavailable") if statement.statement.contains?("password_hash")
-    match @store.asked(statement) do
-      Ok(result) => result
-      Error(reason) => Error("store did not answer: ${reason}")
-    end
+    DB.Store.StoreConnection { store: @store }.ask(statement)
+  end
+
+  foul run(statement: Harmat.Odbc.Statement) -> Integer or! String do
+    DB.Store.StoreConnection { store: @store }.run(statement)
+  end
+
+  foul runMany(statement: Harmat.Odbc.Statement) -> Integer or! String do
+    DB.Store.StoreConnection { store: @store }.runMany(statement)
+  end
+
+  foul transaction(work: Block<Any or! String>) -> Any or! String do
+    DB.Store.StoreConnection { store: @store }.transaction(work)
   end
 end
 

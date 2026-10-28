@@ -119,8 +119,8 @@ tey test spec/browser/slick.spec.kex
 SHAKESPEARE_WATCH=1 tey test spec/browser/slick.spec.kex  # watch in Chrome
 ```
 
-The browser dependency is the adjacent `../shakespeare` checkout. Run
-`tey install` again after changing it to refresh the locked snapshot. In
+The browser dependency is the adjacent `../shakespeare` checkout, locked as
+a snapshot: run `tey update shakespeare` after changing it. In
 watch mode a failed test leaves Chrome open for inspection until Enter is
 pressed in the terminal.
 
