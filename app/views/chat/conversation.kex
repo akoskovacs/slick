@@ -102,7 +102,7 @@ let pane(
           messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
         end
         [
-          "<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">",
+          "<div class=\"messages\" id=\"messages\" data-stick=\"bottom\" data-live-hook=\"Chime\" data-room=\"${open.id}\">",
           emptied,
           bubbles.join("\n"),
           "</div>",
