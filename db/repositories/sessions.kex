@@ -4,29 +4,30 @@
 module DB.Repositories.Sessions
 
 using Harmat.Database, as: Database
+using App.Models.Ids, only: [UserId]
 
-foul admit(tokenDigest: String, userId: String, expiresAt: Integer) -> Integer or! String do
-  let row = {
-    token_digest: tokenDigest,
-    user_id: userId,
-    expires_at: expiresAt,
-    created_at: Metro.Clock.milliseconds()
-  }
-  return Database.insert(DB.Schema.Sessions)
-    .values(row)
+foul admit(tokenDigest: String, userId: UserId, expiresAt: Integer) -> Integer or! String do
+  let createdAt = Metro.Clock.milliseconds()
+  return Database.insert(DB.Schema.Sessions.definition)
+    .values({
+      token_digest: tokenDigest,
+      user_id: userId,
+      expires_at: expiresAt,
+      created_at: createdAt
+    })
     .run
 end
 
 # Whose session a digest is, and when it expires (seconds since 1970).
-foul holder(tokenDigest: String) -> (String, Integer)? or! String do
-  return Database.select().from(DB.Schema.Sessions)
+foul holder(tokenDigest: String) -> (UserId, Integer)? or! String do
+  return Database.select().from(DB.Schema.Sessions.definition)
     .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
     .first(as: Session)
     .map { |session| session.map { |held| (held.userId, held.expiresAt) } }
 end
 
 foul revoke(tokenDigest: String) -> Bool or! String do
-  return Database.delete(DB.Schema.Sessions)
+  return Database.delete(DB.Schema.Sessions.definition)
     .where(DB.Schema.Sessions.tokenDigest == tokenDigest)
     .run
     .map { |count| count > 0 }
@@ -35,7 +36,7 @@ end
 private do
   # Only the fields authentication needs; token digests stay in the query.
   record Session do
-    userId : String
+    userId : UserId
     expiresAt : Integer
   end
 end

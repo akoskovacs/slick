@@ -4,11 +4,12 @@ module App.Views.Chat.Composer
 
 using App.Views.Chat.Names, only: [shownAs]
 using App.Views.Chat.Messages, only: [Room]
+using App.Models.Emoji, as: Emoji
 
 # The emoji buttons that type into one message box.
 picked : String -> String
 let picked(target) do
-  App.Models.Emoji.KNOWN
+  Emoji.KNOWN
     .map do |code, glyph|
       [
         "<button type=\"button\" class=\"quiet\" data-insert=\"${glyph}\"",

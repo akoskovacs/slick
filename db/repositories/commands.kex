@@ -5,38 +5,31 @@ module DB.Repositories.Commands
 
 using Harmat.Database, as: Database
 using App.Models.Command, only: [Command]
+using App.Models.Ids, only: [UserId]
 
 # Replaces a bot's commands with these, all at once.
-foul declare(botId: String, commands: [Command]) -> Integer or! String do
+foul declare(botId: UserId, commands: [Command]) -> Integer or! String do
   let replaced : Integer or! String = Database.transaction do
-    Database.delete(DB.Schema.Commands)
+    Database.delete(DB.Schema.Commands.definition)
       .where(DB.Schema.Commands.botId == botId)
       .run
       .try
-    # A `.try` inside a block given to `map` would leave only that block:
-    # what failed is collected, so the transaction is undone by it.
-    let failures = commands.flatMap do |command|
-      let stored = Database.insert(DB.Schema.Commands)
-        .values({
-          id: "${botId}:${command.name}",
-          bot_id: botId,
-          name: command.name,
-          description: command.description
-        })
-        .run
-      match stored do
-        Ok(_) => []
-        Error(reason) => [reason]
-      end
+    let rows = commands.map do |command|
+      {
+        id: "${botId}:${command.name}",
+        bot_id: botId,
+        name: command.name,
+        description: command.description
+      }
     end
-    failures.empty? then Ok(commands.count) else Error(failures.first.or(""))
+    Database.insertAll(DB.Schema.Commands.definition, rows)
   end
   return replaced
 end
 
 # The commands of some bots, by name.
-foul forBots(botIds: [String]) -> [Command] or! String do
-  return Database.select().from(DB.Schema.Commands)
+foul forBots(botIds: [UserId]) -> [Command] or! String do
+  return Database.select().from(DB.Schema.Commands.definition)
     .where(DB.Schema.Commands.botId.in(botIds))
     .orderBy([:name, :bot_id])
     .all(as: Command)

@@ -4,11 +4,12 @@
 module DB.Repositories.Organizations
 
 using Harmat.Database, as: Database
-using App.Models.Organization, only: [Organization]
+using App.Models.Organization, only: [Organization, OrganizationId]
+using App.Models.Ids, only: [UserId]
 
 # Creates an organization. Fails when the address is taken: the unique
 # index on `slug` decides.
-foul create(name: String, slug: String, by: String) -> Organization or! String do
+foul create(name: String, slug: String, by: UserId) -> Organization or! String do
   let organization = Organization {
     id: Metro.Id.generate(prefix: "o"),
     slug: slug,
@@ -21,7 +22,7 @@ foul create(name: String, slug: String, by: String) -> Organization or! String d
     created_by: by,
     created_at: Metro.Clock.milliseconds()
   }
-  return Database.insert(DB.Schema.Organizations)
+  return Database.insert(DB.Schema.Organizations.definition)
     .values(row)
     .run
     .map { |_| organization }
@@ -29,20 +30,20 @@ end
 
 # The organization at this address, or `None`.
 foul findBySlug(slug: String) -> Organization? or! String do
-  return Database.select().from(DB.Schema.Organizations)
+  return Database.select().from(DB.Schema.Organizations.definition)
     .where(DB.Schema.Organizations.slug == slug)
     .first(as: Organization)
 end
 
 # The organization with this id, or `None`.
-foul find(id: String) -> Organization? or! String do
-  return Database.select().from(DB.Schema.Organizations)
+foul find(id: OrganizationId) -> Organization? or! String do
+  return Database.select().from(DB.Schema.Organizations.definition)
     .where(DB.Schema.Organizations.id == id)
     .first(as: Organization)
 end
 
 foul all() -> [Organization] or! String do
-  return Database.select().from(DB.Schema.Organizations)
+  return Database.select().from(DB.Schema.Organizations.definition)
     .orderBy([:name, :id])
     .all(as: Organization)
 end

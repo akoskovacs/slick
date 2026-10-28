@@ -2,7 +2,9 @@
 # they do on main or on a release tag, the image published.
 #
 #   test     in the Kex toolchain image: tey install, tey build, tey test
-#            (the specs keep their data in SQLite files)
+#            (the specs keep their data in SQLite files), then the browser
+#            specs in Debian's Chromium; when one fails, the evidence
+#            Shakespeare saved (screenshot, page HTML, address) is attached
 #   docker   docker compose builds the image and starts it beside PostgreSQL;
 #            script/smoke.sh then uses it from outside, before and after a
 #            restart
@@ -45,20 +47,47 @@ jobs:
   test:
     name: Build and specs
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     container:
       image: ${{ vars.KEX_IMAGE || 'ghcr.io/kexhq/kex:0.4.0-rc.2' }}
     env:
+      # The precompiler is merged in Kex main but has not shipped in a toolchain
+      # image yet. Build that compiler here and make Tey and Kex use it.
+      TEY_KEX: ${{ github.workspace }}/.kex-source/build/kex
+      KEX: ${{ github.workspace }}/.kex-source/build/kex
+      KEX_STDLIB_DIR: ${{ github.workspace }}/.kex-source/src/stdlib
+      KEX_RUNTIME_DIR: ${{ github.workspace }}/.kex-source/build/runtime/beam
+      TEY_CACHE: /github/home/.cache/tey
       # The SQLite ODBC driver by the name Debian registers it under: the
       # specs make their databases with it.
       SQLITE_DRIVER: SQLite3
+      CHROME_PATH: /usr/bin/chromium
     steps:
-      - name: Install git and the ODBC drivers
+      # procps: Shakespeare's supervisor watches its parent with `ps`, and
+      # stops a stuck browser with `pkill`.
+      - name: Install git, the ODBC drivers and Chromium
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates unixodbc libsqliteodbc
+          apt-get install -y --no-install-recommends git ca-certificates jq ripgrep unixodbc libsqliteodbc chromium fonts-liberation procps
 
       - uses: actions/checkout@v4
+
+      - name: Check out Kex with precompiled query and enum support
+        uses: actions/checkout@v4
+        with:
+          repository: kexhq/kex
+          ref: 5ad462fc2db4685f76d71bb26a07dbef29ed1ec0
+          path: .kex-source
+
+      - name: Install Kex build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential cmake libgmp-dev libpcre2-dev libreadline-dev libboost-context-dev libssl-dev erlang-dev
+
+      - name: Build Kex compiler
+        run: |
+          cmake -S .kex-source -B .kex-source/build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build .kex-source/build --parallel 2
 
       - name: Let git fetch the private dependencies
         env:
@@ -77,15 +106,51 @@ jobs:
       - name: Specs
         run: tey test
 
+      - name: Browser specs
+        run: tey test spec/browser/slick.spec.kex
+
+      - name: Keep the browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shakespeare-evidence
+          path: /tmp/shakespeare-failure-*
+          if-no-files-found: ignore
+
+      - name: Precompiled query acceptance
+        run: |
+          cache="${TEY_CACHE:-$HOME/.cache/tey}/src"
+          harmat_git="$(jq -r '.packages.harmat.git' tey.lock)"
+          harmat_key="$(printf %s "$harmat_git" | sha256sum | cut -d ' ' -f1)"
+          harmat_commit="$(jq -r '.packages.harmat.commit' tey.lock)"
+          metro_git="$(jq -r '.packages.metro.git' tey.lock)"
+          metro_key="$(printf %s "$metro_git" | sha256sum | cut -d ' ' -f1)"
+          metro_commit="$(jq -r '.packages.metro.commit' tey.lock)"
+          KEX="$GITHUB_WORKSPACE/.kex-source/build/kex" \
+          HARMAT_ROOT="$cache/$harmat_key/$harmat_commit" \
+          METRO_ROOT="$cache/$metro_key/$metro_commit" \
+            sh script/check-precompiled-queries.sh
+
   docker:
     name: Container on PostgreSQL
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       # docker-compose.yml hands this to the build as a secret.
       GITHUB_TOKEN: ${{ secrets.DEPENDENCIES_TOKEN }}
+      KEX_IMAGE: kex:ci
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out Kex with precompiled query and enum support
+        uses: actions/checkout@v4
+        with:
+          repository: kexhq/kex
+          ref: 5ad462fc2db4685f76d71bb26a07dbef29ed1ec0
+          path: .kex-source
+
+      - name: Build the Kex toolchain image
+        run: docker build -f .kex-source/docker/Dockerfile -t kex:ci .kex-source
 
       - name: Build the image
         run: docker compose build

@@ -186,6 +186,47 @@
     },
   };
 
+  // A message arriving, sounded: the lists of messages — the pane's and
+  // the thread's — keep their element across patches, so a message that
+  // appears in one, written by somebody else, has just been received. The
+  // list says which conversation or thread it shows (`data-room`); a new
+  // one — a conversation opened, a thread opened — is where listening
+  // starts, not a message, even when the one before was empty. A browser
+  // lets a page make sound only after its person has touched it; the
+  // promise `play` returns says no, and is let go.
+  let chime = null;
+
+  Metro.hooks.Chime = {
+    mounted() {
+      this.room = this.el.dataset.room;
+      this.seen = new Set(this.read());
+    },
+
+    updated() {
+      const present = this.read();
+      const fresh = present.filter((id) => !this.seen.has(id));
+      const moved = this.el.dataset.room !== this.room;
+      this.room = this.el.dataset.room;
+      this.seen = new Set(present);
+      if (moved || fresh.length === 0) return;
+      const arrived = fresh.some((id) => {
+        const said = document.getElementById(id);
+        return said && !said.classList.contains("own");
+      });
+      if (arrived) this.ring();
+    },
+
+    read() {
+      return Array.from(this.el.querySelectorAll("article.message")).map((each) => each.id);
+    },
+
+    ring() {
+      chime = chime || new Audio("/notification.mp3");
+      chime.currentTime = 0;
+      chime.play().catch(() => {});
+    },
+  };
+
   // A moment, `data-at` milliseconds since 1970, shown in the viewer's own
   // time: the time of day (`data-shows="clock"`, "14:51") or the day with
   // it ("day", "2026-10-21 14:51"). The server writes it in UTC, which a

@@ -1,5 +1,45 @@
 # Kex findings from Slick, Metro and Harmat
 
+## Filed issues
+
+- **[#586](https://github.com/kexhq/kex/issues/586): Builds should show the current phase and source file.** `tey build`
+  invokes Kex for `main.kex`; while Kex loads, checks, expands and compiles
+  its dependencies, the terminal can stay silent for minutes. There is no
+  CLI verbosity option for reporting which source file is active. The
+  `KEX_TIMINGS=1` diagnostics report aggregate phase durations, but not the
+  current file: this Slick build spent 524 seconds in the gating pre-check,
+  then another 519 seconds expanding 160 dependencies, without identifying
+  any slow file. The 17m45s build therefore gave no useful progress signal
+  until it completed. On the same day, `tey test spec/conversations.spec.kex`
+  also stayed silent for over 11 minutes while the Kex process used 100% CPU.
+
+- **[#587](https://github.com/kexhq/kex/issues/587): Realistic compiled table definitions exceed the evaluation limit.**
+  Compiling a realistic `Harmat.Table.define` can exceed Kex's 10-second
+  compile-time evaluation limit. On 2026-10-27, building Slick timed out at
+  `db/schema/users.kex:12` while evaluating the `users` table (19 columns,
+  defaults, a boolean, and `oneOf` constraints). Replacing enum reflection
+  (`Type.of(...)`) with the same literal choices as the migrations did not
+  resolve it. Removing the `compiled do` wrapper avoids this timeout, but
+  repository modules then cannot see `DB.Schema.*.definition` or its columns,
+  producing downstream type errors. Slick therefore cannot build without
+  compile-time table schemas.
+
+- **[Harmat #7](https://github.com/kexhq/harmat/issues/7): Decode scalar SQL selections through transparent ID aliases.** A SQL scalar query decoded as a transparent ID alias can return no rows.
+  In Slick, `.all(as: OrganizationId)` compiled but made `/api/me` report no
+  organizations for a bot whose organization grant was present in the
+  database. Decoding with `.all(as: String)` and assigning the result to
+  `Result<[OrganizationId], String>` preserved the ID type at the repository
+  boundary and returned the row. The same applies to `TeamId`.
+
+- **[#588](https://github.com/kexhq/kex/issues/588): Mutable locals declared before a loop reset between iterations on BEAM.** Mutable locals declared before a `loop` can revert after an iteration.
+  In the current Kex runtime, instrumenting slick-ai-bot's event loop showed
+  `current.primed?` become `true` after the initial poll, then return to
+  `false` at the start of the next loop iteration; its cursor similarly
+  returned to `0`. Each incoming event was therefore treated as an unprimed
+  event and only triggered another full poll. Carrying the bot and cursor
+  through tail-recursive calls fixed the live bot: it then received the event
+  while primed, set its status and replied `OK`.
+
 Bugs and limits met while building Slick on Kex 0.4.0-rc.1, on the BEAM.
 Rechecked on Kex main at 286c026 and filed on milestone 0.4.0, except where
 an entry says otherwise; rechecked again on `3111d30`, and each entry below

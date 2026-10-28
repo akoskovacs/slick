@@ -3,9 +3,25 @@
 # they are called in a conversation.
 module App.Models.User
 
-using App.Models.Organization, only: [OrganizationId]
+using App.Models.Organization, only: [Organization, OrganizationId]
+using App.Models.Ids, only: [UserId]
+using App.Models.Conversation, only: [Conversation, ConversationId]
+using App.Models.Conversation, as: Conversation
+using App.Models.Message, only: [MessageId]
+using App.Models.Team, only: [TeamId]
+using App.Models.Grant, only: [Grant, GrantResourceType, GrantRole]
+using App.Models.Grant, as: Grant
+using DB.Repositories.Grants, as: Grants
+using DB.Repositories.Messages, as: Messages
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Organizations, as: Organizations
+using DB.Repositories.Users, as: Users
+using DB.Repositories.Memberships, as: Memberships
 
-type UserId = String
+let BOT_TOKEN_PREFIX = "slick_bot_"
+
+type UserKind = Person | Bot
+type UserDetail = Name | Nickname | Title | Department | Phone | TimeZone | Bio
 
 # Whether a message names somebody, the way a bot looks for itself:
 # "@name", however either is cased.
@@ -16,10 +32,10 @@ record User do
   email : String
   name : String = ""
   # "person" or "bot".
-  kind : String = "person"
+  kind : UserKind = Person
   # A bot belongs to a person or to an organization: one of these is set
   # on a bot, and neither on a person.
-  ownerId : String = ""
+  ownerId : UserId = ""
   ownerOrganizationId : OrganizationId = ""
   # What they say about themselves: an emoji and a few words, either or
   # both, or neither.
@@ -42,24 +58,281 @@ record User do
   timeZone : String = ""
   # The details a sync has taken over, by column: they are shown, and are
   # not theirs to change while it has them.
-  managed : [String] = []
+  managed : [UserDetail] = []
 end
 
 # The details a profile has, by the column each is kept in, with what each
 # is called and how long it may be. `name` is the one shown everywhere,
 # unless they go by their nickname.
 let DETAILS = [
-  ("name", "Name", 40),
-  ("nickname", "Nickname", 40),
-  ("title", "Title", 80),
-  ("department", "Department", 80),
-  ("phone", "Phone", 30),
-  ("time_zone", "Time zone", 60),
-  ("bio", "Bio", 300)
+  (Name, "Name", 40),
+  (Nickname, "Nickname", 40),
+  (Title, "Title", 80),
+  (Department, "Department", 80),
+  (Phone, "Phone", 30),
+  (TimeZone, "Time zone", 60),
+  (Bio, "Bio", 300)
 ]
 
 make User do
-  let bot? -> Bool = @kind == "bot"
+  let bot? -> Bool = @kind == Bot
+
+  # The bots this person may manage in an organization: their own, plus
+  # its bots when they administer it.
+  manageableBots : Organization -> [User]
+  foul manageableBots(organization) do
+    let own : [User] = Users.botsOf(@id).or([])
+    if canManage?(organization.id)
+      return Users.botsOfOrganization(organization.id).or([]) + own
+    end
+    return own
+  end
+
+  # Whether this bot belongs to this person.
+  foul ownsBot?(id: UserId) -> Bool = Users.botsOf(@id).or([]).any? { |bot| bot.id == id }
+
+  # Whether this person may manage this bot in an organization.
+  foul mayManageBot?(organization: Organization, id: UserId) -> Bool = ownsBot?(id) || canManage?(organization.id)
+
+  # The name of a bot among those this person may manage.
+  foul managedBotName(organization: Organization, id: UserId) -> String = manageableBots(organization)
+    .find { |bot| bot.id == id }
+    .map { |bot| bot.name }
+    .or("the bot")
+
+  # Creates an organization founded by this person, with its first channel.
+  createOrganization : String -> String -> Organization or! String
+  foul createOrganization(name, slug) do
+    Harmat.Database.transaction do
+      let organization : Organization = Organizations.create(name, slug, @id).try
+      Memberships.add(organization.id, @id).try
+      Grants.grant(Grant {
+        subjectType: Grant.UserSubject,
+        subjectId: @id,
+        resourceType: Grant.OrganizationResource,
+        resourceId: organization.id,
+        role: Grant.Admin
+      }).try
+      let general : Conversation = Conversations.create(organization.id, Conversation.GENERAL, @id).try
+      Conversations.setTopic(general.id, Organization.GENERAL_TOPIC).try
+      Ok(organization)
+    end
+  end
+
+  # Makes a bot belonging to this person or to an organization. Returns its
+  # token once; only its digest is kept in storage.
+  buildBot : OrganizationId -> String -> (User, String) or! String
+  foul buildBot(organizationId, name) do
+    let id = Metro.Id.generate(prefix: "b")
+    let token = "${BOT_TOKEN_PREFIX}${Metro.Auth.Token.fresh()}"
+    let bot = User {
+      id: id, email: "${id}@bots.invalid", name: name, kind: Bot,
+      ownerId: organizationId.empty? then @id else "", ownerOrganizationId: organizationId
+    }
+    Users.createBot(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }
+  end
+
+  # Replaces a bot's token; the old token stops working.
+  renewBotToken : OrganizationId -> UserId -> String or! String
+  foul renewBotToken(organizationId, botId) do
+    let token = "${BOT_TOKEN_PREFIX}${Metro.Auth.Token.fresh()}"
+    let digest = Metro.Auth.Token.digest(token)
+    let own = Users.rekeyBot(botId, @id, digest).or(false)
+
+    return Ok(token) if own
+    return Error("That is not one of your bots.") if organizationId.empty?
+
+    let shared = Users.rekeyOrganizationBot(botId, organizationId, digest).or(false)
+    return shared then Ok(token) else Error("That is not one of your bots, or of this organization's.")
+  end
+
+  # Deletes one of this person's bots or one belonging to an organization.
+  removeBot : OrganizationId -> UserId -> Bool or! String
+  foul removeBot(organizationId, botId) do
+    let own = Users.removeBot(botId, @id).or(false)
+    return Ok(true) if own
+    return Error("That is not one of your bots.") if organizationId.empty?
+
+    let shared = Users.removeOrganizationBot(botId, organizationId).or(false)
+    return shared then Ok(true) else Error("That is not one of your bots, or of this organization's.")
+  end
+
+  # The strongest role held over a resource, directly or through the teams
+  # this person belongs to; `None` when they hold none.
+  role : GrantResourceType -> String -> GrantRole?
+  foul role(resourceType, resourceId) do
+    return Just(Grant.Admin) if resourceType == Grant.OrganizationResource && @serverAdmin?
+    let teams : [TeamId] = Grants.teamsOf(@id).or([])
+    let grants = Grants.over(resourceType, resourceId).or([])
+    Grant.roleFor(@id, teams, grants)
+  end
+
+  # Whether this person belongs to an organization.
+  foul memberOf?(organizationId: OrganizationId) -> Bool do
+    return true if @serverAdmin?
+    Grants.organizationsOf(@id).or([]).contains?(organizationId)
+  end
+
+  # The organization at an address, if this person belongs to it.
+  foul organization(slug: String) -> Organization? do
+    match Organizations.findBySlug(slug) do
+      Ok(Just(organization)) => return memberOf?(organization.id) then Just(organization) else None
+      _ => return None
+    end
+  end
+
+  # The organizations this person belongs to, oldest membership first.
+  foul organizations -> [Organization] do
+    return Organizations.all().or([]) if @serverAdmin?
+    let mine = Grants.organizationsOf(@id).or([])
+    mine.flatMap do |id|
+      match Organizations.find(id) do
+        Ok(Just(organization)) => [organization]
+        _ => []
+      end
+    end
+  end
+
+  # The organization named by an id, or the first this person belongs to
+  # when the id is empty or does not belong to them.
+  foul home(organizationId: OrganizationId) -> Organization? do
+    if @serverAdmin?
+      let all = Organizations.all().or([])
+      match all.find { |organization| organization.id == organizationId } do
+        Just(organization) => return Just(organization)
+        None => return all.first
+      end
+    end
+    let mine : [OrganizationId] = Grants.organizationsOf(@id).or([])
+    let chosen = mine.contains?(organizationId) then organizationId else mine.first.or("")
+    return None if chosen.empty?
+    match Organizations.find(chosen) do
+      Ok(Just(organization)) => return Just(organization)
+      _ => return None
+    end
+  end
+
+  # The conversation named in an organization, if this person may read it.
+  # An empty id means that organization's #general.
+  foul visible(organizationId: OrganizationId, conversationId: ConversationId) -> Conversation? do
+    match home(organizationId) do
+      None => return None
+      Just(organization) => do
+        let found = conversationId.empty?
+          then Conversations.findChannel(organization.id, Conversation.GENERAL)
+          else Conversations.find(conversationId)
+        match found do
+          Ok(Just(conversation)) => do
+            return None if conversation.organizationId != organization.id || !canRead?(conversation)
+            return Just(conversation)
+          end
+          _ => return None
+        end
+      end
+    end
+  end
+
+  # Which of these conversations this person may read. Grants are fetched
+  # once for each kind of resource, then used across all conversations.
+  readable : [Conversation] -> [Conversation]
+  foul readable(conversations) do
+    return conversations if @serverAdmin?
+    let teams : [TeamId] = Grants.teamsOf(@id).or([])
+    let organizationIds : [OrganizationId] = conversations
+      .filter { |conversation| !conversation.direct? && conversation.public? }
+      .map { |conversation| conversation.organizationId }
+      .uniq
+    let privateIds : [ConversationId] = conversations
+      .filter { |conversation| !conversation.direct? && !conversation.public? }
+      .map { |conversation| conversation.id }
+    let overOrganizations : {OrganizationId: [Grant]} = Grants.overEach(Grant.OrganizationResource, organizationIds).or({})
+    let overConversations : {ConversationId: [Grant]} = Grants.overEach(Grant.ConversationResource, privateIds).or({})
+    return conversations.filter do |conversation|
+      let over = conversation.public?
+        then overOrganizations.get(conversation.organizationId).or([])
+        else overConversations.get(conversation.id).or([])
+      conversation.direct?
+        then conversation.firstUser == @id || conversation.secondUser == @id
+        else Grant.roleFor(@id, teams, over).set?
+    end
+  end
+
+  # Whether this person may make a channel or team in an organization.
+  foul canCreate?(organizationId: OrganizationId) -> Bool do
+    return true if @serverAdmin?
+    let at = role(Grant.OrganizationResource, organizationId)
+    at == Just(Grant.Member) || at == Just(Grant.Admin)
+  end
+
+  # Whether this person may administer an organization: invites, bots,
+  # teams and channels.
+  foul canManage?(organizationId: OrganizationId) -> Bool do
+    return true if @serverAdmin?
+    role(Grant.OrganizationResource, organizationId) == Just(Grant.Admin)
+  end
+
+  # Whether this person may read a conversation.
+  foul canRead?(conversation: Conversation) -> Bool do
+    return true if @serverAdmin?
+    if conversation.direct?
+      return conversation.firstUser == @id || conversation.secondUser == @id
+    end
+    if conversation.public?
+      return role(Grant.OrganizationResource, conversation.organizationId).set?
+    end
+    role(Grant.ConversationResource, conversation.id).set?
+  end
+
+  # Whether this person may say something in a conversation.
+  foul canWrite?(conversation: Conversation) -> Bool do
+    return true if @serverAdmin?
+    if conversation.direct?
+      return conversation.firstUser == @id || conversation.secondUser == @id
+    end
+    let at = conversation.public?
+      then role(Grant.OrganizationResource, conversation.organizationId)
+      else role(Grant.ConversationResource, conversation.id)
+    at == Just(Grant.Member) || at == Just(Grant.Admin)
+  end
+
+  # Whether this person may manage a conversation: its topic, members and
+  # bot access.
+  foul canAdminister?(conversation: Conversation) -> Bool do
+    return true if @serverAdmin?
+    return true if role(Grant.OrganizationResource, conversation.organizationId) == Just(Grant.Admin)
+    role(Grant.ConversationResource, conversation.id) == Just(Grant.Admin)
+  end
+
+  # Whether this bot may read a conversation's thread — `root` "" for its
+  # newest messages. People are never gated here, and a private chat is
+  # the bot's own.
+  foul botMayRead?(conversation: Conversation, root: MessageId) -> Bool do
+    return true if !@bot?
+    return true if conversation.direct?
+    return false if conversation.botsForbidden?
+    return true if conversation.botsAll?
+    return false if root.empty?
+
+    match Messages.find(root) do
+      Ok(Just(message)) => do
+        return true if mentioned?(@name, message.body)
+        return Messages.botAuthors(root, [@id]).or([]).count > 0
+      end
+      _ => return false
+    end
+  end
+
+  # Whether this user holds the server-wide administrator role, directly or
+  # through a team.
+  foul serverAdmin? -> Bool do
+    let teams = Grants.teamsOf(@id).or([])
+    Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
+      grant.role == Grant.Admin && (
+        (grant.subjectType == Grant.UserSubject && grant.subjectId == @id) ||
+        (grant.subjectType == Grant.TeamSubject && teams.contains?(grant.subjectId))
+      )
+    end
+  end
 
   # What to call them: their nickname, if they go by it; else their name,
   # or the front of their email until they have one.
@@ -70,16 +343,15 @@ make User do
   end
 
   # One of their details, by its column; "" for no such column.
-  detail : String -> String
-  let detail("name") = @name
-  let detail("nickname") = @nickname
-  let detail("title") = @title
-  let detail("department") = @department
-  let detail("phone") = @phone
-  let detail("time_zone") = @timeZone
-  let detail("bio") = @bio
-  let detail(_) = ""
+  detail : UserDetail -> String
+  let detail(Name) = @name
+  let detail(Nickname) = @nickname
+  let detail(Title) = @title
+  let detail(Department) = @department
+  let detail(Phone) = @phone
+  let detail(TimeZone) = @timeZone
+  let detail(Bio) = @bio
 
   # Whether a sync has taken a detail over.
-  let locked?(column: String) -> Bool = @managed.contains?(column)
+  let locked?(column: UserDetail) -> Bool = @managed.contains?(column)
 end

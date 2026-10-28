@@ -20,7 +20,7 @@ foul failed(reason: String) -> Void do
 end
 
 # Runs pending migrations and says which; whether it worked.
-foul upToDate(store: Server<DB.Store.Store>) -> Bool do
+foul upToDate(store: Server<DB.Store.StoreState>) -> Bool do
   match DB.Store.migrate(store) do
     Ok(names) => do
       names.each { |name| IO.printLine("migrated ${name}") }
@@ -33,7 +33,7 @@ foul upToDate(store: Server<DB.Store.Store>) -> Bool do
   end
 end
 
-foul undone(store: Server<DB.Store.Store>, count: Integer) -> Void do
+foul undone(store: Server<DB.Store.StoreState>, count: Integer) -> Void do
   match DB.Store.rollback(store, count) do
     Ok([]) => IO.printLine("Nothing to roll back.")
     Ok(names) => names.each { |name| IO.printLine("rolled back ${name}") }
@@ -41,7 +41,7 @@ foul undone(store: Server<DB.Store.Store>, count: Integer) -> Void do
   end
 end
 
-foul served(store: Server<DB.Store.Store>) -> Void do
+foul served(store: Server<DB.Store.StoreState>) -> Void do
   let port = Metro.Environment.port()
   let bindHost = Metro.Environment.host()
   let environment = Metro.Environment.current().map { |running| running.label }.or("")
@@ -51,14 +51,18 @@ foul served(store: Server<DB.Store.Store>) -> Void do
   with Harmat.Connection = DB.Store.StoreConnection { store: store } do
     # Each request and live event, logged as configured (config/logging.kex).
     with Metro.Logger = Config.Logging.requests() do
-      let site = Config.Routes.routes(Process.spawn(Metro.Live.Hub.Hub {}), Process.spawn(App.Live.Events.Bus {}))
+      let hub = Process.spawn(Metro.Live.Hub.Hub {})
+      let events = Process.spawn(App.Live.Events.Bus {})
+      let statuses = Process.spawn(Metro.Live.Presence.Presence {})
+      let probe = Config.Routes.routes(hub, events, statuses, [])
+      let site = Config.Routes.routes(hub, events, statuses, probe.rootSegments)
       site.start(bindHost, port).try
     end
   end
 end
 
 # Plants this environment's seeds (db/seeds.kex) and says what they were.
-foul seeded(store: Server<DB.Store.Store>) -> Void do
+foul seeded(store: Server<DB.Store.StoreState>) -> Void do
   with Harmat.Connection = DB.Store.StoreConnection { store: store } do
     match Metro.Environment.current() do
       Error(reason) => failed(reason)
@@ -71,7 +75,7 @@ foul seeded(store: Server<DB.Store.Store>) -> Void do
   end
 end
 
-foul commanded(store: Server<DB.Store.Store>, args: [String]) -> Void do
+foul commanded(store: Server<DB.Store.StoreState>, args: [String]) -> Void do
   match args.first.or("server") do
     "server" => upToDate(store) then served(store) else ()
     "migrate" => upToDate(store) then IO.printLine("The database is up to date.") else ()

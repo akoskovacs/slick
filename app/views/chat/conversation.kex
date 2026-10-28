@@ -4,7 +4,8 @@
 module App.Views.Chat.Conversation
 
 using App.Live.Tab, only: [Tab]
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, PrivateChat, Group]
+using App.Models.Emoji, as: Emoji
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.Team, only: [Team]
@@ -55,11 +56,11 @@ let pane(
     ].join("")
     Just(open) => do
       let title = titled(open, room.viewer, room.people)
-      let filing = tab.view == "files"
-      let setting = tab.view == "settings" && (open.channel? || open.group?) && room.administrator
+      let filing = tab.view == App.Live.Tab.FilesView
+      let setting = tab.view == App.Live.Tab.SettingsView && (open.channel? || open.group?) && room.administrator
       let heading = headingPartial(
         title,
-        App.Models.Emoji.shown(open.topic),
+        Emoji.shown(open.topic),
         open.channel?,
         tab.retitling?,
         filing,
@@ -67,9 +68,11 @@ let pane(
         noted(open),
         open.channel? && !open.public?,
         open.group?,
-        open.botAccess,
+        Harmat.Database.spelled(open.botAccess),
         room.administrator && (open.channel? || open.group?),
-        setting
+        setting,
+        open.direct?,
+        open.direct? then open.counterpart(room.viewer.id) else ""
       )
       let queued = cabinet.queued
         .map { |file| queuedPartial(enclosed(file, room.people, "")) }
@@ -89,7 +92,7 @@ let pane(
       let shown = if filing
         filed(cabinet, room.people)
       elif setting
-        open.channel? then settingsPane(open, organization, room) else groupSettingsPartial(open.botAccess)
+        open.channel? then settingsPane(open, organization, room) else groupSettingsPartial(Harmat.Database.spelled(open.botAccess))
       else
         let uses = room.invocations.filter { |used| used.threadId.empty? }
         let bubbles = woven(room, messages, uses, "", 0, false)
@@ -99,7 +102,7 @@ let pane(
           messages.empty? then "<p class=\"empty\">Nothing here yet. Say something.</p>" else ""
         end
         [
-          "<div class=\"messages\" id=\"messages\" data-stick=\"bottom\">",
+          "<div class=\"messages\" id=\"messages\" data-stick=\"bottom\" data-live-hook=\"Chime\" data-room=\"${open.id}\">",
           emptied,
           bubbles.join("\n"),
           "</div>",
@@ -126,8 +129,8 @@ private do
   let noted(conversation) do
     let count = conversation.participants.count
     match conversation.kind do
-      "direct" => "Private: only the two of you can read this."
-      "group" => "Private: only the ${count} of you can read this."
+      PrivateChat => "Private: only the two of you can read this."
+      Group => "Private: only the ${count} of you can read this."
       _ => do
         let people = count == 1 then "1 person" else "${count} people"
         conversation.public? then "" else "🔒 Private: only its ${people} can read this."
@@ -142,7 +145,7 @@ private do
     let owners = room.teams
       .filter { |team| team.includes?(room.viewer.id) || team.id == conversation.teamId }
       .map { |team| teamOptionPartial(team.id, team.handle, team.id == conversation.teamId) }
-    settingsPartial(organization.name, conversation.public?, conversation.botAccess, owners.join(""))
+    settingsPartial(organization.name, conversation.public?, Harmat.Database.spelled(conversation.botAccess), owners.join(""))
   end
 
   # What somebody's chat with themselves is for, at the start of it.

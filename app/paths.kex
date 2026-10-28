@@ -1,16 +1,6 @@
-# The addresses Slick has, said once. The router declares its routes with
-# these, the views write links with them, and the live view reads the
-# address bar back through them.
+# Small URL helpers. Route shapes live in Config.RoutePaths and are registered
+# by Metro.Router; this module only adds the thread query string.
 module App.Paths
-
-# A channel of an organization: /acme/channels/general
-let channelPath = Metro.Path.define("/:organization/channels/:name")
-
-# The private chat with a person there: /acme/dm/u17…
-let directPath = Metro.Path.define("/:organization/dm/:person")
-
-# A group chat there: /acme/groups/g17…
-let groupPath = Metro.Path.define("/:organization/groups/:group")
 
 # Any of them, with the thread that is open beside it, if one is.
 threaded : String -> String -> String

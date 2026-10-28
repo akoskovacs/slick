@@ -1,11 +1,60 @@
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
+using Metro.Live.Presence, only: [Presence]
 using Spec.Support, only: [World, stepped, shown, fresh, populated, registered]
 
 # Organizations from a tab. Each example starts from a world of its own
 # (Spec.Support).
 
+record FailingDirectory do
+  store : Server<DB.Store.StoreState>
+end
+
+# The store's own connection, except that looking people up fails.
+make FailingDirectory, implement: Harmat.Connection do
+  foul ask(statement: Harmat.Odbc.Statement) -> [[String]] or! String do
+    return Error("directory unavailable") if statement.statement.contains?("password_hash")
+    DB.Store.StoreConnection { store: @store }.ask(statement)
+  end
+
+  foul run(statement: Harmat.Odbc.Statement) -> Integer or! String do
+    DB.Store.StoreConnection { store: @store }.run(statement)
+  end
+
+  foul runMany(statement: Harmat.Odbc.Statement) -> Integer or! String do
+    DB.Store.StoreConnection { store: @store }.runMany(statement)
+  end
+
+  foul transaction(work: Block<Any or! String>) -> Any or! String do
+    DB.Store.StoreConnection { store: @store }.transaction(work)
+  end
+end
+
 describe("App.Live.Organizations, making one") do
+  it("shows a database failure instead of claiming the name is taken") do
+    let founder = User { id: "u1", email: "founder@example.com", name: "Founder" }
+    let (failed, changed) = App.Live.Organizations.create(founder, Tab {}, "Acme", [])
+    Assert.falsy(changed)
+    Assert.equal(failed.dialog, App.Live.Tab.OrganizationDialog)
+    Assert.truthy(failed.dialogProblem.contains?("no database connected"))
+    Assert.falsy(failed.dialogProblem.contains?("already"))
+  end
+
+  it("shows a new founder the organization's general channel and its address") do
+    with Harmat.Connection = fresh() do
+      let founder = registered("Ada", "ada@example.com")
+      let (tab, changed) = App.Live.Organizations.create(founder, Tab {}, "Acme", [])
+      assert(changed, "organization-create did not report a changed tab")
+      Assert.equal(DB.Repositories.Organizations.find(tab.organization).map { |found| found.map { |org| org.id } }, Ok(Just(tab.organization)))
+      Assert.equal(DB.Repositories.Grants.organizationsOf(founder.id), Ok([tab.organization]))
+      Assert.equal(founder.organizations.map { |org| org.id }, [tab.organization])
+      Assert.equal(founder.home("").map { |org| org.id }, Just(tab.organization))
+      let html = App.Live.Chat.markup(Process.spawn(Presence {}), founder, tab)
+      assert(html.contains?("# general"), "created organization did not render #general")
+      assert(html.contains?("data-live-path=\"/acme/channels/general\""), "created organization did not navigate to #general")
+    end
+  end
+
   it("asks somebody in no organization to make one, and shows nothing else") do
     with Harmat.Connection = fresh() do
       let world = populated()
@@ -23,7 +72,7 @@ describe("App.Live.Organizations, making one") do
       let (made, changed) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "Initech")])
       Assert.truthy(changed)
       Assert.truthy(!made.organization.empty?)
-      Assert.truthy(App.Services.Authority.canManage(zed, made.organization))
+      Assert.truthy(zed.canManage?(made.organization))
       let first = shown(world, zed, made)
       Assert.truthy(first.contains?("# general"))
       Assert.truthy(first.contains?("Company-wide announcements"))
@@ -36,7 +85,7 @@ describe("App.Live.Organizations, making one") do
       let zed = registered("Zed", "zed@example.com")
       let (unnamed, _) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "!")])
       Assert.truthy(!unnamed.dialogProblem.empty?)
-      Assert.equal(unnamed.dialog, "organization")
+      Assert.equal(unnamed.dialog, App.Live.Tab.OrganizationDialog)
       let (reserved, _) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "Sign In")])
       Assert.truthy(reserved.dialogProblem.contains?("cannot be used"))
       let (taken, changed) = stepped(world, zed, Tab {}, [("event", "organization-create"), ("name", "acme corp")])
@@ -47,6 +96,18 @@ describe("App.Live.Organizations, making one") do
 end
 
 describe("App.Live.Organizations, adding people") do
+  it("shows a directory failure when an invitation cannot look up the user") do
+    let connection = fresh()
+    with Harmat.Connection = connection do
+      let world = populated()
+      with Harmat.Connection = FailingDirectory { store: connection.store } do
+        let (failed, changed) = App.Live.Organizations.invite(world.ada, world.acme, "zed@example.com")
+        Assert.falsy(changed)
+        Assert.equal(failed.dialogProblem, "directory unavailable")
+      end
+    end
+  end
+
   it("adds somebody by the email they registered with") do
     with Harmat.Connection = fresh() do
       let world = populated()

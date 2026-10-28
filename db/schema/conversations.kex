@@ -2,34 +2,39 @@
 # db/migrate/N0004_create_conversations.kex and N0021_add_groups.kex.
 module DB.Schema.Conversations
 
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :conversations do |t|
-  t.text(:id, primaryKey: true)
-  t.text(:kind, oneOf: ["channel", "direct", "group"])
-  t.text(:slug)
-  t.text(:title, default: "")
-  t.text(:topic, default: "")
-  t.text(:first_user, default: "")
-  t.text(:second_user, default: "")
-  t.text(:created_by, default: "")
-  t.bigint(:created_at)
-  t.text(:organization_id, default: "")
-  t.text(:access, default: "public", oneOf: ["public", "private"])
-  t.text(:team_id, default: "")
-  t.text(:bot_access, default: "mentions", oneOf: ["none", "mentions", "all"])
-end
+# Known while compiling: a query over this table is written then.
+compiled do
+  let definition = Table.define :conversations do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:kind, oneOf: ["channel", "private_chat", "group"])
+    t.text(:slug)
+    t.text(:title, default: "")
+    t.text(:topic, default: "")
+    t.text(:first_user, default: "")
+    t.text(:second_user, default: "")
+    t.text(:created_by, default: "")
+    t.bigint(:created_at)
+    t.text(:organization_id, default: "")
+    t.text(:access, default: "public", oneOf: ["public", "private"])
+    t.text(:team_id, default: "")
+    t.text(:bot_access, default: "mentions", oneOf: ["no_bots", "mentions", "all_bots"])
+  end
 
-let id = DB.Schema.Conversations.definition.textColumn(:id)
-let kind = DB.Schema.Conversations.definition.textColumn(:kind)
-let slug = DB.Schema.Conversations.definition.textColumn(:slug)
-let title = DB.Schema.Conversations.definition.textColumn(:title)
-let topic = DB.Schema.Conversations.definition.textColumn(:topic)
-let firstUser = DB.Schema.Conversations.definition.textColumn(:first_user)
-let secondUser = DB.Schema.Conversations.definition.textColumn(:second_user)
-let createdAt = DB.Schema.Conversations.definition.wholeColumn(:created_at)
-let organizationId = DB.Schema.Conversations.definition.textColumn(:organization_id)
-let access = DB.Schema.Conversations.definition.textColumn(:access)
-let teamId = DB.Schema.Conversations.definition.textColumn(:team_id)
-let botAccess = DB.Schema.Conversations.definition.textColumn(:bot_access)
+  let id = definition.textColumn(:id)
+  let kind = definition.textColumn(:kind)
+  let slug = definition.textColumn(:slug)
+  let title = definition.textColumn(:title)
+  let topic = definition.textColumn(:topic)
+  let firstUser = definition.textColumn(:first_user)
+  let secondUser = definition.textColumn(:second_user)
+  let createdAt = definition.wholeColumn(:created_at)
+  let organizationId = definition.textColumn(:organization_id)
+  let access = definition.textColumn(:access)
+  let teamId = definition.textColumn(:team_id)
+  let botAccess = definition.textColumn(:bot_access)
+end

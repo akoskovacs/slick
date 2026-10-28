@@ -13,15 +13,18 @@ using Metro.Live.Router, as: Live
 
 # Built where the routes are (config/routes.kex): a handler reaches the
 # `Harmat.Connection` in force when it was written.
-foul routes() -> Routes = Live.define do
-  Live.on(["conversation", "direct", "channel", "group", "topic"]) { |name, event| App.Live.Conversations.on(name, event) }
-  Live.on(["message", "draft", "file"]) { |name, event| App.Live.Messages.on(name, event) }
-  Live.on(["thread"]) { |name, event| App.Live.Threads.on(name, event) }
-  Live.on(["typing"]) { |name, event| App.Live.Statuses.on(name, event) }
-  Live.on(["team"]) { |name, event| App.Live.Teams.on(name, event) }
-  Live.on(["organization", "invite", "role", "member"]) { |name, event| App.Live.Organizations.on(name, event) }
-  Live.on(["profile", "status"]) { |name, event| App.Live.Profiles.on(name, event) }
-  Live.on(["bot"]) { |name, event| App.Live.Bots.on(name, event) }
-  Live.on(["dialog", "cancel", "view", "attention"]) { |name, event| App.Live.Navigation.on(name, event) }
-  Live.on(["visit"]) { |name, event| App.Live.Addresses.on(name, event) }
+foul routes(rootSegments: [String] = []) -> Routes do
+  let handlers = Live.define do
+    Live.on(["conversation", "direct", "channel", "group", "topic"]) { |name, event| App.Live.Conversations.on(name, event) }
+    Live.on(["message", "draft", "file"]) { |name, event| App.Live.Messages.on(name, event) }
+    Live.on(["thread"]) { |name, event| App.Live.Threads.on(name, event) }
+    Live.on(["typing"]) { |name, event| App.Live.Statuses.on(name, event) }
+    Live.on(["team"]) { |name, event| App.Live.Teams.on(name, event) }
+    Live.on(["organization", "invite", "role", "member"]) { |name, event| App.Live.Organizations.on(name, event, rootSegments) }
+    Live.on(["profile", "status"]) { |name, event| App.Live.Profiles.on(name, event) }
+    Live.on(["bot"]) { |name, event| App.Live.Bots.on(name, event) }
+    Live.on(["dialog", "cancel", "view", "attention"]) { |name, event| App.Live.Navigation.on(name, event) }
+    Live.on(["visit"]) { |name, event| App.Live.Addresses.on(name, event) }
+  end
+  Routes { handlers: handlers, rootSegments: rootSegments }
 end

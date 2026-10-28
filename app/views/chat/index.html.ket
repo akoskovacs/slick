@@ -1,5 +1,5 @@
 ---
-params: [failure: String, notice: String, rail: String, organization: String, channels: String, people: String, robots: String, teams: String, bar: String, pane: String, dialog: String, place: String, caption: String]
+params: [failure: String, notice: String, rail: String, organization: String, administrator?: Bool, channels: String, people: String, robots: String, teams: String, bar: String, pane: String, dialog: String, place: String, caption: String]
 ---
 <%== bar %>
 <% if !failure.empty? %>
@@ -16,7 +16,9 @@ params: [failure: String, notice: String, rail: String, organization: String, ch
   <nav class="sidebar">
     <div class="organization">
       <strong><%= organization %></strong>
-      <button type="button" class="quiet" data-event="dialog-open" data-dialog="invite">Add people</button>
+      <% if administrator? %>
+        <button type="button" class="quiet" data-event="dialog-open" data-dialog="people">Manage people</button>
+      <% end %>
     </div>
     <div class="sidebar-head">
       <h2>Channels</h2>

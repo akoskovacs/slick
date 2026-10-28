@@ -1,33 +1,55 @@
 # One grant of a role to a subject over a resource: who may do what where.
 #
-#   Grant { subjectType: "user", subjectId: user.id,
-#           resourceType: "organization", resourceId: org.id, role: "admin" }
+#   Grant { subjectType: UserSubject, subjectId: user.id,
+#           resourceType: OrganizationResource, resourceId: org.id, role: Admin }
 #
 # The subject is a user (person or bot) or a team; the resource a server
 # (resourceId ""), an organization, a conversation (a channel or a group
 # chat), or a team. See docs/permissions.md.
 module App.Models.Grant
 
+using App.Models.Ids, only: [UserId]
+using App.Models.Team, only: [TeamId]
+
+type GrantId = String
+type GrantSubjectType = UserSubject | TeamSubject
+type GrantResourceType = ServerResource | OrganizationResource | ConversationResource | TeamResource
+type GrantRole = Admin | Member | ReadOnly
+
 record Grant do
-  id : String = ""
+  id : GrantId = ""
   # Who holds the grant: a "user" (person or bot) or a "team".
-  subjectType : String = "user"
+  subjectType : GrantSubjectType = UserSubject
   subjectId : String
   # What it is over: "server", "organization", "conversation" or "team".
-  resourceType : String = "server"
+  resourceType : GrantResourceType = ServerResource
   # The id of that thing; "" for the server.
   resourceId : String = ""
-  # "admin", "member" or "read-only".
-  role : String = "member"
+  # "admin", "member" or "read_only".
+  role : GrantRole = Member
   # Milliseconds since 1970.
   grantedAt : Integer = 0
 end
 
-let ROLES = ["admin", "member", "read-only"]
-let SUBJECTS = ["user", "team"]
-let RESOURCES = ["server", "organization", "conversation", "team"]
-
 make Grant do
-  let admin? -> Bool = @role == "admin"
-  let readOnly? -> Bool = @role == "read-only"
+  roleFrom : String -> GrantRole?
+  let roleFrom(text) = Type.of(Admin).parse(text).optional
+
+  # The strongest role a person holds, directly or through one of their
+  # teams, among these grants.
+  roleFor : UserId -> [TeamId] -> [Grant] -> GrantRole?
+  let roleFor(userId, teamIds, grants) do
+    let roles = grants.flatMap do |grant|
+      let held = grant.subjectType == UserSubject && grant.subjectId == userId
+      let viaTeam = grant.subjectType == TeamSubject && teamIds.contains?(grant.subjectId)
+      held || viaTeam then [grant.role] else []
+    end
+    return Just(Admin) if roles.contains?(Admin)
+    return Just(Member) if roles.contains?(Member)
+    return Just(ReadOnly) if roles.contains?(ReadOnly)
+    None
+  end
+
+  let admin? -> Bool = @role == Admin
+  let readOnly? -> Bool = @role == ReadOnly
 end

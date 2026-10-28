@@ -1,0 +1,10 @@
+# Page addresses declared as Metro.Router paths. Config.Routes uses these
+# same values to register the routes; App.Paths only re-exports them for
+# filling and matching addresses.
+module Config.RoutePaths
+
+using Metro.Router, as: Router
+
+let channel = Router.routePath("/:organization/channels/:name")
+let direct = Router.routePath("/:organization/dm/:person")
+let group = Router.routePath("/:organization/groups/:group")

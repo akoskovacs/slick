@@ -3,31 +3,29 @@
 module DB.Repositories.BotOperators
 
 using Harmat.Database, as: Database
+using App.Models.Ids, only: [UserId]
 
 # A bot's operators, by their id.
-foul forBot(botId: String) -> [String] or! String do
-  return Database.select()
-    .from(DB.Schema.BotOperators)
+foul forBot(botId: UserId) -> [UserId] or! String do
+  return Database.select([:user_id])
+    .from(DB.Schema.BotOperators.definition)
     .where(DB.Schema.BotOperators.botId == botId)
     .orderBy([:user_id])
-    .pluck(:user_id)
+    .all(as: String)
 end
 
 # A bot's operators, all of them at once: the old ones and the new ones are
 # swapped in one transaction.
-foul replace(botId: String, users: [String]) -> Bool or! String do
+foul replace(botId: UserId, users: [UserId]) -> Bool or! String do
   let swapped : Integer or! String = Database.transaction do
-    let cleared = Database.delete(DB.Schema.BotOperators)
+    Database.delete(DB.Schema.BotOperators.definition)
       .where(DB.Schema.BotOperators.botId == botId)
       .run
       .try
-    users.uniq.reduce(Ok(cleared)) { |sofar, userId|
-      sofar.flatMap { |_|
-        Database.insert(DB.Schema.BotOperators)
-          .values({id: "${botId}:${userId}", bot_id: botId, user_id: userId})
-          .run
-      }
-    }
+    let rows = users.uniq.map do |userId|
+      {id: "${botId}:${userId}", bot_id: botId, user_id: userId}
+    end
+    Database.insertAll(DB.Schema.BotOperators.definition, rows)
   end
   return swapped.map { |_| true }
 end

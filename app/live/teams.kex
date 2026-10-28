@@ -6,22 +6,24 @@ module App.Live.Teams
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
-using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.Team, only: [Team]
+using App.Models.Team, only: [Team, TeamId]
+using App.Models.Team, as: Team
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
+using DB.Repositories.Memberships, as: Memberships
 
 let teamRules = rules do
   validates("name", "A team's name", [present, sized(2, 40)])
-  validates("description", "What a team is for", [sized(0, App.Models.Team.LONGEST_DESCRIPTION)])
+  validates("description", "What a team is for", [sized(0, Team.LONGEST_DESCRIPTION)])
 end
 
 # What a team a sync keeps says when somebody tries to change it here.
 let SYNCED = "kept in sync from your organization's directory: change it there."
 
 # Opens a team beside the conversation, in place of a thread or a profile.
-open : User -> Tab -> String -> Outcome
+open : User -> Tab -> TeamId -> Outcome
 foul open(user, tab, id) do
   let opened = beside(tab, id)
   return unchanged(current(user, opened).set? then opened else tab)
@@ -32,18 +34,18 @@ end
 create : User -> Tab -> String -> String -> String -> Outcome
 foul create(user, tab, name, description, given) do
   let typed = given.startsWith?("@") then given.drop(1) else given
-  let handle = typed.empty? then App.Models.Team.handled(name) else typed
+  let handle = typed.empty? then Team.handled(name) else typed
   let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
-  return refused(tab, "team", problems.first.or("")) if !problems.empty?
-  if !App.Models.Team.handle?(handle)
-    return refused(tab, "team", "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter.")
+  return refused(tab, App.Live.Tab.TeamDialog, problems.first.or("")) if !problems.empty?
+  if !Team.handle?(handle)
+    return refused(tab, App.Live.Tab.TeamDialog, "A handle has 2 to 30 lower-case letters, digits and dashes, and starts with a letter.")
   end
 
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      if !App.Services.Authority.canCreate(user, organization.id)
-        return refused(tab, "team", "You may not make a team in ${organization.name}.")
+      if !user.canCreate?(organization.id)
+        return refused(tab, App.Live.Tab.TeamDialog, "You may not make a team in ${organization.name}.")
       end
       let team = Team {
         id: "",
@@ -56,7 +58,7 @@ foul create(user, tab, name, description, given) do
 
       match DB.Repositories.Teams.create(team, user.id) do
         Ok(made) => return changed(beside(tab, made.id))
-        Error(_) => return refused(tab, "team", "There is already a team called @${handle}.")
+        Error(_) => return refused(tab, App.Live.Tab.TeamDialog, "There is already a team called @${handle}.")
       end
     end
   end
@@ -66,30 +68,30 @@ end
 update : User -> Tab -> String -> String -> Outcome
 foul update(user, tab, name, description) do
   let problems = Metro.Validation.checked(teamRules, {"name": name, "description": description}).messages
-  return refused(tab, "team-edit", problems.first.or("")) if !problems.empty?
+  return refused(tab, App.Live.Tab.TeamEditDialog, problems.first.or("")) if !problems.empty?
 
   match current(user, tab) do
     None => return unchanged(closed(tab))
     Just(team) => do
-      return refused(tab, "team-edit", "@${team.handle} is ${SYNCED}") if team.managed?
+      return refused(tab, App.Live.Tab.TeamEditDialog, "@${team.handle} is ${SYNCED}") if team.managed?
 
       match DB.Repositories.Teams.update(team.id, name, description) do
         Ok(_) => return changed(closed(tab))
-        Error(reason) => return refused(tab, "team-edit", reason)
+        Error(reason) => return refused(tab, App.Live.Tab.TeamEditDialog, reason)
       end
     end
   end
 end
 
 # Puts people of the organization in the open team.
-addMembers : User -> Tab -> [String] -> Outcome
+addMembers : User -> Tab -> [UserId] -> Outcome
 foul addMembers(user, tab, picked) do
   match current(user, tab) do
     None => return unchanged(tab)
     Just(team) => do
       return failed(tab, "@${team.handle} is ${SYNCED}") if team.managed?
 
-      let newcomers = picked.filter { |id| member?(team.organizationId, id) }
+      let newcomers = picked.filter { |id| Memberships.member?(team.organizationId, id) }
       match DB.Repositories.Teams.addMembers(team.id, newcomers) do
         Ok(count) => return (closed(tab), count > 0)
         Error(reason) => return failed(tab, reason)
@@ -99,7 +101,7 @@ foul addMembers(user, tab, picked) do
 end
 
 # Takes somebody out of the open team.
-removeMember : User -> Tab -> String -> Outcome
+removeMember : User -> Tab -> UserId -> Outcome
 foul removeMember(user, tab, id) do
   match current(user, tab) do
     None => return unchanged(tab)
@@ -133,7 +135,7 @@ private do
   foul current(user, tab) do
     return None if tab.team.empty?
 
-    match home(user, tab) do
+    match user.home(tab.organization) do
       None => return None
       Just(organization) => match DB.Repositories.Teams.find(tab.team) do
         Ok(Just(team)) => return team.organizationId == organization.id then Just(team) else None
@@ -143,7 +145,7 @@ private do
   end
 
   # The tab with a team open beside the conversation, and nothing over it.
-  beside : Tab -> String -> Tab
+  beside : Tab -> TeamId -> Tab
   let beside(tab, id) = Tab {
     ...closed(tab),
     thread: "",

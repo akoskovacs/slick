@@ -3,13 +3,17 @@
 # nothing that can be typed.
 module App.Models.Answer
 
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+using App.Models.Ids, only: [UserId]
+
 record Answer do
-  messageId : String
-  conversationId : String = ""
+  messageId : MessageId
+  conversationId : ConversationId = ""
   # Who wrote the message that asked.
-  askerId : String = ""
+  askerId : UserId = ""
   # Who answered.
-  userId : String
+  userId : UserId
   # Which of the message's blocks the form is.
   form : Integer = 0
   # The answer, a line for each field: "Deploy to: staging".

@@ -3,12 +3,12 @@
 # to its end.
 module App.Live.Unread
 
-using App.Live.Places, only: [readable]
-using App.Models.Conversation, only: [Conversation]
-using App.Models.Message, only: [Message]
-using App.Models.Organization, only: [Organization]
+using App.Models.Conversation, only: [Conversation, ConversationId]
+using App.Models.Message, only: [Message, MessageId]
+using App.Models.Organization, only: [Organization, OrganizationId]
 using App.Models.Reading, only: [Reading]
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
@@ -16,13 +16,13 @@ using DB.Repositories.Readings, as: Readings
 
 record Unread do
   # Each channel of the organization the tab is in, by id.
-  channels : {String: Integer} = {}
+  channels : {ConversationId: Integer} = {}
   # Each private chat there, by the person it is with.
-  people : {String: Integer} = {}
+  people : {UserId: Integer} = {}
   # Each group chat there, by id.
-  groups : {String: Integer} = {}
+  groups : {ConversationId: Integer} = {}
   # Every other organization they are in, all of it together, by id.
-  organizations : {String: Integer} = {}
+  organizations : {OrganizationId: Integer} = {}
   # Everywhere.
   total : Integer = 0
 end
@@ -31,11 +31,11 @@ end
 # channel and by private chat, and in each of the others altogether.
 # `marks` are how far they have read (`Readings.marks`); `open` and
 # `openThread` are what the tab shows them right now, if they are looking.
-counts : User -> Organization -> [Organization] -> [Reading] -> String -> String -> Unread
+counts : User -> Organization -> [Organization] -> [Reading] -> ConversationId -> MessageId -> Unread
 foul counts(user, current, mine, marks, open, openThread) do
   let (channels, people, groups) = countsIn(user, current, marks, open, openThread)
   let others = mine.reject { |each| each.id == current.id }
-  let elsewhere = others.reduce({}) do |found, other|
+  let elsewhere : {OrganizationId: Integer} = others.reduce({}) do |found, other|
     let (theirChannels, theirPeople, theirGroups) = countsIn(user, other, marks, "", "")
     found.put(other.id, sum(theirChannels) + sum(theirPeople) + sum(theirGroups))
   end
@@ -52,7 +52,7 @@ end
 # and the thread open beside it, if they follow it, as far as its newest
 # reply. What they are reading — the conversation, and the thread — or ""
 # for each when they are not looking.
-markRead : User -> [Reading] -> Conversation -> [Message] -> [Message] -> Bool -> (String, String)
+markRead : User -> [Reading] -> Conversation -> [Message] -> [Message] -> Bool -> (ConversationId, MessageId)
 foul markRead(user, marks, conversation, messages, thread, looking?) do
   return ("", "") if !looking?
 
@@ -82,11 +82,11 @@ private do
     user: User,
     organization: Organization,
     marks: [Reading],
-    open: String,
-    openThread: String
-  ) -> ({String: Integer}, {String: Integer}, {String: Integer}) do
+    open: ConversationId,
+    openThread: MessageId
+  ) -> ({ConversationId: Integer}, {UserId: Integer}, {ConversationId: Integer}) do
     let since = Memberships.joinedAt(organization.id, user.id)
-    let channels : [Conversation] = readable(user, Conversations.channels(organization.id).or([]))
+    let channels : [Conversation] = user.readable(Conversations.channels(organization.id).or([]))
     let chats : [Conversation] = Conversations.directs(organization.id, user.id).or([])
     let groups : [Conversation] = Conversations.groups(organization.id, user.id).or([])
     let places = (channels + chats + groups).map { |conversation| conversation.id }
@@ -104,7 +104,7 @@ private do
     let afters = (channels + chats + groups)
       .filter { |conversation| conversation.id != open }
       .reduce({}) { |found, conversation| found.put(conversation.id, readTo(conversation, marks, since)) }
-    let newer : {String: Integer} = Messages.newerCounts(afters).or({})
+    let newer : {ConversationId: Integer} = Messages.newerCounts(afters).or({})
     let counted = do |conversation|
       let replied = answered.count { |reply| reply.conversationId == conversation.id }
       newer.get(conversation.id).or(0) + replied
@@ -134,7 +134,7 @@ private do
   let newest(messages) = messages.last.map { |message| message.sentAt }.or(0)
 
   # Whether this person follows the thread a message starts.
-  following? : [Reading] -> String -> Bool
+  following? : [Reading] -> MessageId -> Bool
   let following?(marks, threadId) = !threadId.empty? && marks.any? do |mark|
     mark.threadId == threadId
   end

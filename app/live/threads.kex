@@ -3,17 +3,16 @@ module App.Live.Threads
 
 using Metro.Live.Socket, only: [unchanged]
 using App.Live.Outcome, only: [Outcome]
-using App.Live.Places, only: [visible]
 using App.Live.Event, only: [Event, given]
 using App.Live.Tab, only: [Tab, closed]
 using App.Models.Conversation, only: [Conversation]
-using App.Models.Message, only: [Message]
+using App.Models.Message, only: [Message, MessageId]
 using App.Models.User, only: [User]
 using DB.Repositories.Messages, as: Messages
 
 # The message that starts the thread this message is in — itself, when it
 # is not a reply — if it belongs to this conversation.
-root : Conversation -> String -> Message?
+root : Conversation -> MessageId -> Message?
 foul root(conversation, id) do
   return None if id.empty?
 
@@ -29,7 +28,7 @@ end
 
 # An open thread: the message that started it, then its replies. Empty
 # when no thread is open, or the one asked for is not in this conversation.
-messages : Conversation -> String -> [Message]
+messages : Conversation -> MessageId -> [Message]
 foul messages(conversation, id) do
   match root(conversation, id) do
     None => return []
@@ -41,14 +40,14 @@ foul messages(conversation, id) do
 end
 
 # The id of the message a thread starts with; "" for no thread.
-firstId : [Message] -> String
+firstId : [Message] -> MessageId
 let firstId(thread) = thread.first.map { |first| first.id }.or("")
 
 # Opens the thread a message is in beside the conversation, in place of a
 # profile or a team.
-open : User -> Tab -> String -> Outcome
+open : User -> Tab -> MessageId -> Outcome
 foul open(user, tab, id) do
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => match root(conversation, id) do
       Just(first) => return unchanged(Tab { ...closed(tab), thread: first.id, profile: "", team: "" })

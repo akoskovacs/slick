@@ -5,10 +5,12 @@ module App.Live.Profiles
 using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, sized]
 using App.Live.Outcome, only: [Outcome, refused]
-using App.Live.Places, only: [home, member?]
 using App.Live.Event, only: [Event, given, typed]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.User, only: [User]
+using App.Models.User, only: [User, UserDetail, Name]
+using App.Models.Ids, only: [UserId]
+using App.Models.User, as: User
+using App.Models.Emoji, as: Emoji
 using DB.Repositories.Users, as: Users
 
 let statusRules = rules do
@@ -17,12 +19,12 @@ end
 
 # Opens somebody's profile beside the conversation, in place of a thread or
 # a team: only of somebody in the tab's organization.
-open : User -> Tab -> String -> Outcome
+open : User -> Tab -> UserId -> Outcome
 foul open(user, tab, id) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      return unchanged(tab) if !member?(organization.id, id)
+      return unchanged(tab) if id != user.id && !organization.member?(id)
       return unchanged(Tab { ...closed(tab), thread: "", profile: id, team: "" })
     end
   end
@@ -34,29 +36,30 @@ update : User -> Tab -> [(String, String?)] -> Outcome
 foul update(user, tab, entries) do
   match Users.find(user.id) do
     Ok(Just(stored)) => do
-      let given = App.Models.User.DETAILS.map do |column, _, _|
+      let given = User.DETAILS.map do |column, _, _|
         let kept = stored.locked?(column)
-        (column, kept then stored.detail(column) else field(entries, column).trim)
+        let key = Harmat.Database.spelled(column)
+        (column, kept then stored.detail(column) else field(entries, key).trim)
       end
-      let problems = App.Models.User.DETAILS.flatMap do |column, label, longest|
+      let problems = User.DETAILS.flatMap do |column, label, longest|
         faults(column, label, longest, chosen(given, column))
       end
-      return refused(tab, "profile", problems.first.or("")) if !problems.empty?
+      return refused(tab, App.Live.Tab.ProfileDialog, problems.first.or("")) if !problems.empty?
 
       let described = User {
         ...stored,
-        name: chosen(given, "name"),
-        title: chosen(given, "title"),
-        department: chosen(given, "department"),
-        phone: chosen(given, "phone"),
-        timeZone: chosen(given, "time_zone"),
-        bio: chosen(given, "bio"),
-        nickname: chosen(given, "nickname"),
+        name: chosen(given, User.Name),
+        title: chosen(given, User.Title),
+        department: chosen(given, User.Department),
+        phone: chosen(given, User.Phone),
+        timeZone: chosen(given, User.TimeZone),
+        bio: chosen(given, User.Bio),
+        nickname: chosen(given, User.Nickname),
         nicknameShown?: field(entries, "show_nickname") == "yes"
       }
       match Users.update(described) do
         Ok(_) => return changed(closed(tab))
-        Error(reason) => return refused(tab, "profile", reason)
+        Error(reason) => return refused(tab, App.Live.Tab.ProfileDialog, reason)
       end
     end
     _ => return unchanged(tab)
@@ -68,12 +71,12 @@ end
 setStatus : User -> Tab -> String -> String -> Outcome
 foul setStatus(user, tab, emoji, saying) do
   let problems = Metro.Validation.checked(statusRules, {"text": saying}).messages
-  return refused(tab, "status", problems.first.or("")) if !problems.empty?
-  return refused(tab, "status", "Pick one of the emoji offered.") if !App.Models.Emoji.status?(emoji)
+  return refused(tab, App.Live.Tab.StatusDialog, problems.first.or("")) if !problems.empty?
+  return refused(tab, App.Live.Tab.StatusDialog, "Pick one of the emoji offered.") if !Emoji.status?(emoji)
 
   match Users.setStatus(user.id, emoji, saying) do
     Ok(_) => return changed(closed(tab))
-    Error(reason) => return refused(tab, "status", reason)
+    Error(reason) => return refused(tab, App.Live.Tab.StatusDialog, reason)
   end
 end
 
@@ -89,7 +92,7 @@ foul on(_, event) = unchanged(event.tab)
 
 private do
   # What was given for one detail.
-  chosen : [(String, String)] -> String -> String
+  chosen : [(UserDetail, String)] -> UserDetail -> String
   let chosen(pairs, column) = pairs
     .flatMap { |key, value| key == column then [value] else [] }
     .first
@@ -97,8 +100,8 @@ private do
 
   # What is wrong with what was given for one detail: a display name is
   # needed, and none may be longer than it may.
-  faults : String -> String -> Integer -> String -> [String]
-  let faults("name", label, longest, "") = ["${label} cannot be empty."]
+  faults : UserDetail -> String -> Integer -> String -> [String]
+  let faults(Name, label, longest, "") = ["${label} cannot be empty."]
   let faults(column, label, longest, text) do
     return [] if text.chars.count <= longest
     ["${label} cannot be longer than ${longest} characters."]

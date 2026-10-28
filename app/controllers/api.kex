@@ -65,9 +65,13 @@ using Net.HTTP.WebSocket, only: [Connection, Text, CloseMessage]
 using App.Controllers.Application, only: [hubFor, statusesFor, eventsFor, liveFor, userFor]
 using App.Live.Tab, only: [Tab]
 using App.Models.Command, only: [Command]
+using App.Models.Command, as: Command
 using App.Models.Conversation, only: [Conversation]
-using App.Models.Message, only: [Message]
-using App.Models.Organization, only: [Organization]
+using App.Models.Answer, only: [Answer]
+using App.Models.Invocation, only: [Invocation]
+using App.Models.Message, only: [Message, MessageId]
+using App.Models.Message, as: Message
+using App.Models.Organization, only: [Organization, OrganizationId]
 using App.Models.User, only: [User]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Messages, as: Messages
@@ -86,7 +90,7 @@ let STATUS_LONGEST = 80
 whoami : WebRequest -> WebRequest
 foul whoami(request) do
   let bot = userFor(request)
-  let mine : [Organization] = App.Live.Places.organizations(bot)
+  let mine : [Organization] = bot.organizations
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
   let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed, "operators": DB.Repositories.BotOperators.forBot(bot.id).or([])}
   return request.json(answer)
@@ -104,17 +108,17 @@ foul commandsDeclared(request) do
     let name = "${fields.get("name").or("")}".trim.lowerCase
     let named = name.startsWith?("/") then name.drop(1) else name
     let description = "${fields.get("description").or("")}".trim.replace("\n", " ")
-    if App.Models.Command.named?(named)
-      [Command { botId: bot.id, name: named, description: description.take(App.Models.Command.LONGEST_DESCRIPTION) }]
+    if Command.named?(named)
+      [Command { botId: bot.id, name: named, description: description.take(Command.LONGEST_DESCRIPTION) }]
     else
       []
     end
   end
-  if commands.count != listed.count || commands.count > App.Models.Command.MOST
+  if commands.count != listed.count || commands.count > Command.MOST
     return failed(
       request,
       422,
-      "Commands are at most ${App.Models.Command.MOST}, each a name of lower-case letters, digits and dashes."
+      "Commands are at most ${Command.MOST}, each a name of lower-case letters, digits and dashes."
     )
   end
 
@@ -134,7 +138,7 @@ foul channelList(request) do
   let organization = organizationFor(request).try
   let bot = userFor(request)
   let found : [Conversation] = Conversations.channels(organization).or([])
-  let listed : [Any] = App.Services.Authority.readable(bot, found)
+  let listed : [Any] = bot.readable(found)
     .map do |channel|
       let entry : {String: Any} = {
         "id": channel.id,
@@ -240,7 +244,7 @@ history : WebRequest -> WebRequest
 foul history(request) do
   let thread = request.query("thread").or("").trim
   let (tab, conversation) = placed(request, thread).try
-  if !App.Services.Authority.botMayRead(userFor(request), conversation, tab.thread)
+  if !userFor(request).botMayRead?(conversation, tab.thread)
     return request.json([])
   end
   return request.json(unfolded(conversation, tab.thread)) if !thread.empty?
@@ -270,7 +274,7 @@ foul posted(request) do
   end
   let event = thread.empty? then "message-send" else "message-reply"
   let (_, changed) = App.Live.Chat.handled(liveFor(request), eventsFor(request), statusesFor(request), userFor(request), tab, [("event", Just(event)), ("body", Just(body))])
-  return failed(request, 422, "Not sent: a message needs a body of at most ${App.Models.Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
+  return failed(request, 422, "Not sent: a message needs a body of at most ${Message.LONGEST} characters, and a thread has to be a message of this conversation.") if !changed
 
   hubFor(request).changed("api", "everyone")
   let people : [User] = Users.everyone.or([])
@@ -340,8 +344,8 @@ end
 evented : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
 foul evented(request, socket) do
   let bot = userFor(request)
-  let mine : [Organization] = App.Live.Places.organizations(bot)
-  let ids : [String] = mine.map { |each| each.id }
+  let mine : [Organization] = bot.organizations
+  let ids : [OrganizationId] = mine.map { |each| each.id }
   let after = request.query("after").or("0").to(Integer).or(0)
   let seat = "${Metro.Id.serial()}"
   eventsFor(request).joined(seat, bot.id, bot.name, ids, after, socket)
@@ -359,7 +363,7 @@ end
 private do
   # A response as the API tells it, with where its message is. Nothing for
   # one whose message or conversation is gone.
-  foul placedAnswer(bot: User, people: [User], given: App.Models.Answer.Answer) -> [Any] do
+  foul placedAnswer(bot: User, people: [User], given: Answer) -> [Any] do
     match Messages.find(given.messageId) do
       Ok(Just(message)) => match Conversations.find(given.conversationId) do
         Ok(Just(conversation)) => return [toldAnswer(bot, people, given, message, conversation)]
@@ -369,7 +373,7 @@ private do
     end
   end
 
-  toldAnswer : User -> [User] -> App.Models.Answer.Answer -> Message -> Conversation -> {String: Any}
+  toldAnswer : User -> [User] -> Answer -> Message -> Conversation -> {String: Any}
   let toldAnswer(bot, people, given, message, conversation) do
     let author = people.find { |person| person.id == given.userId }.map { |person| person.shown }.or("Someone")
     {
@@ -386,7 +390,7 @@ private do
     }
   end
 
-  toldInvocation : User -> [User] -> App.Models.Invocation.Invocation -> Conversation -> {String: Any}
+  toldInvocation : User -> [User] -> Invocation -> Conversation -> {String: Any}
   let toldInvocation(bot, people, used, conversation) = {
     "id": used.id,
     "command": used.command,
@@ -403,7 +407,7 @@ private do
   # A thread as the API tells it: the message it hangs from, then the
   # replies, oldest first. Nothing, when the message is not one of this
   # conversation's.
-  foul unfolded(conversation: Conversation, rootId: String) -> [Any] do
+foul unfolded(conversation: Conversation, rootId: MessageId) -> [Any] do
     match Messages.find(rootId) do
       Ok(Just(root)) => do
         let none : [Any] = []
@@ -426,7 +430,7 @@ private do
   organizationFor : WebRequest -> String or! WebRequest
   foul organizationFor(request) do
     let slug = request.param("organization").or("")
-    let tab = App.Live.Addresses.tabFor(userFor(request), App.Paths.channelPath.filled({"organization": slug, "name": "general"}))
+    let tab = App.Live.Addresses.tabFor(userFor(request), Config.RoutePaths.channel.filled({"organization": slug, "name": "general"}))
     return Error(failed(request, 404, "There is no such organization, or this bot is not in it.")) if tab.organization.empty?
     return Ok(tab.organization)
   end
@@ -438,9 +442,9 @@ private do
   foul placed(request, thread) do
     let bot = userFor(request)
     let slug = request.param("organization").or("")
-    let channel = App.Paths.channelPath.filled({"organization": slug, "name": request.param("name").or("")})
-    let direct = App.Paths.directPath.filled({"organization": slug, "person": request.param("person").or("")})
-    let group = App.Paths.groupPath.filled({"organization": slug, "group": request.param("group").or("")})
+    let channel = Config.RoutePaths.channel.filled({"organization": slug, "name": request.param("name").or("")})
+    let direct = Config.RoutePaths.direct.filled({"organization": slug, "person": request.param("person").or("")})
+    let group = Config.RoutePaths.group.filled({"organization": slug, "group": request.param("group").or("")})
     let address = if request.param("person").set?
       direct
     elif request.param("group").set?
@@ -451,7 +455,7 @@ private do
     let tab = App.Live.Addresses.tabFor(bot, App.Paths.threaded(address, thread))
     return Error(failed(request, 404, "There is no such conversation, or this bot is not in it.")) if tab.conversation.empty?
 
-    match App.Live.Places.visible(bot, tab) do
+    match bot.visible(tab.organization, tab.conversation) do
       Just(conversation) => return Ok((tab, conversation))
       None => return Error(failed(request, 404, "There is no such conversation, or this bot is not in it."))
     end

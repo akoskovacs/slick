@@ -3,9 +3,16 @@
 # adding people, a status, one's own details, and one's bots.
 module App.Views.Chat.Dialogs
 
-using App.Live.Tab, only: [Tab]
+using App.Live.Tab, only: [
+  Tab, Dialog, StatusDialog, ProfileDialog, BotsDialog, ChannelDialog,
+  PromoteDialog, GroupDialog, AdmitDialog, TeamDialog, TeamEditDialog,
+  OrganizationDialog, InviteDialog, PeopleDialog
+]
 using App.Models.Conversation, only: [Conversation]
+using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
+using App.Models.User, as: User
+using App.Models.Emoji, as: Emoji
 using App.Views.Chat.Page, only: [Sidebar]
 
 # One of my bots, in the bots dialog.
@@ -61,32 +68,33 @@ let teamFormPartial = Template.html(Kex.embed("_team_form.html.ket"))
 let moodPartial = Template.html(Kex.embed("_mood.html.ket"))
 let detailsPartial = Template.html(Kex.embed("_details.html.ket"))
 let detailPartial = Template.html(Kex.embed("_detail.html.ket"))
+let managePeoplePartial = Template.html(Kex.embed("_manage_people.html.ket"))
 
-# The dialog a tab has open, if any; "" for none.
+# The dialog a tab has open, if any.
 dialog : Tab -> Sidebar -> User -> Conversation? -> String
 let dialog(tab, sidebar, me, conversation) = shown(tab.dialog, tab, sidebar, me, conversation)
 
 private do
-  shown : String -> Tab -> Sidebar -> User -> Conversation? -> String
-  let shown("status", tab, sidebar, me, conversation) do
-    let presets = App.Models.Emoji.STATUSES.map { |glyph, words| preset(glyph, words) }
-    let statusGlyphs = App.Models.Emoji.STATUSES.map { |glyph, _| glyph }
-    let knownGlyphs = App.Models.Emoji.KNOWN.map { |_, glyph| glyph }
+  shown : Dialog -> Tab -> Sidebar -> User -> Conversation? -> String
+  let shown(StatusDialog, tab, sidebar, me, conversation) do
+    let presets = Emoji.STATUSES.map { |glyph, words| preset(glyph, words) }
+    let statusGlyphs = Emoji.STATUSES.map { |glyph, _| glyph }
+    let knownGlyphs = Emoji.KNOWN.map { |_, glyph| glyph }
     let options = ([""] + statusGlyphs + knownGlyphs).map do |glyph|
       choice(glyph, glyph == me.statusEmoji)
     end
     return moodPartial(presets.join(""), options.join(""), me.statusText, tab.dialogProblem)
   end
 
-  let shown("profile", tab, sidebar, me, conversation) do
-    let inputs = App.Models.User.DETAILS.map do |column, label, longest|
+  let shown(ProfileDialog, tab, sidebar, me, conversation) do
+    let inputs = User.DETAILS.map do |column, label, longest|
       detailPartial(Detail {
-        key: column,
+        key: Harmat.Database.spelled(column),
         caption: label,
         worth: me.detail(column),
         longest: "${longest}",
-        hint: column == "time_zone" then "Europe/Budapest" else "",
-        long?: column == "bio",
+        hint: column == User.TimeZone then "Europe/Budapest" else "",
+        long?: column == User.Bio,
         locked?: me.locked?(column)
       })
     end
@@ -98,7 +106,7 @@ private do
     )
   end
 
-  let shown("bots", tab, sidebar, me, conversation) do
+  let shown(BotsDialog, tab, sidebar, me, conversation) do
     let rows = sidebar.bots.map do |bot|
       let shared = !bot.ownerOrganizationId.empty?
       let chosen = sidebar.operators.get(bot.id).or([])
@@ -130,7 +138,7 @@ private do
     )
   end
 
-  let shown("channel", tab, sidebar, me, conversation) do
+  let shown(ChannelDialog, tab, sidebar, me, conversation) do
     let owners = sidebar.teams
       .filter { |team| team.includes?(me.id) }
       .map do |team|
@@ -148,7 +156,7 @@ private do
     )
   end
 
-  let shown("promote", tab, sidebar, me, conversation) do
+  let shown(PromoteDialog, tab, sidebar, me, conversation) do
     return channelPartial(
       "Make it a channel",
       "Everyone in this chat stays in it, with everything said so far. " +
@@ -162,7 +170,7 @@ private do
     )
   end
 
-  let shown("group", tab, sidebar, me, conversation) do
+  let shown(GroupDialog, tab, sidebar, me, conversation) do
     let others = sidebar.people.reject { |person| person.id == me.id }
     return peoplePartial(
       "Start a group chat",
@@ -174,7 +182,7 @@ private do
     )
   end
 
-  let shown("admit", tab, sidebar, me, conversation) do
+  let shown(AdmitDialog, tab, sidebar, me, conversation) do
     let outside = conversation
       .map { |open| sidebar.people.reject { |person| open.admits?(person.id) } }
       .or([])
@@ -189,7 +197,7 @@ private do
     )
   end
 
-  let shown("team", tab, sidebar, me, conversation) do
+  let shown(TeamDialog, tab, sidebar, me, conversation) do
     return teamFormPartial(
       "Create a team",
       "People mentioned all at once, who can own channels. You are in it to start with.",
@@ -203,7 +211,7 @@ private do
     )
   end
 
-  let shown("team-edit", tab, sidebar, me, conversation) do
+  let shown(TeamEditDialog, tab, sidebar, me, conversation) do
     match sidebar.teams.find { |team| team.id == tab.team } do
       Just(team) => return teamFormPartial(
         "Edit @${team.handle}",
@@ -220,7 +228,7 @@ private do
     end
   end
 
-  let shown("organization", tab, sidebar, me, conversation) do
+  let shown(OrganizationDialog, tab, sidebar, me, conversation) do
     return dialogPartial(
       "Create an organization",
       "Its own channels and people, apart from every other.",
@@ -232,7 +240,7 @@ private do
     )
   end
 
-  let shown("invite", tab, sidebar, me, conversation) do
+  let shown(InviteDialog, tab, sidebar, me, conversation) do
     return dialogPartial(
       "Add people to ${sidebar.organization.name}",
       "The email somebody registered with. They are in as soon as you add them.",
@@ -242,6 +250,35 @@ private do
       tab.dialogProblem,
       "Add"
     )
+  end
+  let shown(PeopleDialog, tab, sidebar, me, conversation) do
+    let rows = sidebar.people
+      .filter { |person| !person.bot? && person.id != me.id && sidebar.roles.get(person.id).set? }
+      .map do |person|
+        let role = sidebar.roles.get(person.id).or(Grant.Member)
+        let id = Template.escapeHtml(person.id)
+        let name = Template.escapeHtml(person.shown)
+        let email = Template.escapeHtml(person.email)
+        let memberSelected = role == Grant.Member then " selected" else ""
+        let adminSelected = role == Grant.Admin then " selected" else ""
+        let readOnlySelected = role == Grant.ReadOnly then " selected" else ""
+        [
+          "<li class='managed-person'><div class='managed-person-name'>",
+          "<strong>${name}</strong><span>${email}</span></div>",
+          "<form class='managed-person-role' data-live='role-set' data-live-quiet>",
+          "<input type='hidden' name='user' value='${id}'>",
+          "<label><span class='visually-hidden'>Role for ${name}</span><select name='role' aria-label='Role for ${name}'>",
+          "<option value='member'${memberSelected}>Member</option>",
+          "<option value='admin'${adminSelected}>Administrator</option>",
+          "<option value='read_only'${readOnlySelected}>Read-only</option>",
+          "</select></label><button type='submit' class='quiet'>Save</button></form>",
+          "<button type='button' class='quiet remove-person' data-event='member-remove' ",
+          "data-user='${id}' aria-label='Remove ${name}'>Remove</button></li>"
+        ].join("")
+      end
+      .join("\n")
+    let empty = rows.empty? then "<li class='empty'>No other people in this organization yet.</li>" else rows
+    return managePeoplePartial(sidebar.organization.name, empty, tab.dialogProblem)
   end
   let shown(_, tab, sidebar, me, conversation) = ""
 

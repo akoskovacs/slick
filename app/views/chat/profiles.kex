@@ -3,6 +3,7 @@ module App.Views.Chat.Profiles
 
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
+using App.Models.Grant, as: Grant
 using App.Views.Chat.Page, only: [Sidebar]
 
 # Somebody's profile, beside the conversation.
@@ -33,9 +34,10 @@ record Card do
   timeZone : String = ""
   # Whether it is whoever is looking.
   own? : Bool
-  # Their role in the organization: "admin", "member" or "read-only"; ""
-  # for a bot, whose role nobody changes here.
-  role : String = ""
+  # Which typed role choice the form selects.
+  admin? : Bool = false
+  member? : Bool = false
+  readOnly? : Bool = false
   # The same, in words for a person to read.
   roleShown : String = ""
   # Whether whoever is looking may change their role.
@@ -59,9 +61,14 @@ let pane(tab, user, sidebar) do
       else
         sidebar.organization.name
       end
-      let role = sidebar.roles.get(person.id).or("member")
-      let roleShown = role == "admin" then "Administrator" else (role == "read-only" then "Read-only" else "Member")
-      let mayManage = sidebar.administrator && !person.bot? && person.id != user.id
+      let role = sidebar.roles.get(person.id).or(Grant.Member)
+      let roleShown = sidebar.serverAdmins.contains?(person.id)
+        then "Server administrator"
+        else (role == Grant.Admin then "Administrator" else (role == Grant.ReadOnly then "Read-only" else "Member"))
+      let admin? = role == Grant.Admin
+      let member? = role == Grant.Member
+      let readOnly? = role == Grant.ReadOnly
+      let mayManage = sidebar.administrator && !person.bot? && person.id != user.id && sidebar.roles.get(person.id).set?
       profilePartial(Card {
         key: person.id,
         caption: person.shown,
@@ -76,7 +83,9 @@ let pane(tab, user, sidebar) do
         keeper: keeper,
         keeperKey: owner.map { |each| each.id }.or(""),
         own?: person.id == user.id,
-        role: role,
+        admin?: admin?,
+        member?: member?,
+        readOnly?: readOnly?,
         roleShown: roleShown,
         manageable?: mayManage,
         name: person.shown == person.name then "" else person.name,

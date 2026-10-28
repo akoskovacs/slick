@@ -6,7 +6,6 @@ module App.Live.Statuses
 using Metro.Live.Socket, only: [unchanged]
 using Metro.Live.Presence, only: [Presence]
 using App.Live.Outcome, only: [Outcome]
-using App.Live.Places, only: [visible]
 using App.Live.Event, only: [Event]
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
@@ -20,7 +19,7 @@ let TYPING_FOR = 6000
 # it in.
 say : Server<Presence> -> User -> Tab -> String -> Integer -> Bool
 foul say(statuses, user, tab, text, milliseconds) do
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return false
     Just(conversation) => do
       if milliseconds <= 0

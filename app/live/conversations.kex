@@ -3,15 +3,19 @@
 # channel, and what a conversation is about.
 module App.Live.Conversations
 
+using App.Models.Conversation, only: [Conversation, ConversationId]
+using App.Models.Conversation, as: Conversation
 using Metro.Validation, only: [rules, validates, present, sized, passing]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
-using App.Live.Places, only: [home, visible, member?]
 using App.Live.Event, only: [Event, given, typed, picked]
 using App.Live.Tab, only: [Tab, closed]
-using App.Models.Team, only: [Team]
+using App.Models.Team, only: [Team, TeamId]
+using App.Models.Organization, only: [OrganizationId]
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Teams, as: Teams
+using DB.Repositories.Memberships, as: Memberships
 
 let channelRules = rules do
   validates("title", "A channel name", [
@@ -28,11 +32,11 @@ let topicRules = rules do
 end
 
 # Shows a conversation of the tab's organization this person may read.
-open : User -> Tab -> String -> Outcome
+open : User -> Tab -> ConversationId -> Outcome
 foul open(user, tab, id) do
   return unchanged(tab) if id.empty?
 
-  match visible(user, Tab { organization: tab.organization, conversation: id }) do
+  match user.visible(tab.organization, id) do
     Just(conversation) => return unchanged(at(conversation.organizationId, conversation.id))
     None => return unchanged(tab)
   end
@@ -41,12 +45,12 @@ end
 # Opens the private chat with another person of the organization, starting
 # it if need be — or with themselves: a place of their own, where nobody
 # else looks, to keep notes in and try Slick out.
-openDirect : User -> Tab -> String -> Outcome
+openDirect : User -> Tab -> UserId -> Outcome
 foul openDirect(user, tab, other) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      return unchanged(tab) if !member?(organization.id, other)
+      return unchanged(tab) if other != user.id && !organization.member?(other)
 
       match DB.Repositories.Conversations.findOrCreateDirect(organization.id, user.id, other) do
         Ok(conversation) => return unchanged(at(organization.id, conversation.id))
@@ -59,16 +63,16 @@ end
 # A channel: public, or private — to whoever made it, and to the team that
 # owns it, if one does. Only a team somebody is in can be given a channel
 # by them.
-createChannel : User -> Tab -> String -> String -> String -> Outcome
+createChannel : User -> Tab -> String -> String -> TeamId -> Outcome
 foul createChannel(user, tab, title, access, teamId) do
   let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
-  return refused(tab, "channel", problems.first.or("")) if !problems.empty?
+  return refused(tab, App.Live.Tab.ChannelDialog, problems.first.or("")) if !problems.empty?
 
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      if !App.Services.Authority.canCreate(user, organization.id)
-        return refused(tab, "channel", "You may not make a channel in ${organization.name}.")
+      if !user.canCreate?(organization.id)
+        return refused(tab, App.Live.Tab.ChannelDialog, "You may not make a channel in ${organization.name}.")
       end
       let owner : Team? = match Teams.find(teamId) do
         Ok(found) => found
@@ -77,12 +81,16 @@ foul createChannel(user, tab, title, access, teamId) do
       let owns = owner
         .map { |team| team.organizationId == organization.id && team.includes?(user.id) }
         .or(teamId.empty?)
-      return refused(tab, "channel", "A channel can only be made for a team you are in.") if !owns
+      return refused(tab, App.Live.Tab.ChannelDialog, "A channel can only be made for a team you are in.") if !owns
 
-      let kept = access == "private" then "private" else "public"
+      let requestedAccess = access.empty? then Just(Conversation.Public) else Conversation.accessFrom(access)
+      let kept = match requestedAccess do
+        Just(access) => access
+        None => return refused(tab, App.Live.Tab.ChannelDialog, "Pick who may read the channel.")
+      end
       match DB.Repositories.Conversations.create(organization.id, title, user.id, access: kept, teamId: teamId) do
         Ok(channel) => return changed(at(organization.id, channel.id))
-        Error(_) => return refused(tab, "channel", "There is already a channel called ${title}.")
+        Error(_) => return refused(tab, App.Live.Tab.ChannelDialog, "There is already a channel called ${title}.")
       end
     end
   end
@@ -90,18 +98,18 @@ end
 
 # Starts a group chat with the people picked, or opens the one they already
 # have; with one person picked, the private chat with them.
-createGroup : User -> Tab -> [String] -> Outcome
+createGroup : User -> Tab -> [UserId] -> Outcome
 foul createGroup(user, tab, picked) do
-  match home(user, tab) do
+  match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      let others = picked.uniq.filter { |id| id != user.id && member?(organization.id, id) }
-      return refused(tab, "group", "Pick at least one person.") if others.empty?
+      let others = picked.uniq.filter { |id| id != user.id && organization.member?(id) }
+      return refused(tab, App.Live.Tab.GroupDialog, "Pick at least one person.") if others.empty?
       return openDirect(user, closed(tab), others.first.or("")) if others.count == 1
 
       match DB.Repositories.Conversations.findOrCreateGroup(organization.id, others, user.id) do
         Ok(chat) => return changed(at(organization.id, chat.id))
-        Error(reason) => return refused(tab, "group", reason)
+        Error(reason) => return refused(tab, App.Live.Tab.GroupDialog, reason)
       end
     end
   end
@@ -112,47 +120,51 @@ end
 makeChannel : User -> Tab -> String -> String -> Outcome
 foul makeChannel(user, tab, title, access) do
   let problems = Metro.Validation.checked(channelRules, {"title": title}).messages
-  return refused(tab, "promote", problems.first.or("")) if !problems.empty?
+  return refused(tab, App.Live.Tab.PromoteDialog, problems.first.or("")) if !problems.empty?
 
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
       return unchanged(closed(tab)) if !conversation.group?
-      if !App.Services.Authority.canAdminister(user, conversation)
-        return refused(tab, "promote", "Only an administrator can make this a channel.")
+      if !user.canAdminister?(conversation)
+        return refused(tab, App.Live.Tab.PromoteDialog, "Only an administrator can make this a channel.")
       end
 
-      let kept = access == "public" then "public" else "private"
+      let requestedAccess = access.empty? then Just(Conversation.Private) else Conversation.accessFrom(access)
+      let kept = match requestedAccess do
+        Just(access) => access
+        None => return refused(tab, App.Live.Tab.PromoteDialog, "Pick who may read the channel.")
+      end
       match DB.Repositories.Conversations.promote(conversation.id, title, kept) do
         Ok(channel) => return changed(at(channel.organizationId, channel.id))
-        Error(_) => return refused(tab, "promote", "There is already a channel called ${title}.")
+        Error(_) => return refused(tab, App.Live.Tab.PromoteDialog, "There is already a channel called ${title}.")
       end
     end
   end
 end
 
 # Lets people of the organization into the private channel the tab shows.
-addPeople : User -> Tab -> [String] -> Outcome
+addPeople : User -> Tab -> [UserId] -> Outcome
 foul addPeople(user, tab, picked) do
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
       return unchanged(closed(tab)) if !conversation.channel? || conversation.public?
-      if !App.Services.Authority.canAdminister(user, conversation)
-        return refused(tab, "admit", "Only an administrator of this channel can add people.")
+      if !user.canAdminister?(conversation)
+        return refused(tab, App.Live.Tab.AdmitDialog, "Only an administrator of this channel can add people.")
       end
 
       let newcomers = picked.uniq.filter do |id|
-        !conversation.admits?(id) && member?(conversation.organizationId, id)
+        !conversation.admits?(id) && Memberships.member?(conversation.organizationId, id)
       end
-      return refused(tab, "admit", "Pick at least one person who is not in it yet.") if newcomers.empty?
+      return refused(tab, App.Live.Tab.AdmitDialog, "Pick at least one person who is not in it yet.") if newcomers.empty?
 
       match DB.Repositories.Conversations.admit(conversation.id, newcomers) do
         Ok(count) => do
           let notice = count == 1 then "Added one person." else "Added ${count} people."
           return changed(Tab { ...closed(tab), notice: notice })
         end
-        Error(reason) => return refused(tab, "admit", reason)
+        Error(reason) => return refused(tab, App.Live.Tab.AdmitDialog, reason)
       end
     end
   end
@@ -166,7 +178,7 @@ foul setTopic(user, tab, topic) do
     return unchanged(Tab { ...closed(tab), retitling?: true, failure: problems.first.or("") })
   end
 
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => match DB.Repositories.Conversations.setTopic(conversation.id, topic) do
       Ok(said) => return (closed(tab), said)
@@ -178,16 +190,18 @@ end
 # Changes a channel's settings at once: who may read it, the team that owns
 # it, and how much its bots may read. Only an administrator, and only a
 # channel.
-configure : User -> Tab -> String -> String -> String -> Outcome
+configure : User -> Tab -> String -> TeamId -> String -> Outcome
 foul configure(user, tab, access, teamId, botAccess) do
-  return unchanged(inSettings(tab, "Pick who may read it.")) if !["public", "private"].contains?(access)
-  return unchanged(inSettings(tab, "Pick what bots may read.")) if !["none", "mentions", "all"].contains?(botAccess)
+  let chosenAccess = Conversation.accessFrom(access)
+  let chosenBotAccess = Conversation.botAccessFrom(botAccess)
+  return unchanged(inSettings(tab, "Pick who may read it.")) if !chosenAccess.set?
+  return unchanged(inSettings(tab, "Pick what bots may read.")) if !chosenBotAccess.set?
 
-  match visible(user, tab) do
+  match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
       return unchanged(tab) if !conversation.channel?
-      if !App.Services.Authority.canAdminister(user, conversation)
+      if !user.canAdminister?(conversation)
         return unchanged(inSettings(tab, "Only an administrator can change a channel's settings."))
       end
       if !teamId.empty? && teamId != conversation.teamId
@@ -201,8 +215,8 @@ foul configure(user, tab, access, teamId, botAccess) do
         return unchanged(inSettings(tab, "A channel can only belong to a team you are in.")) if !owns
       end
 
-      match DB.Repositories.Conversations.configure(conversation.id, access, teamId, botAccess) do
-        Ok(true) => return changed(Tab { ...closed(tab), view: "", notice: "Channel settings saved." })
+      match DB.Repositories.Conversations.configure(conversation.id, chosenAccess.or(Conversation.Public), teamId, chosenBotAccess.or(Conversation.Mentions)) do
+        Ok(true) => return changed(Tab { ...closed(tab), view: App.Live.Tab.ConversationView, notice: "Channel settings saved." })
         Ok(false) => return unchanged(inSettings(tab, "That conversation is not there."))
         Error(reason) => return unchanged(inSettings(tab, reason))
       end
@@ -226,7 +240,7 @@ foul on(_, event) = unchanged(event.tab)
 
 private do
   # A tab showing a conversation, and nothing else.
-  at : String -> String -> Tab
+  at : OrganizationId -> ConversationId -> Tab
   let at(organization, conversation) = Tab {
     organization: organization,
     conversation: conversation
@@ -236,7 +250,7 @@ private do
   inSettings : Tab -> String -> Tab
   let inSettings(tab, failure) = Tab {
     ...closed(tab),
-    view: "settings",
+    view: App.Live.Tab.SettingsView,
     failure: failure
   }
 end

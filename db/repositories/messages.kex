@@ -6,12 +6,14 @@ module DB.Repositories.Messages
 using Harmat.Database, as: Database
 # For `||` on conditions (kexhq/kex#532).
 using Harmat.Schema, only: [Cond]
-using App.Models.Message, only: [Message]
+using App.Models.Message, only: [Message, MessageId]
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Ids, only: [UserId]
 
 # The newest `limit` messages of a conversation, oldest first. Replies are
 # not among them: they are read with the thread they belong to.
-foul latest(conversationId: String, limit: Integer) -> [Message] or! String do
-  return Database.select().from(DB.Schema.Messages)
+foul latest(conversationId: ConversationId, limit: Integer) -> [Message] or! String do
+  return Database.select().from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.conversationId == conversationId)
     .where(DB.Schema.Messages.parentId == "")
     .orderBy(descending: [:sent_at, :id])
@@ -23,8 +25,8 @@ end
 # How many messages of a conversation are newer than `after`, in
 # milliseconds since 1970. Replies are not counted: they are read in their
 # thread.
-foul newerCount(conversationId: String, after: Integer) -> Integer or! String do
-  return Database.select().from(DB.Schema.Messages)
+foul newerCount(conversationId: ConversationId, after: Integer) -> Integer or! String do
+  return Database.select().from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.conversationId == conversationId)
     .where(DB.Schema.Messages.parentId == "")
     .where(DB.Schema.Messages.sentAt > after)
@@ -34,7 +36,7 @@ end
 # The same for several conversations at once, each newer than its own
 # `after`: by conversation id, in one query. A conversation with nothing
 # newer is 0.
-foul newerCounts(afters: {String: Integer}) -> {String: Integer} or! String do
+foul newerCounts(afters: {ConversationId: Integer}) -> {ConversationId: Integer} or! String do
   let each : [Cond] = afters.entries.map do |entry|
     match entry do
       (id, after) => DB.Schema.Messages.conversationId == id && DB.Schema.Messages.sentAt > after
@@ -43,7 +45,7 @@ foul newerCounts(afters: {String: Integer}) -> {String: Integer} or! String do
   match each do
     [] => return Ok({})
     [first | rest] => do
-      let counted = Database.select().from(DB.Schema.Messages)
+      let counted = Database.select().from(DB.Schema.Messages.definition)
         .where(DB.Schema.Messages.parentId == "")
         .where(rest.reduce(first) { |either, other| either || other })
         .countBy(:conversation_id)
@@ -54,8 +56,8 @@ foul newerCounts(afters: {String: Integer}) -> {String: Integer} or! String do
 end
 
 # The replies to any of these messages newer than `after`, oldest first.
-foul repliesTo(rootIds: [String], after: Integer) -> [Message] or! String do
-  return Database.select().from(DB.Schema.Messages)
+foul repliesTo(rootIds: [MessageId], after: Integer) -> [Message] or! String do
+  return Database.select().from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.parentId.in(rootIds))
     .where(DB.Schema.Messages.sentAt > after)
     .orderBy([:sent_at, :id])
@@ -63,8 +65,8 @@ foul repliesTo(rootIds: [String], after: Integer) -> [Message] or! String do
 end
 
 # The replies to a message, oldest first.
-foul replies(rootId: String) -> [Message] or! String do
-  return Database.select().from(DB.Schema.Messages)
+foul replies(rootId: MessageId) -> [Message] or! String do
+  return Database.select().from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.parentId == rootId)
     .orderBy([:sent_at, :id])
     .all(as: Message)
@@ -72,14 +74,14 @@ end
 
 # The bot authors of a thread's messages — the root and its replies — by id,
 # from among `botIds`.
-foul botAuthors(rootId: String, botIds: [String]) -> [String] or! String do
-  let root = Database.select([:user_id]).from(DB.Schema.Messages)
+foul botAuthors(rootId: MessageId, botIds: [UserId]) -> [UserId] or! String do
+  let root = Database.select([:user_id]).from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.id == rootId)
-    .pluck(:user_id)
+    .all(as: String)
     .or([])
-  let replies = Database.select([:user_id]).from(DB.Schema.Messages)
+  let replies = Database.select([:user_id]).from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.parentId == rootId)
-    .pluck(:user_id)
+    .all(as: String)
     .or([])
   return Ok((root + replies).filter { |id| botIds.contains?(id) }.uniq)
 end
@@ -87,7 +89,7 @@ end
 # Stores a message, stamped now. With a parent it is a reply, and the
 # parent's count is brought up to date — counted again, not added to, so
 # two replies at once cannot leave it wrong.
-foul create(conversationId: String, userId: String, body: String, parent: String) -> Message or! String do
+foul create(conversationId: ConversationId, userId: UserId, body: String, parent: MessageId) -> Message or! String do
   let moment = Metro.Clock.milliseconds()
   let message = Message {
     id: "m${moment}-${Metro.Id.serial()}",
@@ -107,7 +109,7 @@ foul create(conversationId: String, userId: String, body: String, parent: String
   }
   # A reply and its thread's count change together, or not at all.
   let stored : Integer or! String = Database.transaction do
-    let inserted = Database.insert(DB.Schema.Messages)
+    let inserted = Database.insert(DB.Schema.Messages.definition)
       .values(row)
       .run
       .try
@@ -115,8 +117,9 @@ foul create(conversationId: String, userId: String, body: String, parent: String
       Ok(inserted)
     else
       let replies = replies(parent).try
-      Database.update(DB.Schema.Messages)
-        .set({reply_count: replies.count})
+      let replyCount = replies.count
+      Database.update(DB.Schema.Messages.definition)
+        .set({reply_count: replyCount}, columns: [:reply_count])
         .where(DB.Schema.Messages.id == parent)
         .run
     end
@@ -125,8 +128,8 @@ foul create(conversationId: String, userId: String, body: String, parent: String
 end
 
 # One message, or `None`.
-foul find(id: String) -> Message? or! String do
-  return Database.select().from(DB.Schema.Messages)
+foul find(id: MessageId) -> Message? or! String do
+  return Database.select().from(DB.Schema.Messages.definition)
     .where(DB.Schema.Messages.id == id)
     .first(as: Message)
 end

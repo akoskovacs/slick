@@ -38,9 +38,9 @@ One table expresses every "who may do what where":
 ```
 grant(subject, resource, role)
 
-  subject    = user | team            (polymorphic: either may hold a grant)
-  resource   = server | organization | conversation | team
-  role       = admin | member | read-only
+  subject    = user_subject | team_subject
+  resource   = server_resource | organization_resource | conversation_resource | team_resource
+  role       = admin | member | read_only
 ```
 
 A **user** is a person or a bot (`users.kind`). A **team** is a group of
@@ -58,11 +58,11 @@ two people is implicit (the two of them, and nobody else).
 # db/schema/grants.kex
 Table.define :grants do |t|
   t.text(:id, primaryKey: true)          # "<subject-type>:<subject-id>:<resource-type>:<resource-id>"
-  t.text(:subject_type, oneOf: ["user", "team"])
+  t.text(:subject_type, oneOf: Harmat.Column.choices(Type.of(Grant.UserSubject)))
   t.text(:subject_id)
-  t.text(:resource_type, oneOf: ["server", "organization", "conversation", "team"])
+  t.text(:resource_type, oneOf: Harmat.Column.choices(Type.of(Grant.ServerResource)))
   t.text(:resource_id, default: "")      # "" for a server grant
-  t.text(:role, oneOf: ["admin", "member", "read-only"])
+  t.text(:role, oneOf: Harmat.Column.choices(Type.of(Grant.Admin)))
   t.text(:granted_at)
 end
 # indexes on subject_id, on (resource_type, resource_id), and on the pair
@@ -120,19 +120,13 @@ Notes and deliberate choices:
 - **Teams keep a `members` view** (their member grants) for mentioning
   `@team`; their power comes only from the grants *they* hold.
 
-### The `can?` entry point
+### Where authorization lives
 
-One helper, used by the same places that gate Slick today:
-
-```kex
-App.Services.Authority.can?(user, action, resource) -> Bool
-# action ∈ read | write | manage | create-channel | create-team | manage-organization | create-organization | administer-server
-```
-
-`read`/`write`/`manage` take a `Conversation`; the rest take the relevant
-resource. It resolves the effective role and answers from the matrix.
-`Conversation.admits?` and the `visible`/`home` logic are rewritten on top of
-it.
+Authorization follows the model it describes. `User` exposes `canRead?`,
+`canWrite?`, `canCreate?`, `canManage?`, `canAdminister?`, and
+`serverAdmin?` in its `make` block. `User.role` resolves a person's effective
+role, while `Grant.roleFor` combines direct and team grants. Organization
+membership and organization role lookup live in `Organization`'s `make` block.
 
 ## Bots
 
@@ -140,13 +134,13 @@ A bot is a user (`kind: "bot"`). Its grants work exactly like a person's.
 Two additions apply only to bots:
 
 - **Channel read-scope** — a property of a conversation,
-  `bot_access ∈ none | mentions | all`, set by whoever may manage the
+  `bot_access ∈ no_bots | mentions | all_bots`, set by whoever may manage the
   conversation:
 
-  - `none` — bots do not read or hear about this conversation at all.
+  - `no_bots` — bots do not read or hear about this conversation at all.
   - `mentions` — a bot reads only threads it was mentioned in, threads it has
     replied in, and its own private chats (the safe default).
-  - `all` — a bot reads everything it is otherwise allowed to, and takes part
+  - `all_bots` — a bot reads everything it is otherwise allowed to, and takes part
     naturally (no `@mention` required).
 
   A bot's effective ability is the intersection of its grants and this
@@ -191,24 +185,25 @@ creator as its admin (so nobody loses anything).
 
 ## Enforcement points
 
-Where `can?` replaces today's checks:
+How the model permissions are used:
 
-- `App.Live.Chat.visible` / `home` — reading, and most write events route
-  through `visible`.
-- `Conversation.admits?` — becomes `can?(user, read, conversation)`.
-- `App.Live.Chat.manageable` (bots) — becomes `can?(user, manage-organization, …)`
-  for org bots, plus "your own bots".
-- `established` (create channel), `invited` (invite), `botMade`/`botRenewed`/
-  `botRemoved`, team functions — each gains the corresponding `can?` check.
+- `User.visible` / `home` — reading, and most write events route through
+  `User.canRead?` and `User.canWrite?`.
+- `User.botMayRead?` applies the conversation's bot read-scope.
+- `User.manageableBots` includes organization bots only when the person may
+  manage that organization, plus their own bots.
+- Channel, invite, bot, and team operations use the corresponding `User`
+  authorization functions.
 - `App.Controllers.Api.history` + `App.Live.Events` — the bot read-scope.
 
 ## Phases
 
 1. Schema + migration (grants table, copy data, drop old tables, seed org
    admin).
-2. `App.Services.Authority.can?` + role resolution (including team transitivity).
-3. Rewire the existing checks to `can?`; keep behaviour identical (flat
-   membership → member role, so nothing visibly changes yet).
+2. Role resolution (including team transitivity) and permission checks in
+   their `User`, `Organization`, and `Grant` model blocks.
+3. Rewire the existing checks to those model functions; keep behaviour
+   identical (flat membership → member role, so nothing visibly changes yet).
 4. Roles in the UI: server admin, org admin, channel admin, read-only, and
    the role chooser on invite.
 5. Channel bot read-scope (`none`/`mentions`/`all`) + API/events enforcement.

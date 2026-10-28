@@ -7,6 +7,7 @@
 module App.Models.Team
 
 using App.Models.Organization, only: [OrganizationId]
+using App.Models.Ids, only: [UserId]
 
 type TeamId = String
 record Team do
@@ -21,33 +22,33 @@ record Team do
   # Whether a sync has it: it has an `externalId`.
   managed? : Bool = false
   # The ids of the people in it.
-  members : [String] = []
+  members : [UserId] = []
 end
 
 # How long a handle and a description may be.
 let LONGEST_HANDLE = 30
 let LONGEST_DESCRIPTION = 250
 
-# Whether a handle can be one: lower-case letters, digits and dashes,
-# starting with a letter.
-handle? : String -> Bool
-let handle?(text) do
-  let first = text.chars.first.map { |char| char.letter? && char.lower? }.or(false)
-  let count = text.chars.count
-  first && count >= 2 && count <= LONGEST_HANDLE && text.chars.all? do |char|
-    (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
-  end
-end
-
-# The handle a name suggests: lower case, with dashes between its words.
-handled : String -> String
-let handled(name) do
-  let words = name.trim.lowerCase.split(" ").map do |word|
-    word.chars.filter { |char| char.lower? || char.digit? || "${char}" == "-" }.map { |char| "${char}" }.join("")
-  end
-  words.reject { |word| word.empty? }.join("-").take(LONGEST_HANDLE)
-end
-
 make Team do
-  let includes?(userId: String) -> Bool = @members.contains?(userId)
+  # Whether a handle can be one: lower-case letters, digits and dashes,
+  # starting with a letter.
+  handle? : String -> Bool
+  let handle?(text) do
+    let first = text.chars.first.map { |char| char.letter? && char.lower? }.or(false)
+    let count = text.chars.count
+    first && count >= 2 && count <= LONGEST_HANDLE && text.chars.all? do |char|
+      (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
+    end
+  end
+
+  # The handle a name suggests: lower case, with dashes between its words.
+  handled : String -> String
+  let handled(name) do
+    let words = name.trim.lowerCase.split(" ").map do |word|
+      word.chars.filter { |char| char.lower? || char.digit? || "${char}" == "-" }.map { |char| "${char}" }.join("")
+    end
+    words.reject { |word| word.empty? }.join("-").take(LONGEST_HANDLE)
+  end
+
+  let includes?(userId: UserId) -> Bool = @members.contains?(userId)
 end

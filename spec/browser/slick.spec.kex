@@ -1,0 +1,362 @@
+using Shakespeare
+using Metro.Live.Presence, only: [Presence]
+using Spec.Support, only: [populated]
+
+# Slick served on a port of its own, from a database of its own, for one
+# example. With people, the database holds Spec.Support's world: Acme Corp,
+# administered by Ada, with Bob and Eve in it, and Mallory's Other.
+record BrowserFixture do
+  base : String
+  options : Shakespeare.Options
+end
+
+let PASSWORD = "a long enough phrase"
+
+foul withSlickServer(people?: Bool, work: BrowserFixture -> Any) -> Void do
+  let scratch = FS.Directory.createTemporary("slick-browser").or("")
+  assert(!scratch.empty?, "test database directory should be created")
+  let database = FS.Path.join(scratch, "slick.sqlite3")
+  let store = DB.Store.started(Config.Database.sqlite(database)).try
+  DB.Store.migrate(store).try
+
+  with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    if people?
+      populated()
+    end
+
+    let hub = Process.spawn(Metro.Live.Hub.Hub {})
+    let events = Process.spawn(App.Live.Events.Bus {})
+    let statuses = Process.spawn(Presence {})
+    let probe = Config.Routes.routes(hub, events, statuses, [])
+    let site = Config.Routes.routes(hub, events, statuses, probe.rootSegments)
+    let endpoint = Net.Socket.TCP.Endpoint.loopback(Net.Port.from(0).try)
+    let server = Net.HTTP.Server.start(endpoint, site.httpRouter).try
+    let port = Net.HTTP.Server.localAddress(server).port.value
+    let options = Shakespeare.Options {
+      watch?: ENV.get("SHAKESPEARE_WATCH") == Just("1"),
+      slowMs: 450,
+      timeoutMs: 15000
+    }
+
+    let outcome = trying do
+      work(BrowserFixture { base: "http://127.0.0.1:${port}", options: options })
+      Ok(())
+    rescue |problem|
+      Error("${problem}")
+    end
+    Net.HTTP.Server.stop(server).try
+    FS.Directory.deleteAll(scratch)
+    match outcome do
+      Error(problem) => do
+        # Already worded as an assertion when Shakespeare reported it.
+        let prefix = "assertion failed: "
+        assert(false, problem.startsWith?(prefix) then problem.drop(prefix.length) else problem)
+        ()
+      end
+      _ => ()
+    end
+  end
+end
+
+foul signIn(page: Shakespeare.Page, base: String, email: String) -> Void or! String do
+  page.goto("${base}/signin").try
+  page.locator("input[name=email]").fill(email).try
+  page.locator("input[name=password]").fill(PASSWORD).try
+  page.locator("form.credentials button[type=submit]").click().try
+  Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+  Ok(())
+end
+
+foul openChannel(page: Shakespeare.Page, title: String) -> Void or! String do
+  page.locator("button[title='New channel']").click().try
+  page.locator("#editor input[name=title]").fill(title).try
+  page.locator("#editor button[type=submit]").click().try
+  # The channel before has a composer too: wait for the new one's address.
+  Shakespeare.expect(page.locator(".workspace[data-live-path$='/channels/${title}']")).toHaveCount(1)
+  Shakespeare.expect(page.locator(".pane .composer textarea[name=body]")).toBeVisible()
+  Ok(())
+end
+
+foul visit(page: Shakespeare.Page, entry: String) -> Void or! String do
+  page.locator(".sidebar .entries button").withText(entry).click().try
+  Shakespeare.expect(page.locator(".sidebar .entries button.current").withText(entry)).toBeVisible()
+  Ok(())
+end
+
+# Count the notification sounds the page plays, rather than playing them;
+# the count is on the root element, where a Live patch leaves it alone.
+foul countChimes(page: Shakespeare.Page) -> Void or! String do
+  page.evaluate("(() => { const root = document.documentElement; root.dataset.chimes = '0'; HTMLMediaElement.prototype.play = function () { root.dataset.chimes = String(Number(root.dataset.chimes) + 1); return Promise.resolve(); }; return true; })()").try
+  Ok(())
+end
+
+foul expectChimes(page: Shakespeare.Page, count: Integer) -> Void do
+  Shakespeare.expect(page.locator("html[data-chimes='${count}']")).toHaveCount(1)
+end
+
+describe("Slick in a browser, signing in") do
+  it("shows an error for a wrong password and permits a retry") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/signin").try
+        page.locator("input[name=email]").fill("bob@example.com").try
+        page.locator("input[name=password]").fill("wrong password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".failure li")).toHaveText("That email and password do not match an account.")
+        page.locator("input[name=password]").fill(PASSWORD).try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+      end
+    end
+  end
+
+  it("registers and creates an organization") do
+    withSlickServer(false) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/register").try
+        page.locator("input[name=name]").fill("Browser Tester").try
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("input[name=password_confirmation]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".welcome")).toBeVisible()
+        page.locator("#organization-box").fill("Browser Testers").try
+        page.locator(".welcome button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+        Shakespeare.expect(page.locator("button[title='New channel']")).toBeVisible()
+      end
+    end
+  end
+
+  it("signs out and requires signing in again") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "bob@example.com").try
+        page.locator("#account summary").click().try
+        page.locator("form[action='/signout'] button").click().try
+        Shakespeare.expect(page.locator("form.credentials")).toBeVisible()
+        page.goto("${fixture.base}/").try
+        Shakespeare.expect(page.locator("form.credentials")).toBeVisible()
+        signIn(page, fixture.base, "bob@example.com").try
+      end
+    end
+  end
+end
+
+describe("Slick in a browser, messages") do
+  it("sends a message and sees it after reload") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "bob@example.com").try
+        openChannel(page, "testing").try
+        page.locator(".composer textarea[name=body]").fill("Hello from Shakespeare").try
+        Shakespeare.expect(page.locator(".composer textarea[name=body]")).toHaveValue("Hello from Shakespeare")
+        page.locator(".composer button.send").click().try
+        Shakespeare.expect(page.locator("article.message .body p")).toHaveText("Hello from Shakespeare")
+        Shakespeare.expect(page.locator(".composer textarea[name=body]")).toHaveValue("")
+        page.reload().try
+        Shakespeare.expect(page.locator("article.message .body p")).toHaveText("Hello from Shakespeare")
+        page.locator("article.message").hover().try
+        page.locator("article.message .offers button[data-emoji='👍']").click().try
+        Shakespeare.expect(page.locator("article.message .reactions .chip.own")).toBeVisible()
+        page.reload().try
+        Shakespeare.expect(page.locator("article.message .reactions .chip.own")).toBeVisible()
+        page.locator("article.message .reactions .chip.own").click().try
+        Shakespeare.expect(page.locator("article.message .reactions")).toHaveText("")
+      end
+    end
+  end
+
+  it("sends with Enter and keeps Shift+Enter as a new line") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "bob@example.com").try
+        openChannel(page, "keys").try
+        let box = page.locator(".pane .composer textarea[name=body]")
+        box.write("first line").try
+        box.press("Shift+Enter").try
+        box.write("second line").try
+        Shakespeare.expect(box).toHaveValue("first line\nsecond line")
+        Shakespeare.expect(page.locator(".pane article.message")).toHaveCount(0)
+        box.press("Enter").try
+        Shakespeare.expect(page.locator(".pane article.message")).toHaveCount(1)
+        Shakespeare.expect(page.locator(".pane article.message .body")).toContainText("first line")
+        Shakespeare.expect(page.locator(".pane article.message .body")).toContainText("second line")
+        Shakespeare.expect(box).toHaveValue("")
+      end
+    end
+  end
+
+  it("completes a mention from the message box") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "bob@example.com").try
+        openChannel(page, "mentions").try
+        let box = page.locator(".pane .composer textarea[name=body]")
+        box.write("@Ev").try
+        Shakespeare.expect(page.locator(".completions li").withText("@Eve")).toBeVisible()
+        box.press("Enter").try
+        Shakespeare.expect(box).toHaveValue("@Eve ")
+        Shakespeare.expect(page.locator(".completions")).toBeHidden()
+        box.write("can you look?").try
+        box.press("Enter").try
+        Shakespeare.expect(page.locator(".pane article.message .body")).toHaveText("@Eve can you look?")
+      end
+    end
+  end
+
+  it("updates a channel topic and returns to messages from files") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "bob@example.com").try
+        openChannel(page, "planning").try
+        page.locator(".pane .heading").hover().try
+        page.locator(".pane button[data-event='topic-edit']").click().try
+        page.locator(".topic-form input[name=topic]").fill("Project plans").try
+        page.locator(".topic-form button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".pane .topic")).toHaveText("Project plans Edit topic")
+        page.reload().try
+        Shakespeare.expect(page.locator(".pane .topic")).toHaveText("Project plans Edit topic")
+        page.locator(".pane button[data-event='view-files']").click().try
+        Shakespeare.expect(page.locator(".pane button[data-event='view-files'][aria-pressed=true]")).toBeVisible()
+        page.locator(".pane button[data-event='view-messages']").click().try
+        Shakespeare.expect(page.locator(".pane .composer textarea[name=body]")).toBeVisible()
+      end
+    end
+  end
+
+  it("replies in a thread and reopens it after reload") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "bob@example.com").try
+        openChannel(page, "threads").try
+        page.locator(".pane .composer textarea[name=body]").fill("A question").try
+        page.locator(".pane .composer button.send").click().try
+        Shakespeare.expect(page.locator(".pane article.message .body p")).toHaveText("A question")
+        page.locator(".pane article.message").hover().try
+        page.locator(".pane button[title='Reply in thread']").click().try
+        Shakespeare.expect(page.locator(".thread .composer textarea[name=body]")).toBeVisible()
+        page.locator(".thread .composer textarea[name=body]").fill("An answer").try
+        page.locator(".thread .composer button.send").click().try
+        Shakespeare.expect(page.locator(".thread article.message:last-of-type .body p")).toHaveText("An answer")
+        page.locator("button[title='Close thread']").click().try
+        Shakespeare.expect(page.locator(".pane button.answers")).toBeVisible()
+        page.reload().try
+        Shakespeare.expect(page.locator(".pane button.answers")).toBeVisible()
+        page.locator(".pane button.answers").click().try
+        Shakespeare.expect(page.locator(".thread article.message:last-of-type .body p")).toHaveText("An answer")
+      end
+    end
+  end
+end
+
+describe("Slick in a browser, two people at once") do
+  it("delivers a message live, and chimes for the one who receives it") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |bob|
+        let eve = bob.newPage().try
+        signIn(bob, fixture.base, "bob@example.com").try
+        signIn(eve, fixture.base, "eve@example.com").try
+        visit(bob, "general").try
+        visit(eve, "general").try
+        countChimes(bob).try
+        countChimes(eve).try
+        let box = bob.locator(".pane .composer textarea[name=body]")
+        box.write("Hello Eve").try
+        box.press("Enter").try
+        Shakespeare.expect(eve.locator(".pane article.message .body").withText("Hello Eve")).toBeVisible()
+        expectChimes(eve, 1)
+        expectChimes(bob, 0)
+        eve.locator(".pane .composer textarea[name=body]").write("Hi Bob").try
+        eve.locator(".pane .composer textarea[name=body]").press("Enter").try
+        Shakespeare.expect(bob.locator(".pane article.message .body").withText("Hi Bob")).toBeVisible()
+        expectChimes(bob, 1)
+        expectChimes(eve, 1)
+        eve.close
+      end
+    end
+  end
+
+  it("counts an unread direct message until it is opened") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |bob|
+        let eve = bob.newPage().try
+        signIn(bob, fixture.base, "bob@example.com").try
+        signIn(eve, fixture.base, "eve@example.com").try
+        visit(eve, "general").try
+        visit(bob, "Eve").try
+        bob.locator(".pane .composer textarea[name=body]").write("psst").try
+        bob.locator(".pane .composer textarea[name=body]").press("Enter").try
+        let fromBob = eve.locator(".sidebar .entries.people button").withText("Bob")
+        Shakespeare.expect(eve.locator(".sidebar .entries.people button.unread .count")).toHaveText("1")
+        fromBob.click().try
+        Shakespeare.expect(eve.locator(".pane article.message .body")).toHaveText("psst")
+        Shakespeare.expect(eve.locator(".sidebar .entries.people button.unread")).toHaveCount(0)
+        eve.close
+      end
+    end
+  end
+
+  it("shows a status beside the name of the one who set it") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |bob|
+        let eve = bob.newPage().try
+        signIn(bob, fixture.base, "bob@example.com").try
+        signIn(eve, fixture.base, "eve@example.com").try
+        bob.locator("#account summary").click().try
+        bob.getByRole("button", "Set a status…").click().try
+        bob.locator("#editor select[name=emoji]").select("🎯").try
+        bob.locator("#editor input[name=text]").fill("Focusing on tests").try
+        bob.locator("#editor button[type=submit]").click().try
+        Shakespeare.expect(bob.locator("#editor")).toHaveCount(0)
+        let besideBob = eve.locator(".sidebar .entries.people button").withText("Bob")
+        Shakespeare.expect(besideBob).toContainText("🎯")
+        bob.locator("#account summary").click().try
+        bob.getByRole("button", "Change your status…").click().try
+        bob.getByRole("button", "Clear status").click().try
+        Shakespeare.expect(eve.locator(".sidebar .entries.people button .emblem")).toHaveCount(0)
+        eve.close
+      end
+    end
+  end
+end
+
+describe("Slick in a browser, organizing") do
+  it("invites somebody who has registered, and explains who has not") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "ada@example.com").try
+        page.locator(".rail button[title='Acme Corp']").click().try
+        page.getByRole("button", "Manage people").click().try
+        page.locator("#invite-email").fill("nobody@example.com").try
+        page.getByRole("button", "Invite").click().try
+        Shakespeare.expect(page.locator(".manage-people .problem")).toHaveText("Nobody has registered with nobody@example.com. They need an account first.")
+        page.locator("#invite-email").fill("mal@example.com").try
+        page.getByRole("button", "Invite").click().try
+        Shakespeare.expect(page.locator(".notice")).toHaveText("Mallory is now in Acme Corp.")
+        Shakespeare.expect(page.locator(".manage-people .managed-people")).toContainText("Mallory")
+        page.locator("#invite-email").fill("mal@example.com").try
+        page.getByRole("button", "Invite").click().try
+        Shakespeare.expect(page.locator(".manage-people .problem")).toHaveText("Mallory is already in Acme Corp.")
+      end
+    end
+  end
+
+  it("creates a team and adds somebody to it") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        signIn(page, fixture.base, "bob@example.com").try
+        page.locator("button[title='New team']").click().try
+        page.locator("#editor input[name=name]").fill("Design").try
+        page.locator("#editor input[name=handle]").fill("design").try
+        page.locator("#editor button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".team h2")).toHaveText("@design")
+        Shakespeare.expect(page.locator(".team .mates")).toContainText("Bob")
+        page.locator(".team select[name=person]").select("Eve").try
+        page.locator(".team .add-mate button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".team .mates button[title='Take Eve out of the team']")).toBeVisible()
+        Shakespeare.expect(page.locator(".sidebar .entries button").withText("design")).toBeVisible()
+      end
+    end
+  end
+end

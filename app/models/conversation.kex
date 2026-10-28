@@ -3,70 +3,81 @@
 module App.Models.Conversation
 
 using App.Models.Organization, only: [OrganizationId]
+using App.Models.Team, only: [TeamId]
+using App.Models.Ids, only: [UserId]
 
 type ConversationId = String
+type ConversationKind = Channel | PrivateChat | Group
+type ConversationAccess = Public | Private
+type BotAccess = NoBots | Mentions | AllBots
+
 record Conversation do
   id : ConversationId
-  # "channel", "direct" or "group".
-  kind : String = "channel"
+  kind : ConversationKind = Channel
   slug : String = ""
   title : String = ""
   topic : String = ""
-  firstUser : String = ""
-  secondUser : String = ""
+  firstUser : UserId = ""
+  secondUser : UserId = ""
   organizationId : OrganizationId = ""
   # "public" for a channel anyone in the organization may read; "private"
   # for one only its participants may — as a group chat always is.
-  access : String = "public"
+  access : ConversationAccess = Public
   # The team that owns a channel; "" for none.
-  teamId : String = ""
-  # How much of it its bots may read: "none", "mentions" or "all".
-  botAccess : String = "mentions"
+  teamId : TeamId = ""
+  # How much of it its bots may read: "no_bots", "mentions" or "all_bots".
+  botAccess : BotAccess = Mentions
   # Who may read a private channel or a group chat: its participants and,
   # for a channel a team owns, the team's members. The repository fills it
   # in; it is empty for the rest.
-  participants : [String] = []
+  participants : [UserId] = []
 end
 
 # The channel every workspace starts with.
 let GENERAL = "general"
 
-# The slug of the private chat between two people, whichever way round they
-# are given.
-pairing : String -> String -> String
-let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:${one}"
-
-# The slug of the group chat between some people, in whatever order they
-# are given.
-gathering : [String] -> String
-let gathering(people) = "&${people.uniq.sort.join(",")}"
-
 make Conversation do
-  let channel? -> Bool = @kind == "channel"
-  let group? -> Bool = @kind == "group"
-  let direct? -> Bool = @kind == "direct"
+  accessFrom : String -> ConversationAccess?
+  let accessFrom(text) = Type.of(Public).parse(text).optional
+
+  botAccessFrom : String -> BotAccess?
+  let botAccessFrom(text) = Type.of(NoBots).parse(text).optional
+
+  # The slug of the private chat between two people, whichever way round
+  # they are given.
+  pairing : UserId -> UserId -> String
+  let pairing(one, other) = one <= other then "@${one}:${other}" else "@${other}:${one}"
+
+  # The slug of the group chat between some people, in whatever order they
+  # are given.
+  gathering : [UserId] -> String
+  let gathering(people) = "&${people.uniq.sort.join(",")}"
+
+  let channel? -> Bool = @kind == Channel
+  let group? -> Bool = @kind == Group
+  let direct? -> Bool = @kind == PrivateChat
 
   # Whether anyone in the organization may read it: a public channel.
-  let public? -> Bool = @kind == "channel" && @access == "public"
+  let public? -> Bool = @kind == Channel && @access == Public
 
   # Whether bots may read nothing of it.
-  let botsForbidden? -> Bool = @botAccess == "none"
+  let botsForbidden? -> Bool = @botAccess == NoBots
 
   # Whether bots may read all of it, as a person may.
-  let botsAll? -> Bool = @botAccess == "all"
+  let botsAll? -> Bool = @botAccess == AllBots
 
   # Whether this person may read and write here, given that they are in its
   # organization: anyone in a public channel, the two people of a private
   # chat, and the participants of anything else.
-  let admits?(userId: String) -> Bool do
-    return true if @kind == "channel" && @access == "public"
-    return @firstUser == userId || @secondUser == userId if @kind == "direct"
+  let admits?(userId: UserId) -> Bool do
+    return true if @kind == Channel && @access == Public
+    return @firstUser == userId || @secondUser == userId if @kind == PrivateChat
     @participants.contains?(userId)
   end
 
   # Whether it is somebody's chat with themselves.
-  let solo? -> Bool = @kind == "direct" && @firstUser == @secondUser
+  let solo? -> Bool = @kind == PrivateChat && @firstUser == @secondUser
 
   # The other person of a private chat.
-  let counterpart(userId: String) -> String = @firstUser == userId then @secondUser else @firstUser
+  let counterpart(userId: UserId) -> UserId = @firstUser == userId then @secondUser else @firstUser
 end

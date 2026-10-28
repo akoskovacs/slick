@@ -10,6 +10,7 @@ module App.Services.Authentication
 using DB.Repositories.Sessions, as: Sessions
 using DB.Repositories.Users, as: Users
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 
 # How long a sign-in lasts: thirty days.
 let LIFETIME = 2592000
@@ -93,7 +94,7 @@ private do
     return Metro.Clock.seconds()
   end
 
-  foul admitted(userId: String) -> String or! [String] do
+  foul admitted(userId: UserId) -> String or! [String] do
     let token = Metro.Auth.Token.fresh()
     match Sessions.admit(Metro.Auth.Token.digest(token), userId, now() + LIFETIME) do
       Ok(_) => Ok(token)

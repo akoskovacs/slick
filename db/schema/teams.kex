@@ -5,18 +5,21 @@ module DB.Schema.Teams
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-let definition = Table.define :teams do |t|
-  t.text(:id, primaryKey: true)
-  t.text(:organization_id)
-  t.text(:handle)
-  t.text(:name)
-  t.text(:description, default: "")
-  t.text(:external_id, default: "")
-  t.text(:created_by, default: "")
-  t.bigint(:created_at)
-end
+# Known while compiling: a query over this table is written then.
+compiled do
+  let definition = Table.define :teams do |t|
+    t.text(:id, primaryKey: true)
+    t.text(:organization_id)
+    t.text(:handle)
+    t.text(:name)
+    t.text(:description, default: "")
+    t.text(:external_id, default: "")
+    t.text(:created_by, default: "")
+    t.bigint(:created_at)
+  end
 
-let id = DB.Schema.Teams.definition.textColumn(:id)
-let organizationId = DB.Schema.Teams.definition.textColumn(:organization_id)
-let handle = DB.Schema.Teams.definition.textColumn(:handle)
-let externalId = DB.Schema.Teams.definition.textColumn(:external_id)
+  let id = definition.textColumn(:id)
+  let organizationId = definition.textColumn(:organization_id)
+  let handle = definition.textColumn(:handle)
+  let externalId = definition.textColumn(:external_id)
+end

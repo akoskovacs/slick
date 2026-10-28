@@ -6,6 +6,7 @@ module App.Controllers.Files
 using Metro.WebRequest, only: [WebRequest]
 using App.Controllers.Application, only: [userFor]
 using App.Models.Attachment, only: [Attachment]
+using App.Models.Ids, only: [UserId]
 using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
@@ -41,7 +42,7 @@ foul fetched(request) do
 end
 
 private do
-  allowed? : String -> Attachment -> Bool
+  allowed? : UserId -> Attachment -> Bool
   foul allowed?(userId, file) do
     return file.userId == userId if !file.sent?
 

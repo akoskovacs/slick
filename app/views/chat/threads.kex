@@ -34,5 +34,5 @@ let pane(room, thread, unsent) do
     mentionable(room),
     offered(room)
   )
-  threadPartial(opener, summary, followups.join("\n"), composer)
+  threadPartial(opened(thread), opener, summary, followups.join("\n"), composer)
 end

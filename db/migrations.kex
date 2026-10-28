@@ -39,6 +39,9 @@
 # add it to the end of the list below, and declare what it creates in
 # db/schema. The server refuses to start when db/schema and the migrations
 # disagree.
+# Keep each migration's `oneOf` values literal. Current schema derives them
+# from model enums; adding a constructor needs a new migration that widens
+# the column constraint, without changing a migration already written.
 #
 #   tey migrate          # run what this database has not run
 #   tey rollback         # undo the newest; `tey rollback 3` undoes three

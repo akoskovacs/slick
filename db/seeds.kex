@@ -14,10 +14,17 @@
 # relies on; production starts with whoever registers.
 module DB.Seeds
 
+using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, as: Conversation
 using Metro.Environment, only: [Environment, Development]
 using App.Models.Team, only: [Team]
 using App.Models.User, only: [User]
+using App.Models.User, as: User
+using App.Models.Grant, only: [Grant]
+using App.Models.Grant, as: Grant
+using App.Models.Organization, only: [OrganizationId]
 using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Organizations, as: Organizations
@@ -26,7 +33,7 @@ using DB.Repositories.Teams, as: Teams
 using DB.Repositories.Users, as: Users
 
 # The password of every seeded person.
-let PASSWORD = "correct horse"
+let PASSWORD = "a better password"
 
 # The API token of each seeded bot: `slick_bot_development_<its name>`.
 # Known to everyone who can read this file, which is why they are only ever
@@ -44,8 +51,21 @@ foul planted(environment) = Ok([])
 private do
   # Acme, and enough in it to try every part of the application on.
   foul demo() -> [String] or! String do
+    let admin = person("Server Admin", "admin@example.com").try
+    let wasServerAdmin = admin.serverAdmin?
+    Grants.grant(Grant {
+      subjectType: Grant.UserSubject,
+      subjectId: admin.id,
+      resourceType: Grant.ServerResource,
+      resourceId: "",
+      role: Grant.Admin
+    }).try
+
     let existing = Organizations.findBySlug("acme").try
-    return Ok([]) if existing.set?
+    if existing.set?
+      return Ok([]) if wasServerAdmin
+      return Ok(["${admin.email}, server administrator, password \"${PASSWORD}\""])
+    end
 
     let ada = person("Ada", "ada@example.com").try
     let bob = person("Bob", "bob@example.com").try
@@ -55,7 +75,7 @@ private do
     Memberships.add(acme.id, bob.id).try
     Memberships.add(acme.id, eve.id).try
 
-    let general = Conversations.create(acme.id, App.Models.Conversation.GENERAL, ada.id, botAccess: "all").try
+    let general = Conversations.create(acme.id, Conversation.GENERAL, ada.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(general.id, "Company-wide announcements and chatter").try
     let welcome = Messages.create(general.id, ada.id, "Welcome to Acme :wave:", "").try
     Messages.create(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "").try
@@ -65,7 +85,7 @@ private do
     Reactions.toggle(welcome, bob.id, "👍").try
     Reactions.toggle(welcome, eve.id, "🎉").try
 
-    let random = Conversations.create(acme.id, "random", bob.id, botAccess: "all").try
+    let random = Conversations.create(acme.id, "random", bob.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(random.id, "Anything goes :tada:").try
     Messages.create(random.id, bob.id, "Lunch at one?", "").try
     Messages.create(random.id, eve.id, "`yes`", "").try
@@ -86,13 +106,14 @@ private do
       members: [ada.id, eve.id]
     }
     let team = Teams.create(design, ada.id).try
-    let studio = Conversations.create(acme.id, "studio", eve.id, access: "private", teamId: team.id).try
+    let studio = Conversations.create(acme.id, "studio", eve.id, access: Conversation.Private, teamId: team.id).try
     Messages.create(studio.id, eve.id, "New mockups are up, @design", "").try
 
     let bots = BOTS.map { |name| bot(name, acme.id).try }
     bots.each { |made| Memberships.add(acme.id, made.id).try }
     return Ok([
       "the organization Acme, at /acme",
+      "${admin.email}, server administrator, password \"${PASSWORD}\"",
       "${ada.email}, ${bob.email} and ${eve.email}, password \"${PASSWORD}\"",
       "#general and #random, a thread, reactions, a private chat and a group chat",
       "the team @design, with Ada and Eve, and its private channel #studio",
@@ -105,13 +126,13 @@ private do
   let token(name) = "slick_bot_development_${name}"
 
   # An organization's bot, known by its development token.
-  foul bot(name: String, organizationId: String) -> User or! String do
+  foul bot(name: String, organizationId: OrganizationId) -> User or! String do
     let id = Metro.Id.generate(prefix: "b")
     let made = User {
       id: id,
       email: "${id}@bots.invalid",
       name: name,
-      kind: "bot",
+      kind: User.Bot,
       ownerOrganizationId: organizationId
     }
     return Users.createBot(made, Metro.Auth.Token.digest(token(name)))

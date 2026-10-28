@@ -45,9 +45,9 @@ params: [card: Card]
         <input type="hidden" name="user" value="<%= card.key %>">
         <label for="member-role">Workspace role</label>
         <select id="member-role" name="role" aria-label="Role">
-          <option value="member"<% if card.role == "member" %> selected<% end %>>Member</option>
-          <option value="admin"<% if card.role == "admin" %> selected<% end %>>Administrator</option>
-          <option value="read-only"<% if card.role == "read-only" %> selected<% end %>>Read-only</option>
+          <option value="member"<% if card.member? %> selected<% end %>>Member</option>
+          <option value="admin"<% if card.admin? %> selected<% end %>>Administrator</option>
+          <option value="read_only"<% if card.readOnly? %> selected<% end %>>Read-only</option>
         </select>
         <button type="submit" class="primary">Save role</button>
       </form>

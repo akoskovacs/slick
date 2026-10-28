@@ -5,31 +5,28 @@ module App.Live.Navigation
 using Metro.Live.Socket, only: [unchanged]
 using App.Live.Event, only: [Event, given]
 using App.Live.Outcome, only: [Outcome]
-using App.Live.Tab, only: [Tab, closed]
-
-# The dialogs a tab opens by name (`dialog-open` with `dialog`).
-let DIALOGS = [
-  "channel",
-  "group",
-  "promote",
-  "admit",
-  "team",
-  "team-edit",
-  "organization",
-  "invite",
-  "status",
-  "profile",
-  "bots"
+using App.Live.Tab, only: [
+  Tab, closed, ConversationView, FilesView, SettingsView,
+  ChannelDialog, GroupDialog, PromoteDialog, AdmitDialog, TeamDialog,
+  TeamEditDialog, OrganizationDialog, InviteDialog, PeopleDialog, StatusDialog,
+  ProfileDialog, BotsDialog
 ]
 
+# The dialogs a tab opens by name (`dialog-open` with `dialog`).
 on : String -> Event -> Outcome
-foul on("dialog-open", event) = unchanged(opened(event.tab, given(event, "dialog")))
+foul on("dialog-open", event) do
+  let name = given(event, "dialog")
+  if name == "people" && !event.user.canManage?(event.tab.organization)
+    return unchanged(event.tab)
+  end
+  return unchanged(opened(event.tab, name))
+end
 # Closing whatever is open over the conversation: `cancel`, from a button,
 # or from Metro's live.js on Escape or a click beside a dialog.
 foul on("cancel", event) = unchanged(closed(event.tab))
-foul on("view-messages", event) = unchanged(Tab { ...closed(event.tab), view: "" })
-foul on("view-files", event) = unchanged(Tab { ...closed(event.tab), thread: "", view: "files" })
-foul on("view-settings", event) = unchanged(Tab { ...closed(event.tab), thread: "", profile: "", team: "", view: "settings" })
+foul on("view-messages", event) = unchanged(Tab { ...closed(event.tab), view: ConversationView })
+foul on("view-files", event) = unchanged(Tab { ...closed(event.tab), thread: "", view: FilesView })
+foul on("view-settings", event) = unchanged(Tab { ...closed(event.tab), thread: "", profile: "", team: "", view: SettingsView })
 # Whether somebody is looking at the tab: `attention`, from Metro's live.js.
 foul on("attention", event) = unchanged(Tab { ...event.tab, attentive?: given(event, "on") != "false" })
 foul on(_, event) = unchanged(event.tab)
@@ -37,5 +34,17 @@ foul on(_, event) = unchanged(event.tab)
 private do
   # The tab with a dialog open over the conversation, if it is one a tab has.
   opened : Tab -> String -> Tab
-  let opened(tab, dialog) = DIALOGS.contains?(dialog) then Tab { ...closed(tab), dialog: dialog } else tab
+  let opened(tab, "channel") = Tab { ...closed(tab), dialog: ChannelDialog }
+  let opened(tab, "group") = Tab { ...closed(tab), dialog: GroupDialog }
+  let opened(tab, "promote") = Tab { ...closed(tab), dialog: PromoteDialog }
+  let opened(tab, "admit") = Tab { ...closed(tab), dialog: AdmitDialog }
+  let opened(tab, "team") = Tab { ...closed(tab), dialog: TeamDialog }
+  let opened(tab, "team-edit") = Tab { ...closed(tab), dialog: TeamEditDialog }
+  let opened(tab, "organization") = Tab { ...closed(tab), dialog: OrganizationDialog }
+  let opened(tab, "invite") = Tab { ...closed(tab), dialog: InviteDialog }
+  let opened(tab, "people") = Tab { ...closed(tab), dialog: PeopleDialog }
+  let opened(tab, "status") = Tab { ...closed(tab), dialog: StatusDialog }
+  let opened(tab, "profile") = Tab { ...closed(tab), dialog: ProfileDialog }
+  let opened(tab, "bots") = Tab { ...closed(tab), dialog: BotsDialog }
+  let opened(tab, _) = tab
 end

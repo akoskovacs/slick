@@ -12,7 +12,7 @@ module DB.Store
 
 using Harmat.Odbc, only: [Statement]
 
-record Store do
+record StoreState do
   connection : Any = :closed
 end
 
@@ -20,7 +20,7 @@ end
 # Erlang that was packaged without one.
 let ODBC = "db/odbc"
 
-serving Store do
+serving StoreState do
   # Connects — once the migration history is known to be sound: one head,
   # and migrations that produce exactly the tables db/schema declares.
   foul slot opened(dsn: String) -> Reply<String or! String> do
@@ -53,6 +53,10 @@ serving Store do
     return { reply: Harmat.Odbc.execute(@connection, statement) }
   end
 
+  foul slot ranMany(statement: Statement) -> Reply<Integer or! String> do
+    return { reply: Harmat.Odbc.executeMany(@connection, statement) }
+  end
+
   foul slot asked(statement: Statement) -> Reply<[[String]] or! String> do
     return { reply: Harmat.Odbc.query(@connection, statement) }
   end
@@ -65,9 +69,9 @@ serving Store do
 end
 
 # A running store, connected. Migrating is a separate step: see `migrate`.
-started : String -> Server<Store> or! String
+started : String -> Server<StoreState> or! String
 foul started(dsn) do
-  let store = Process.spawn(Store {})
+  let store = Process.spawn(StoreState {})
   match store.opened(dsn, within: 30_000) do
     Ok(Ok(_)) => Ok(store)
     Ok(Error(reason)) => Error(reason)
@@ -79,7 +83,7 @@ end
 #
 #   with Harmat.Connection = StoreConnection { store: store } do … end
 record StoreConnection do
-  store : Server<Store>
+  store : Server<StoreState>
 end
 
 # Inside a transaction a statement is already in the store's own process
@@ -90,6 +94,13 @@ make StoreConnection, implement: Harmat.Connection do
     match Harmat.Database.ongoing() do
       Just(connection) => return Harmat.Odbc.executing(connection, statement)
       None => return flat(@store.ran(statement))
+    end
+  end
+
+  foul runMany(statement: Harmat.Odbc.Statement) -> Integer or! String do
+    match Harmat.Database.ongoing() do
+      Just(connection) => return Harmat.Odbc.executingMany(connection, statement)
+      None => return flat(@store.ranMany(statement))
     end
   end
 
@@ -106,10 +117,10 @@ make StoreConnection, implement: Harmat.Connection do
   end
 end
 
-migrate : Server<Store> -> [String] or! String
+migrate : Server<StoreState> -> [String] or! String
 foul migrate(store) = flat(store.migrated(within: 120_000))
 
-rollback : Server<Store> -> Integer -> [String] or! String
+rollback : Server<StoreState> -> Integer -> [String] or! String
 foul rollback(store, count) = flat(store.rolledBack(count, within: 120_000))
 
 private do

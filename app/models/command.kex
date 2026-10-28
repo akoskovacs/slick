@@ -2,8 +2,10 @@
 # words. The bot declares them; Slick only offers them in the composer.
 module App.Models.Command
 
+using App.Models.Ids, only: [UserId]
+
 record Command do
-  botId : String
+  botId : UserId
   # Without the slash: "model".
   name : String
   description : String = ""
@@ -14,12 +16,14 @@ let LONGEST_NAME = 32
 let LONGEST_DESCRIPTION = 120
 let MOST = 25
 
-# Whether a name can be a command: lower-case letters, digits and dashes,
-# starting with a letter.
-named? : String -> Bool
-let named?(name) do
-  let first = name.chars.first.map { |char| char.letter? && char.lower? }.or(false)
-  first && name.chars.count <= LONGEST_NAME && name.chars.all? do |char|
-    (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
+make Command do
+  # Whether a name can be a command: lower-case letters, digits and dashes,
+  # starting with a letter.
+  named? : String -> Bool
+  let named?(name) do
+    let first = name.chars.first.map { |char| char.letter? && char.lower? }.or(false)
+    first && name.chars.count <= LONGEST_NAME && name.chars.all? do |char|
+      (char.letter? && char.lower?) || char.digit? || "${char}" == "-"
+    end
   end
 end

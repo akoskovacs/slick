@@ -5,7 +5,8 @@
 module App.Views.Chat
 
 using App.Live.Tab, only: [Tab]
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, Channel, Group]
+using App.Models.Conversation, as: Conversation
 using App.Models.Message, only: [Message]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
@@ -111,7 +112,6 @@ let index(tab, user, sidebar, pane) do
     commands: pane.commands,
     channel?: pane.conversation.map { |open| !open.direct? }.or(false),
     invocations: pane.invocations,
-    roles: sidebar.roles,
     administrator: sidebar.administrator
   }
   let unsent = do |threadId|
@@ -141,7 +141,7 @@ let index(tab, user, sidebar, pane) do
     pane.conversation,
     pane.messages,
     pane.cabinet,
-    pane.thread.empty? && tab.dialog.empty?,
+    pane.thread.empty? && tab.dialog == App.Live.Tab.NoDialog,
     pane.doing,
     unsent("")
   )
@@ -150,6 +150,7 @@ let index(tab, user, sidebar, pane) do
     tab.notice,
     badges.join("\n"),
     sidebar.organization.name,
+    sidebar.administrator,
     channelLines.join("\n"),
     ([selfLine] + groupLines + personLines).join("\n"),
     robotLines.join("\n"),
@@ -177,21 +178,21 @@ private do
   # and `App.Live.Addresses.tabFor` reads back.
   located : Organization -> Conversation -> User -> [Message] -> String
   let located(organization, conversation, user, thread) do
-    let channel = App.Paths.channelPath.filled({
+    let channel = Config.RoutePaths.channel.filled({
       "organization": organization.slug,
       "name": conversation.title
     })
-    let direct = App.Paths.directPath.filled({
+    let direct = Config.RoutePaths.direct.filled({
       "organization": organization.slug,
       "person": conversation.counterpart(user.id)
     })
-    let group = App.Paths.groupPath.filled({
+    let group = Config.RoutePaths.group.filled({
       "organization": organization.slug,
       "group": conversation.id
     })
     let address = match conversation.kind do
-      "channel" => channel
-      "group" => group
+      Channel => channel
+      Group => group
       _ => direct
     end
     App.Paths.threaded(address, opened(thread))

@@ -2,27 +2,36 @@
 # as long as the tab's WebSocket does.
 module App.Live.Tab
 
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+using App.Models.Ids, only: [UserId]
+using App.Models.Team, only: [TeamId]
+using App.Models.Attachment, only: [AttachmentId]
+
+type Dialog = NoDialog | ChannelDialog | GroupDialog | PromoteDialog | AdmitDialog | TeamDialog | TeamEditDialog | OrganizationDialog | InviteDialog | PeopleDialog | StatusDialog | ProfileDialog | BotsDialog
+type View = ConversationView | FilesView | SettingsView
+
 record Tab do
   # The organization the tab is in, by id; "" is the first one its person
   # belongs to.
-  organization : String = ""
+  organization : OrganizationId = ""
   # The conversation the tab is showing, by id; "" is the organization's
   # #general.
-  conversation : String = ""
+  conversation : ConversationId = ""
   # The message whose thread is open beside it, by id; "" when none is.
-  thread : String = ""
+  thread : MessageId = ""
   # The person or bot whose profile is open beside it, by id; "" when none
   # is. A profile, a team and a thread take the same place, so each closes
   # the others.
-  profile : String = ""
+  profile : UserId = ""
   # The team open beside it, by id; "" when none is.
-  team : String = ""
+  team : TeamId = ""
   # Whether the topic is being edited.
   retitling? : Bool = false
-  # The dialog that is open — "channel", "group", "promote", "admit",
-  # "team", "team-edit", "organization", "invite", "status", "profile" or
-  # "bots" — and what was wrong with its last try.
-  dialog : String = ""
+  # The dialog open over the conversation, if any, and what was wrong with
+  # its last try.
+  dialog : Dialog = NoDialog
   dialogProblem : String = ""
   notice : String = ""
   # A bot's new token and whose it is: shown while the dialog stays open,
@@ -32,10 +41,9 @@ record Tab do
   failure : String = ""
   # Files uploaded into the conversation and waiting, in the message box,
   # to be sent with the next message: their ids.
-  pending : [String] = []
-  # What the conversation's pane shows: "" for its messages, "files" for
-  # what has been sent into it.
-  view : String = ""
+  pending : [AttachmentId] = []
+  # What the conversation's pane shows.
+  view : View = ConversationView
   # Whether the person is looking at it: the page shown and its window in
   # front. What arrives while they are not has not been read.
   attentive? : Bool = true
@@ -47,7 +55,7 @@ closed : Tab -> Tab
 let closed(tab) = Tab {
   ...tab,
   retitling?: false,
-  dialog: "",
+  dialog: NoDialog,
   dialogProblem: "",
   notice: "",
   secret: "",

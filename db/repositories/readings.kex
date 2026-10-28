@@ -9,18 +9,19 @@ module DB.Repositories.Readings
 
 using Harmat.Database, as: Database
 using App.Models.Reading, only: [Reading]
+using App.Models.Ids, only: [UserId]
 
 # Everywhere a person has read: each conversation, and each thread they
 # follow.
-foul marks(userId: String) -> [Reading] or! String do
-  return Database.select([:conversation_id, :thread_id, :read_at]).from(DB.Schema.Readings)
+foul marks(userId: UserId) -> [Reading] or! String do
+  return Database.select([:conversation_id, :thread_id, :read_at]).from(DB.Schema.Readings.definition)
     .where(DB.Schema.Readings.userId == userId)
     .all(as: Reading)
 end
 
 # Notes how far a person has read a conversation, or a thread of it: the
 # old mark and the new one swapped in one transaction.
-foul markRead(userId: String, reading: Reading) -> Integer or! String do
+foul markRead(userId: UserId, reading: Reading) -> Integer or! String do
   let place = "${userId}:${reading.conversationId}"
   let id = reading.threadId.empty? then place else "${place}:${reading.threadId}"
   let row = {
@@ -31,11 +32,11 @@ foul markRead(userId: String, reading: Reading) -> Integer or! String do
     read_at: reading.readAt
   }
   let swapped : Integer or! String = Database.transaction do
-    Database.delete(DB.Schema.Readings)
+    Database.delete(DB.Schema.Readings.definition)
       .where(DB.Schema.Readings.id == id)
       .run
       .try
-    Database.insert(DB.Schema.Readings)
+    Database.insert(DB.Schema.Readings.definition)
       .values(row)
       .run
   end

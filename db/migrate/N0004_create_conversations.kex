@@ -9,7 +9,7 @@ using Harmat.Migration, only: [createTable, addIndex]
 let change = Migration.define :create_conversations, follows: :add_user_names do
   createTable(:conversations) do |t|
     t.text(:id, primaryKey: true)
-    t.text(:kind, oneOf: ["channel", "direct"])
+    t.text(:kind, oneOf: ["channel", "private_chat"])
     t.text(:slug)
     t.text(:title, default: "")
     t.text(:topic, default: "")

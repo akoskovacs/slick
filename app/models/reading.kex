@@ -2,10 +2,13 @@
 # follow — one they started or replied in.
 module App.Models.Reading
 
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+
 record Reading do
-  conversationId : String
+  conversationId : ConversationId
   # The message the thread starts with; "" for the conversation itself.
-  threadId : String = ""
+  threadId : MessageId = ""
   # The `sentAt` of the newest message they have been shown there.
   readAt : Integer
 end
