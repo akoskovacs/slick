@@ -111,6 +111,19 @@ manage organizations across the server; Ada administers Acme.
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
 | `tey dev` | the server, then the bot beside it — [slick-ai-bot](../slick-ai-bot) — once it answers; Ctrl-C stops all of them |
 
+The browser specs use Chrome and a temporary SQLite database. With the
+dependencies and ODBC port program set up as above, run them with:
+
+```sh
+tey test spec/browser/slick.spec.kex
+SHAKESPEARE_WATCH=1 tey test spec/browser/slick.spec.kex  # watch in Chrome
+```
+
+The browser dependency is the adjacent `../shakespeare` checkout. Run
+`tey install` again after changing it to refresh the locked snapshot. In
+watch mode a failed test leaves Chrome open for inspection until Enter is
+pressed in the terminal.
+
  `tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and
  `BOT_OPERATORS`, the Slick ids of the people who may allow the bot's tools
  and choose what each conversation asks. The bot uses its development token

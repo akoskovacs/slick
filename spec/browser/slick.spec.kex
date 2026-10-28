@@ -1,0 +1,201 @@
+using Shakespeare
+using Metro.Live.Presence, only: [Presence]
+using App.Models.User, only: [User]
+
+record BrowserFixture do
+  base : String
+  options : Shakespeare.Options
+end
+
+withSlickServer : Bool -> (BrowserFixture -> Any) -> Void
+foul withSlickServer(seedOrganization?, work) do
+  let scratch = FS.Directory.createTemporary("slick-browser").or("")
+  assert(!scratch.empty?, "test database directory should be created")
+  let database = FS.Path.join(scratch, "slick.sqlite3")
+  let store = DB.Store.started(Config.Database.sqlite(database)).try
+  DB.Store.migrate(store).try
+
+  with Harmat.Connection = DB.Store.StoreConnection { store: store } do
+    if seedOrganization?
+      let token = App.Services.Authentication.register(
+        "Browser Tester", "browser@example.test", "a longer password"
+      ).try
+      let user : User = App.Services.Authentication.current(Just(token)).try
+      user.createOrganization("Browser Testers", "browsertesters").try
+    end
+
+    let hub = Process.spawn(Metro.Live.Hub.Hub {})
+    let events = Process.spawn(App.Live.Events.Bus {})
+    let statuses = Process.spawn(Presence {})
+    let probe = Config.Routes.routes(hub, events, statuses, [])
+    let site = Config.Routes.routes(hub, events, statuses, probe.rootSegments)
+    let endpoint = Net.Socket.TCP.Endpoint.loopback(Net.Port.from(0).try)
+    let server = Net.HTTP.Server.start(endpoint, site.httpRouter).try
+    let port = Net.HTTP.Server.localAddress(server).port.value
+    let base = "http://127.0.0.1:${port}"
+    let options = Shakespeare.Options {
+      watch?: ENV.get("SHAKESPEARE_WATCH") == Just("1"),
+      slowMs: 450,
+      timeoutMs: 15000
+    }
+
+    let outcome = trying do
+      work(BrowserFixture { base: base, options: options })
+      Ok(())
+    rescue |problem|
+      Error("${problem}")
+    end
+    Net.HTTP.Server.stop(server).try
+    FS.Directory.deleteAll(scratch)
+    match outcome do
+      Error(reason) => do
+        assert(false, reason)
+        ()
+      end
+      _ => ()
+    end
+  end
+end
+
+describe("Slick in a browser") do
+  it("shows an error for a wrong password and permits a retry") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/signin").try
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("wrong password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".failure li")).toHaveText("That email and password do not match an account.")
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+      end
+    end
+  end
+
+  it("registers and creates an organization") do
+    withSlickServer(false) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/register").try
+        page.locator("input[name=name]").fill("Browser Tester").try
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("input[name=password_confirmation]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".welcome")).toBeVisible()
+        page.locator("#organization-box").fill("Browser Testers").try
+        page.locator(".welcome button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+        Shakespeare.expect(page.locator("button[title='New channel']")).toBeVisible()
+      end
+    end
+  end
+
+  it("sends a message and sees it after reload") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/signin").try
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+        page.locator("button[title='New channel']").click().try
+        page.locator("#editor input[name=title]").fill("testing").try
+        page.locator("#editor button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".composer textarea[name=body]")).toBeVisible()
+        page.locator(".composer textarea[name=body]").fill("Hello from Shakespeare").try
+        Shakespeare.expect(page.locator(".composer textarea[name=body]")).toHaveValue("Hello from Shakespeare")
+        page.locator(".composer button.send").click().try
+        Shakespeare.expect(page.locator("article.message .body p")).toHaveText("Hello from Shakespeare")
+        page.reload().try
+        Shakespeare.expect(page.locator("article.message .body p")).toHaveText("Hello from Shakespeare")
+        page.locator("article.message").hover().try
+        page.locator("article.message .offers button[data-emoji='👍']").click().try
+        Shakespeare.expect(page.locator("article.message .reactions .chip.own")).toBeVisible()
+        page.reload().try
+        Shakespeare.expect(page.locator("article.message .reactions .chip.own")).toBeVisible()
+        page.locator("article.message .reactions .chip.own").click().try
+        Shakespeare.expect(page.locator("article.message .reactions")).toHaveText("")
+      end
+    end
+  end
+
+  it("updates a channel topic and returns to messages from files") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/signin").try
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+        page.locator("button[title='New channel']").click().try
+        page.locator("#editor input[name=title]").fill("planning").try
+        page.locator("#editor button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".pane .heading")).toBeVisible()
+        page.locator(".pane .heading").hover().try
+        page.locator(".pane button[data-event='topic-edit']").click().try
+        page.locator(".topic-form input[name=topic]").fill("Project plans").try
+        page.locator(".topic-form button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".pane .topic")).toHaveText("Project plans\n      Edit topic")
+        page.reload().try
+        Shakespeare.expect(page.locator(".pane .topic")).toHaveText("Project plans\n      Edit topic")
+        page.locator(".pane button[data-event='view-files']").click().try
+        Shakespeare.expect(page.locator(".pane button[data-event='view-files'][aria-pressed=true]")).toBeVisible()
+        page.locator(".pane button[data-event='view-messages']").click().try
+        Shakespeare.expect(page.locator(".pane .composer textarea[name=body]")).toBeVisible()
+      end
+    end
+  end
+
+  it("signs out and requires signing in again") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/signin").try
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+        page.locator("#account summary").click().try
+        page.locator("form[action='/signout'] button").click().try
+        Shakespeare.expect(page.locator("form.credentials")).toBeVisible()
+        page.goto("${fixture.base}/").try
+        Shakespeare.expect(page.locator("form.credentials")).toBeVisible()
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+      end
+    end
+  end
+
+  it("replies in a thread and reopens it after reload") do
+    withSlickServer(true) do |fixture|
+      Shakespeare.withPage(fixture.options) do |page|
+        page.goto("${fixture.base}/signin").try
+        page.locator("input[name=email]").fill("browser@example.test").try
+        page.locator("input[name=password]").fill("a longer password").try
+        page.locator("form.credentials button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".workspace")).toBeVisible()
+        page.locator("button[title='New channel']").click().try
+        page.locator("#editor input[name=title]").fill("threads").try
+        page.locator("#editor button[type=submit]").click().try
+        Shakespeare.expect(page.locator(".pane .composer textarea[name=body]")).toBeVisible()
+        page.locator(".pane .composer textarea[name=body]").fill("A question").try
+        page.locator(".pane .composer button.send").click().try
+        Shakespeare.expect(page.locator(".pane article.message .body p")).toHaveText("A question")
+        page.locator(".pane article.message").hover().try
+        page.locator(".pane button[title='Reply in thread']").click().try
+        Shakespeare.expect(page.locator(".thread .composer textarea[name=body]")).toBeVisible()
+        page.locator(".thread .composer textarea[name=body]").fill("An answer").try
+        page.locator(".thread .composer button.send").click().try
+        Shakespeare.expect(page.locator(".thread article.message:last-of-type .body p")).toHaveText("An answer")
+        page.locator("button[title='Close thread']").click().try
+        Shakespeare.expect(page.locator(".pane button.answers")).toBeVisible()
+        page.reload().try
+        Shakespeare.expect(page.locator(".pane button.answers")).toBeVisible()
+        page.locator(".pane button.answers").click().try
+        Shakespeare.expect(page.locator(".thread article.message:last-of-type .body p")).toHaveText("An answer")
+      end
+    end
+  end
+end
