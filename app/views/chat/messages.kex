@@ -97,13 +97,13 @@ let attachmentPartial = Template.html(Kex.embed("_attachment.html.ket"))
 # happened. Consecutive messages of one person are one block, under one
 # name; a command used between them ends the block. `lastUser` and
 # `lastAt` are the message before.
-woven : Room -> [Message] -> [Invocation] -> String -> Integer -> Bool -> [String]
+woven : Room -> [Message] -> [Invocation] -> App.Models.Ids.UserId -> Integer -> Bool -> [String]
 let woven(room, [], uses, lastUser, lastAt, inThread?) = uses.map { |used| usage(room, used) }
 let woven(room, [message | rest], uses, lastUser, lastAt, inThread?) do
   let before = uses.filter { |used| used.invokedAt < message.sentAt }
   if !before.empty?
     let lines = before.map { |used| usage(room, used) }
-    lines + woven(room, [message] + rest, uses.drop(before.count), "", 0, inThread?)
+    lines + woven(room, [message] + rest, uses.drop(before.count), "".as(App.Models.Ids.UserId), 0, inThread?)
   else
     let carries = message.userId == lastUser && message.sentAt - lastAt < RUN
     [bubble(room, message, inThread?, carries)] + woven(room, rest, uses, message.userId, message.sentAt, inThread?)
@@ -123,7 +123,7 @@ let bubble(room, message, inThread?, carries) do
     .map do |glyph|
       let givers = mine.filter { |reaction| reaction.emoji == glyph }
       chipPartial(Chip {
-        key: message.id,
+        key: message.id.as(String),
         glyph: glyph,
         tally: "${givers.count}",
         own?: givers.any? { |reaction| reaction.userId == room.viewer.id }
@@ -131,7 +131,7 @@ let bubble(room, message, inThread?, carries) do
     end
   let offers = Emoji.PALETTE.map do |glyph|
     chipPartial(Chip {
-      key: message.id,
+      key: message.id.as(String),
       glyph: glyph,
       tally: "",
       own?: false
@@ -144,7 +144,7 @@ let bubble(room, message, inThread?, carries) do
   let given = answered(message, room.viewer, room.people, room.responses)
   bubblePartial(
     Bubble {
-      key: message.id,
+      key: message.id.as(String),
       anchor: inThread? then "thread-${message.id}" else "message-${message.id}",
       answers: inThread? then "" else tallied(message.replyCount),
       threadable?: !inThread?,
@@ -154,12 +154,12 @@ let bubble(room, message, inThread?, carries) do
       emblem: writer.map { |person| person.statusEmoji }.or(""),
       emblemNote: writer.map { |person| person.statusText }.or(""),
       initial: author.take(1).upperCase,
-      writer: message.userId,
+      writer: message.userId.as(String),
       tint: "${BEAM.erlang.phash2(message.userId, 8)}",
       stamp: clocked(message.sentAt),
       at: message.sentAt,
       content: App.Helpers.RichText.mentioned(
-        App.Helpers.RichText.shown(message.body, message.id, given),
+        App.Helpers.RichText.shown(message.body, message.id.as(String), given),
         room.people.map { |person| person.shown } + room.teams.map { |team| team.handle },
         [shownAs(room.people, room.viewer.id, room.viewer.shown)] + room.teams
           .filter { |team| team.includes?(room.viewer.id) }
@@ -197,7 +197,7 @@ private do
   # One slash command used, as its line in the conversation.
   usage : Room -> Invocation -> String
   let usage(room, used) = usedPartial(Usage {
-    key: used.id,
+    key: used.id.as(String),
     who: shownAs(room.people, used.userId, "Someone"),
     verb: used.command,
     extra: used.arguments,

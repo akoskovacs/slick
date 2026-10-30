@@ -6,7 +6,10 @@ using App.Models.Organization, only: [OrganizationId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Ids, only: [UserId]
 
-type ConversationId = String
+distinct type ConversationId = String
+make ConversationId do
+  let empty? -> Bool = this.as(String).empty?
+end
 type ConversationKind = Channel | PrivateChat | Group
 type ConversationAccess = Public | Private
 type BotAccess = NoBots | Mentions | AllBots

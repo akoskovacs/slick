@@ -11,11 +11,11 @@ using Harmat.Table, only: [Definition]
 compiled do
   let definition = Table.define :grants do |t|
     t.text(:id, primaryKey: true)
-    t.text(:subject_type, oneOf: ["user_subject", "team_subject"])
+    t.text(:subject_type, oneOf: Harmat.Column.choices(Type.of(Grant.UserSubject)))
     t.text(:subject_id)
-    t.text(:resource_type, oneOf: ["server_resource", "organization_resource", "conversation_resource", "team_resource"])
+    t.text(:resource_type, oneOf: Harmat.Column.choices(Type.of(Grant.ServerResource)))
     t.text(:resource_id, default: "")
-    t.text(:role, oneOf: ["admin", "member", "read_only"])
+    t.text(:role, oneOf: Harmat.Column.choices(Type.of(Grant.Admin)))
     t.bigint(:granted_at, default: 0)
   end
 

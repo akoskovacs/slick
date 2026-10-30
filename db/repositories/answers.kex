@@ -1,6 +1,6 @@
 # Answers to the forms in messages.
 #
-#   DB.Repositories.Answers.save(organization.id, message, 1, user.id, "Deploy to: staging")
+#   message.answer(organization.id, 1, user.id, "Deploy to: staging")
 module DB.Repositories.Answers
 
 using Harmat.Database, as: Database
@@ -8,7 +8,7 @@ using Harmat.Database, as: Database
 # An answer, and not a response: a record called `Response` is taken for
 # the HTTP library's own once the whole application is linked, and reading
 # a field of one then fails.
-using App.Models.Message, only: [Message]
+using App.Models.Message, only: [MessageId]
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Ids, only: [UserId]
@@ -34,27 +34,19 @@ end
 
 # Records a person's answer to one form of a message. An earlier answer of
 # theirs to that form is replaced: a person has one.
-foul save(organizationId: OrganizationId, message: Message, form: Integer, userId: UserId, answer: String) -> Answer or! String do
-  let id = "${message.id}:${form}:${userId}"
-  let answered = Answer {
-    messageId: message.id,
-    conversationId: message.conversationId,
-    askerId: message.userId,
-    userId: userId,
-    form: form,
-    answer: answer,
-    answeredAt: Metro.Clock.milliseconds()
-  }
+foul save(organizationId: OrganizationId, messageId: MessageId, conversationId: ConversationId, askerId: UserId, form: Integer, userId: UserId, answer: String) -> Integer or! String do
+  let id = "${messageId}:${form}:${userId}"
+  let answeredAt = Metro.Clock.milliseconds()
   let row = {
     id: id,
-    message_id: message.id,
-    conversation_id: message.conversationId,
+    message_id: messageId,
+    conversation_id: conversationId,
     organization_id: organizationId,
-    asker_id: message.userId,
+    asker_id: askerId,
     user_id: userId,
     form: form,
     answer: answer,
-    answered_at: answered.answeredAt
+    answered_at: answeredAt
   }
   # The earlier answer and this one are swapped in one transaction.
   let swapped : Integer or! String = Database.transaction do
@@ -66,5 +58,5 @@ foul save(organizationId: OrganizationId, message: Message, form: Integer, userI
       .values(row)
       .run
   end
-  return swapped.map { |_| answered }
+  return swapped.map { |_| answeredAt }
 end

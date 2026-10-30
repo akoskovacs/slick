@@ -4,6 +4,7 @@ module DB.Schema.Users
 
 using Harmat.Column, only: [Column, Characters, Wide, Flag]
 using Harmat.Table, only: [Definition]
+using App.Models.User, as: User
 
 # Known while compiling: a query over this table is written then.
 compiled do
@@ -15,7 +16,7 @@ compiled do
       Column { label: "password_hash", storage: Characters },
       Column { label: "created_at", storage: Wide },
       Column { label: "name", storage: Characters, fallback: Just("''") },
-      Column { label: "kind", storage: Characters, fallback: Just("'person'"), allowed: ["person", "bot"] },
+      Column { label: "kind", storage: Characters, fallback: Just(Harmat.Column.quoted(Harmat.Column.choices(Type.of(User.Person)).first.or(""))), allowed: Harmat.Column.choices(Type.of(User.Person)) },
       Column { label: "owner_id", storage: Characters, fallback: Just("''") },
       Column { label: "api_token_digest", storage: Characters, fallback: Just("''") },
       Column { label: "owner_organization_id", storage: Characters, fallback: Just("''") },

@@ -8,8 +8,12 @@ module App.Models.Team
 
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Ids, only: [UserId]
+using DB.Repositories.Teams, as: Teams
 
-type TeamId = String
+distinct type TeamId = String
+make TeamId do
+  let empty? -> Bool = this.as(String).empty?
+end
 record Team do
   id : TeamId
   organizationId : OrganizationId = ""
@@ -49,6 +53,21 @@ make Team do
     end
     words.reject { |word| word.empty? }.join("-").take(LONGEST_HANDLE)
   end
+
+  # Stores this team with its first members.
+  foul create(by: UserId) -> Team or! String = Teams.create(this, by)
+
+  # Renames this team and changes what it is for.
+  foul update(name: String, description: String) -> Bool or! String = Teams.update(@id, name, description)
+
+  # Adds people to this team.
+  foul addMembers(userIds: [UserId]) -> Integer or! String = Teams.addMembers(@id, userIds)
+
+  # Takes a person out of this team.
+  foul removeMember(userId: UserId) -> Integer or! String = Teams.removeMember(@id, userId)
+
+  # Hands this team to a sync, or takes it back when given an empty id.
+  foul markManaged(externalId: String) -> Integer or! String = Teams.markManaged(@id, externalId)
 
   let includes?(userId: UserId) -> Bool = @members.contains?(userId)
 end

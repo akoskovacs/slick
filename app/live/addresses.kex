@@ -3,7 +3,7 @@
 module App.Live.Addresses
 
 using Metro.Live.Socket, only: [unchanged]
-using App.Live.Event, only: [Event, given]
+using App.Live.Event, only: [Event]
 using App.Live.Outcome, only: [Outcome]
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
@@ -18,7 +18,7 @@ using DB.Repositories.Conversations, as: Conversations
 # chat is started by going to it.
 tabFor : User -> String -> Tab
 foul tabFor(user, location) do
-  let thread : MessageId = Metro.Path.query(location, "thread").or("")
+  let thread : MessageId = Metro.Path.query(location, "thread").or("").as(MessageId)
   match Config.RoutePaths.channel.captured(location) do
     Just(parts) => match user.organization(parts.get("organization").or("")) do
       None => return Tab {}
@@ -32,7 +32,7 @@ foul tabFor(user, location) do
       Just(parts) => match user.organization(parts.get("organization").or("")) do
         None => return Tab {}
         Just(organization) => do
-          let person : UserId = parts.get("person").or("")
+          let person : UserId = parts.get("person").or("").as(UserId)
           let (chat, _) = App.Live.Conversations.openDirect(user, Tab { organization: organization.id }, person)
           return Tab { organization: organization.id, conversation: chat.conversation, thread: thread }
         end
@@ -43,7 +43,7 @@ end
 
 # Going to an address the browser was at: `visit`, from Metro's live.js.
 on : String -> Event -> Outcome
-foul on("visit", event) = unchanged(tabFor(event.user, given(event, "path")))
+foul on("visit", event) = unchanged(tabFor(event.user, event.given("path")))
 foul on(_, event) = unchanged(event.tab)
 
 private do
@@ -55,7 +55,7 @@ private do
       Just(parts) => match user.organization(parts.get("organization").or("")) do
         None => return Tab {}
         Just(organization) => do
-          let group : ConversationId = parts.get("group").or("")
+          let group : ConversationId = parts.get("group").or("").as(ConversationId)
           let tab = Tab { organization: organization.id, conversation: group, thread: thread }
           match user.visible(tab.organization, tab.conversation) do
             Just(conversation) => return conversation.group? then tab else Tab { organization: organization.id }

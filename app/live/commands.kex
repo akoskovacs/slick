@@ -32,7 +32,7 @@ end
 # it starts with a command a bot here has declared: `/mode` in a bot's
 # private chat; `@opencode /mode auto` in a channel, or `/mode` alone
 # when only one bot here answers to it. Anything else is a message.
-run : Server<App.Live.Events.Bus> -> User -> Conversation -> String -> String -> Bool
+run : Server<App.Live.Events.Bus> -> User -> Conversation -> App.Models.Message.MessageId -> String -> Bool
 foul run(events, user, conversation, threadId, body) do
   let people : [User] = Users.everyone.or([])
   let commands = available(user, conversation, people)
@@ -50,10 +50,10 @@ foul run(events, user, conversation, threadId, body) do
   end
   return false if candidates.count != 1
 
-  let command = candidates.first.or(Command { botId: "", name: "" })
+  let command = candidates.first.or(Command { botId: "".as(App.Models.Ids.UserId), name: "" })
   let moment = Metro.Clock.milliseconds()
   let used = Invocation {
-    id: Metro.Id.generate(prefix: "i"),
+    id: Metro.Id.generate(prefix: "i").as(App.Models.Invocation.InvocationId),
     organizationId: conversation.organizationId,
     conversationId: conversation.id,
     threadId: threadId,
@@ -68,7 +68,7 @@ foul run(events, user, conversation, threadId, body) do
     Drafts.save(user.id, Draft { conversationId: conversation.id, threadId: threadId, body: "" })
   end
   if kept.ok?
-    App.Live.Events.publish(events, conversation, App.Live.Events.Command, "", used.threadId, used.invokedAt, command.botId, "")
+    App.Live.Events.publish(events, conversation, App.Live.Events.Command, "".as(App.Models.Message.MessageId), used.threadId, used.invokedAt, command.botId, "")
   end
   return kept.ok?
 end

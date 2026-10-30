@@ -14,7 +14,7 @@ using App.Models.Organization, only: [OrganizationId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Ids, only: [UserId]
 using App.Models.Conversation, as: Conversation
-using App.Models.Grant, only: [Grant]
+using App.Models.Grant, only: [Grant, GrantResourceId]
 using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 
@@ -62,7 +62,7 @@ foul create(
   botAccess: BotAccess = Mentions
 ) -> Conversation or! String do
   let channel = Conversation {
-    id: Metro.Id.generate(prefix: "c"),
+    id: Metro.Id.generate(prefix: "c").as(ConversationId),
     kind: Channel,
     slug: "${organizationId}#${title}",
     title: title,
@@ -92,7 +92,7 @@ foul create(
     admit(channel.id, first).try
     # The team that owns the channel administers it, and so do its members.
     if teamId != ""
-      Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: teamId, resourceType: Grant.ConversationResource, resourceId: channel.id, role: Grant.Admin }).try
+        Grants.grant(Grant.teamOnConversation(teamId, channel.id, Grant.Admin)).try
     end
     Ok(Conversation { ...channel, participants: first })
   end
@@ -113,7 +113,7 @@ foul findOrCreateGroup(organizationId: OrganizationId, people: [UserId], by: Use
     Just(row) => return peopled([row]).map { |found| found.first.or(row) }
     None => do
       let chat = Conversation {
-        id: Metro.Id.generate(prefix: "g"),
+        id: Metro.Id.generate(prefix: "g").as(ConversationId),
         kind: Group,
         slug: slug,
         organizationId: organizationId,
@@ -168,7 +168,7 @@ foul promote(id: ConversationId, title: String, access: ConversationAccess) -> C
 
       let slug = "${chat.organizationId}#${title}"
       Database.update(DB.Schema.Conversations.definition)
-        .set({kind: Channel, slug: slug, title: title, access: access}, columns: [:kind, :slug, :title, :access])
+        .set({kind: Channel, slug: slug, title: title, access: access})
         .where(DB.Schema.Conversations.kind == Database.spelled(Group))
         .where(DB.Schema.Conversations.id == id)
         .run
@@ -188,10 +188,10 @@ end
 # Lets people into a private channel or a group chat, leaving out whoever
 # is in it already. Each is granted membership of the conversation.
 foul admit(conversationId: ConversationId, userIds: [UserId]) -> Integer or! String do
-  let present : [String] = (participantsOf([conversationId]).try).get(conversationId).or([])
+  let present : [UserId] = (participantsOf([conversationId]).try).get(conversationId).or([])
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   let failures = newcomers.flatMap do |userId|
-    let stored = Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: userId, resourceType: Grant.ConversationResource, resourceId: conversationId, role: Grant.Member })
+    let stored = Grants.grant(Grant.userOnConversation(userId, conversationId, Grant.Member))
     match stored do
       Ok(_) => []
       Error(reason) => [reason]
@@ -214,7 +214,7 @@ foul findOrCreateDirect(organizationId: OrganizationId, one: UserId, other: User
       let first = one <= other then one else other
       let second = one <= other then other else one
       let chat = Conversation {
-        id: Metro.Id.generate(prefix: "d"),
+        id: Metro.Id.generate(prefix: "d").as(ConversationId),
         kind: Conversation.PrivateChat,
         slug: slug,
         firstUser: first,
@@ -261,7 +261,7 @@ end
 # has no topic, and the condition on `kind` keeps it that way.
 foul setTopic(id: ConversationId, topic: String) -> Bool or! String do
   return Database.update(DB.Schema.Conversations.definition)
-    .set({topic: topic}, columns: [:topic])
+    .set({topic: topic})
     .where(DB.Schema.Conversations.kind == Database.spelled(Channel))
     .where(DB.Schema.Conversations.id == id)
     .run
@@ -271,7 +271,7 @@ end
 # How much of a conversation its bots may read: "no_bots", "mentions" or "all_bots".
 foul setBotAccess(id: ConversationId, access: BotAccess) -> Bool or! String do
   return Database.update(DB.Schema.Conversations.definition)
-    .set({bot_access: access}, columns: [:bot_access])
+    .set({bot_access: access})
     .where(DB.Schema.Conversations.id == id)
     .run
     .map { |changed| changed > 0 }
@@ -288,17 +288,17 @@ foul configure(id: ConversationId, access: ConversationAccess, teamId: TeamId, b
       return Error("only a channel is configured this way") if !conversation.channel?
       return Database.transaction do
         Database.update(DB.Schema.Conversations.definition)
-          .set({access: access, team_id: teamId, bot_access: botAccess}, columns: [:access, :team_id, :bot_access])
+          .set({access: access, team_id: teamId, bot_access: botAccess})
           .where(DB.Schema.Conversations.id == id)
           .run
           .try
         # The team that owns the channel administers it, and only that team.
         if conversation.teamId != teamId
           if !conversation.teamId.empty?
-            Grants.revoke(Grants.key(Grant.TeamSubject, conversation.teamId, Grant.ConversationResource, id)).try
+            Grants.revoke(Grant.idForTeamOnConversation(conversation.teamId, id)).try
           end
           if !teamId.empty?
-            Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: teamId, resourceType: Grant.ConversationResource, resourceId: id, role: Grant.Admin }).try
+            Grants.grant(Grant.teamOnConversation(teamId, id, Grant.Admin)).try
           end
         end
         Ok(true)
@@ -335,7 +335,11 @@ private do
 
   # Who takes part in some conversations, by conversation.
   foul participantsOf(ids: [ConversationId]) -> {ConversationId: [UserId]} or! String do
-    return Grants.readersOf(Grant.ConversationResource, ids)
+    let found : {GrantResourceId: [UserId]} = Grants.readersOf(Grant.ConversationResource, ids.map { |id| id.as(GrantResourceId) }).try
+    let grouped : {ConversationId: [UserId]} = found.keys.reduce({}) do |groups, id|
+      groups.put(id.as(ConversationId), found.get(id).or([]))
+    end
+    return Ok(grouped)
   end
 
   # The conversations a person takes part in, by id.

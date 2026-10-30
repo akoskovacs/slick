@@ -11,7 +11,7 @@ using App.Models.Ids, only: [UserId]
 # index on `slug` decides.
 foul create(name: String, slug: String, by: UserId) -> Organization or! String do
   let organization = Organization {
-    id: Metro.Id.generate(prefix: "o"),
+    id: Metro.Id.generate(prefix: "o").as(OrganizationId),
     slug: slug,
     name: name
   }

@@ -11,7 +11,7 @@ using Harmat.Table, only: [Definition]
 compiled do
   let definition = Table.define :conversations do |t|
     t.text(:id, primaryKey: true)
-    t.text(:kind, oneOf: ["channel", "private_chat", "group"])
+    t.text(:kind, oneOf: Harmat.Column.choices(Type.of(Conversation.Channel)))
     t.text(:slug)
     t.text(:title, default: "")
     t.text(:topic, default: "")
@@ -20,9 +20,9 @@ compiled do
     t.text(:created_by, default: "")
     t.bigint(:created_at)
     t.text(:organization_id, default: "")
-    t.text(:access, default: "public", oneOf: ["public", "private"])
+    t.text(:access, default: Harmat.Column.choices(Type.of(Conversation.Public)).first.or(""), oneOf: Harmat.Column.choices(Type.of(Conversation.Public)))
     t.text(:team_id, default: "")
-    t.text(:bot_access, default: "mentions", oneOf: ["no_bots", "mentions", "all_bots"])
+    t.text(:bot_access, default: Type.of(Conversation.NoBots).constructorValue(Conversation.Mentions).or(""), oneOf: Harmat.Column.choices(Type.of(Conversation.NoBots)))
   end
 
   let id = definition.textColumn(:id)

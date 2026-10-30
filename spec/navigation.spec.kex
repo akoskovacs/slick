@@ -1,5 +1,8 @@
 using App.Live.Tab, only: [Tab]
 using Spec.Support, only: [World, stepped, shown, fresh, populated]
+using App.Models.Ids, only: [UserId]
+using App.Models.Message, only: [MessageId]
+using App.Models.Team, only: [TeamId]
 
 # What a tab shows apart from what is stored, and where an address takes
 # it. Each example starts from a world of its own (Spec.Support).

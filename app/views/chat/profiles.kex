@@ -70,7 +70,7 @@ let pane(tab, user, sidebar) do
       let readOnly? = role == Grant.ReadOnly
       let mayManage = sidebar.administrator && !person.bot? && person.id != user.id && sidebar.roles.get(person.id).set?
       profilePartial(Card {
-        key: person.id,
+        key: person.id.as(String),
         caption: person.shown,
         initial: person.shown.take(1).upperCase,
         tint: "${BEAM.erlang.phash2(person.id, 8)}",
@@ -81,7 +81,7 @@ let pane(tab, user, sidebar) do
         active?: active,
         mail: person.bot? then "" else person.email,
         keeper: keeper,
-        keeperKey: owner.map { |each| each.id }.or(""),
+        keeperKey: owner.map { |each| each.id.as(String) }.or(""),
         own?: person.id == user.id,
         admin?: admin?,
         member?: member?,

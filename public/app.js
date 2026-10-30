@@ -227,6 +227,15 @@
     },
   };
 
+  // A form sent as soon as a choice in it changes, as Slack saves a
+  // role the moment it is picked: its submit button stays for the
+  // keyboard, out of sight.
+  Metro.hooks.Instant = {
+    mounted() {
+      this.el.addEventListener("change", () => this.el.requestSubmit());
+    },
+  };
+
   // A moment, `data-at` milliseconds since 1970, shown in the viewer's own
   // time: the time of day (`data-shows="clock"`, "14:51") or the day with
   // it ("day", "2026-10-21 14:51"). The server writes it in UTC, which a

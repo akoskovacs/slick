@@ -9,7 +9,7 @@ using App.Models.Conversation, only: [Conversation, ConversationId]
 using App.Models.Conversation, as: Conversation
 using App.Models.Message, only: [MessageId]
 using App.Models.Team, only: [TeamId]
-using App.Models.Grant, only: [Grant, GrantResourceType, GrantRole]
+using App.Models.Grant, only: [Grant, GrantResourceId, GrantResourceType, GrantRole]
 using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Messages, as: Messages
@@ -18,15 +18,24 @@ using DB.Repositories.Organizations, as: Organizations
 using DB.Repositories.Users, as: Users
 using DB.Repositories.Memberships, as: Memberships
 
-let BOT_TOKEN_PREFIX = "slick_bot_"
-
 type UserKind = Person | Bot
 type UserDetail = Name | Nickname | Title | Department | Phone | TimeZone | Bio
+let BOT_TOKEN_PREFIX = "slick_bot_"
 
-# Whether a message names somebody, the way a bot looks for itself:
-# "@name", however either is cased.
-mentioned? : String -> String -> Bool
-let mentioned?(name, body) = body.lowerCase.contains?("@${name.lowerCase}")
+# The details a profile has, by the column each is kept in, with what
+# each is called and how long it may be. `name` is the one shown everywhere,
+# unless they go by their nickname.
+let DETAILS = [
+  (Name, "Name", 40),
+  (Nickname, "Nickname", 40),
+  (Title, "Title", 80),
+  (Department, "Department", 80),
+  (Phone, "Phone", 30),
+  (TimeZone, "Time zone", 60),
+  (Bio, "Bio", 300)
+]
+
+
 record User do
   id : UserId
   email : String
@@ -61,21 +70,36 @@ record User do
   managed : [UserDetail] = []
 end
 
-# The details a profile has, by the column each is kept in, with what each
-# is called and how long it may be. `name` is the one shown everywhere,
-# unless they go by their nickname.
-let DETAILS = [
-  (Name, "Name", 40),
-  (Nickname, "Nickname", 40),
-  (Title, "Title", 80),
-  (Department, "Department", 80),
-  (Phone, "Phone", 30),
-  (TimeZone, "Time zone", 60),
-  (Bio, "Bio", 300)
-]
+# The users who hold the server-wide administrator role, directly or
+# through an administrator team. Resolve them in batches for rosters.
+foul serverAdmins() -> [UserId] or! String do
+  let grants = Grants.over(Grant.ServerResource, "").try
+  let admins = grants.filter { |grant| grant.role == Grant.Admin }
+  let direct = admins.flatMap { |grant| grant.userId.map { |id| [id] }.or([]) }
+  let teams = admins.flatMap { |grant| grant.teamId.map { |id| [id.as(GrantResourceId)] }.or([]) }
+  let memberships = Grants.membersOf(Grant.TeamResource, teams).try
+  let viaTeams = teams.flatMap { |teamId| memberships.get(teamId).or([]) }
+  return Ok((direct + viaTeams).uniq)
+end
 
 make User do
   let bot? -> Bool = @kind == Bot
+
+  # Stores this account with a password.
+  foul enroll(password: String) -> User or! [String] do
+    match Users.enroll(this, Metro.Auth.Password.hashed(password)) do
+      Error(_) => Error(["An account with that email already exists. Sign in instead."])
+      Ok(user) => Ok(user)
+    end
+  end
+
+  # Saves the profile details on this user.
+  foul save -> Integer or! String = Users.update(this)
+
+  # Sets what this user says about themselves.
+  foul setStatus(emoji: String, saying: String) -> Integer or! String do
+    Users.setStatus(@id, emoji, saying)
+  end
 
   # The bots this person may manage in an organization: their own, plus
   # its bots when they administer it.
@@ -106,13 +130,7 @@ make User do
     Harmat.Database.transaction do
       let organization : Organization = Organizations.create(name, slug, @id).try
       Memberships.add(organization.id, @id).try
-      Grants.grant(Grant {
-        subjectType: Grant.UserSubject,
-        subjectId: @id,
-        resourceType: Grant.OrganizationResource,
-        resourceId: organization.id,
-        role: Grant.Admin
-      }).try
+      Grants.grant(Grant.userOnOrganization(@id, organization.id, Grant.Admin)).try
       let general : Conversation = Conversations.create(organization.id, Conversation.GENERAL, @id).try
       Conversations.setTopic(general.id, Organization.GENERAL_TOPIC).try
       Ok(organization)
@@ -123,8 +141,8 @@ make User do
   # token once; only its digest is kept in storage.
   buildBot : OrganizationId -> String -> (User, String) or! String
   foul buildBot(organizationId, name) do
-    let id = Metro.Id.generate(prefix: "b")
-    let token = "${BOT_TOKEN_PREFIX}${Metro.Auth.Token.fresh()}"
+    let id = Metro.Id.generate(prefix: "b").as(UserId)
+    let token = "${User.BOT_TOKEN_PREFIX}${Metro.Auth.Token.fresh()}"
     let bot = User {
       id: id, email: "${id}@bots.invalid", name: name, kind: Bot,
       ownerId: organizationId.empty? then @id else "", ownerOrganizationId: organizationId
@@ -135,7 +153,7 @@ make User do
   # Replaces a bot's token; the old token stops working.
   renewBotToken : OrganizationId -> UserId -> String or! String
   foul renewBotToken(organizationId, botId) do
-    let token = "${BOT_TOKEN_PREFIX}${Metro.Auth.Token.fresh()}"
+    let token = "${User.BOT_TOKEN_PREFIX}${Metro.Auth.Token.fresh()}"
     let digest = Metro.Auth.Token.digest(token)
     let own = Users.rekeyBot(botId, @id, digest).or(false)
 
@@ -159,7 +177,7 @@ make User do
 
   # The strongest role held over a resource, directly or through the teams
   # this person belongs to; `None` when they hold none.
-  role : GrantResourceType -> String -> GrantRole?
+  role : GrantResourceType -> GrantResourceId -> GrantRole?
   foul role(resourceType, resourceId) do
     return Just(Grant.Admin) if resourceType == Grant.OrganizationResource && @serverAdmin?
     let teams : [TeamId] = Grants.teamsOf(@id).or([])
@@ -245,12 +263,12 @@ make User do
     let privateIds : [ConversationId] = conversations
       .filter { |conversation| !conversation.direct? && !conversation.public? }
       .map { |conversation| conversation.id }
-    let overOrganizations : {OrganizationId: [Grant]} = Grants.overEach(Grant.OrganizationResource, organizationIds).or({})
-    let overConversations : {ConversationId: [Grant]} = Grants.overEach(Grant.ConversationResource, privateIds).or({})
+    let organizationGrants = Grants.overEach(Grant.OrganizationResource, organizationIds.map { |id| id.as(GrantResourceId) }).or({})
+    let conversationGrants = Grants.overEach(Grant.ConversationResource, privateIds.map { |id| id.as(GrantResourceId) }).or({})
     return conversations.filter do |conversation|
       let over = conversation.public?
-        then overOrganizations.get(conversation.organizationId).or([])
-        else overConversations.get(conversation.id).or([])
+        then organizationGrants.get(conversation.organizationId.as(GrantResourceId)).or([])
+        else conversationGrants.get(conversation.id.as(GrantResourceId)).or([])
       conversation.direct?
         then conversation.firstUser == @id || conversation.secondUser == @id
         else Grant.roleFor(@id, teams, over).set?
@@ -260,7 +278,7 @@ make User do
   # Whether this person may make a channel or team in an organization.
   foul canCreate?(organizationId: OrganizationId) -> Bool do
     return true if @serverAdmin?
-    let at = role(Grant.OrganizationResource, organizationId)
+    let at = role(Grant.OrganizationResource, organizationId.as(GrantResourceId))
     at == Just(Grant.Member) || at == Just(Grant.Admin)
   end
 
@@ -268,7 +286,7 @@ make User do
   # teams and channels.
   foul canManage?(organizationId: OrganizationId) -> Bool do
     return true if @serverAdmin?
-    role(Grant.OrganizationResource, organizationId) == Just(Grant.Admin)
+    role(Grant.OrganizationResource, organizationId.as(GrantResourceId)) == Just(Grant.Admin)
   end
 
   # Whether this person may read a conversation.
@@ -278,9 +296,9 @@ make User do
       return conversation.firstUser == @id || conversation.secondUser == @id
     end
     if conversation.public?
-      return role(Grant.OrganizationResource, conversation.organizationId).set?
+      return role(Grant.OrganizationResource, conversation.organizationId.as(GrantResourceId)).set?
     end
-    role(Grant.ConversationResource, conversation.id).set?
+    role(Grant.ConversationResource, conversation.id.as(GrantResourceId)).set?
   end
 
   # Whether this person may say something in a conversation.
@@ -290,8 +308,8 @@ make User do
       return conversation.firstUser == @id || conversation.secondUser == @id
     end
     let at = conversation.public?
-      then role(Grant.OrganizationResource, conversation.organizationId)
-      else role(Grant.ConversationResource, conversation.id)
+      then role(Grant.OrganizationResource, conversation.organizationId.as(GrantResourceId))
+      else role(Grant.ConversationResource, conversation.id.as(GrantResourceId))
     at == Just(Grant.Member) || at == Just(Grant.Admin)
   end
 
@@ -299,8 +317,8 @@ make User do
   # bot access.
   foul canAdminister?(conversation: Conversation) -> Bool do
     return true if @serverAdmin?
-    return true if role(Grant.OrganizationResource, conversation.organizationId) == Just(Grant.Admin)
-    role(Grant.ConversationResource, conversation.id) == Just(Grant.Admin)
+    return true if role(Grant.OrganizationResource, conversation.organizationId.as(GrantResourceId)) == Just(Grant.Admin)
+    role(Grant.ConversationResource, conversation.id.as(GrantResourceId)) == Just(Grant.Admin)
   end
 
   # Whether this bot may read a conversation's thread — `root` "" for its
@@ -315,7 +333,7 @@ make User do
 
     match Messages.find(root) do
       Ok(Just(message)) => do
-        return true if mentioned?(@name, message.body)
+        return true if message.body.lowerCase.contains?("@${@name.lowerCase}")
         return Messages.botAuthors(root, [@id]).or([]).count > 0
       end
       _ => return false
@@ -328,8 +346,7 @@ make User do
     let teams = Grants.teamsOf(@id).or([])
     Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
       grant.role == Grant.Admin && (
-        (grant.subjectType == Grant.UserSubject && grant.subjectId == @id) ||
-        (grant.subjectType == Grant.TeamSubject && teams.contains?(grant.subjectId))
+        grant.userId == Just(@id) || grant.teamId.map { |teamId| teams.contains?(teamId) }.or(false)
       )
     end
   end

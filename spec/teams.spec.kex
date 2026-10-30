@@ -1,6 +1,7 @@
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
 using Spec.Support, only: [World, stepped, shown, fresh, populated]
+using App.Models.Message, only: [MessageId]
 
 # Teams from a tab. Each example starts from a world of its own
 # (Spec.Support).
@@ -59,7 +60,7 @@ describe("App.Live.Teams, who is in one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let design = createDesign(world)
-      let (_, added) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
+      let (_, added) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id.as(String))])
       Assert.truthy(added)
       stepped(world, world.eve, Tab {}, [("event", "message-send"), ("body", "ping @design-crew")])
       Assert.truthy(shown(world, world.bob, Tab {}).contains?("<span class=\"mention you\">@design-crew</span>"))
@@ -73,10 +74,10 @@ describe("App.Live.Teams, who is in one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let design = createDesign(world)
-      stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
-      let (_, eveMade) = stepped(world, world.eve, Tab {}, [("event", "channel-create"), ("title", "crew-only"), ("access", "private"), ("team", design.team)])
+      stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id.as(String))])
+      let (_, eveMade) = stepped(world, world.eve, Tab {}, [("event", "channel-create"), ("title", "crew-only"), ("access", "private"), ("team", design.team.as(String))])
       Assert.falsy(eveMade)
-      let (crewOnly, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "crew-only"), ("access", "private"), ("team", design.team)])
+      let (crewOnly, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "crew-only"), ("access", "private"), ("team", design.team.as(String))])
       Assert.truthy(world.bob.visible(crewOnly.organization, crewOnly.conversation).set?)
       Assert.equal(world.eve.visible(crewOnly.organization, crewOnly.conversation), None)
       stepped(world, world.eve, Tab { team: design.team }, [("event", "team-join")])
@@ -91,9 +92,9 @@ describe("App.Live.Teams, who is in one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let design = createDesign(world)
-      stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id)])
+      stepped(world, world.ada, design, [("event", "team-add"), ("person", world.bob.id.as(String))])
       DB.Repositories.Teams.markManaged(design.team, "scim-group-1").try
-      let (refusedAdd, addChanged) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.eve.id)])
+      let (refusedAdd, addChanged) = stepped(world, world.ada, design, [("event", "team-add"), ("person", world.eve.id.as(String))])
       Assert.falsy(addChanged)
       Assert.truthy(refusedAdd.failure.contains?("kept in sync"))
       let (_, leaveChanged) = stepped(world, world.bob, design, [("event", "team-leave")])
@@ -112,7 +113,7 @@ describe("App.Live.Teams, opening one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let design = createDesign(world)
-      let (opened, _) = stepped(world, world.bob, Tab { thread: "m1", profile: world.eve.id }, [("event", "team-open"), ("id", design.team)])
+      let (opened, _) = stepped(world, world.bob, Tab { thread: "m1", profile: world.eve.id }, [("event", "team-open"), ("id", design.team.as(String))])
       Assert.equal(opened.team, design.team)
       Assert.equal(opened.thread, "")
       Assert.equal(opened.profile, "")
@@ -125,7 +126,7 @@ describe("App.Live.Teams, opening one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let design = createDesign(world)
-      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "team-open"), ("id", design.team)])
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "team-open"), ("id", design.team.as(String))])
       Assert.equal(malTries.team, "")
       Assert.falsy(shown(world, world.mal, Tab { team: design.team }).contains?("design-crew"))
     end

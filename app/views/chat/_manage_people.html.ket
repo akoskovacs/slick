@@ -1,21 +1,23 @@
 ---
-params: [organization: String, rows: String, problem: String]
+params: [organization: String, rows: String, counted: String, problem: String]
 ---
 <div class="backdrop">
   <section class="editor manage-people" id="editor" role="dialog" aria-modal="true" aria-label="Manage people in <%= organization %>">
-    <h2>People in <%= organization %></h2>
-    <p class="hint">Invite people, change their organization role, or remove them.</p>
-    <form class="asking people-invite" data-live="invite-send" data-live-quiet>
+    <header class="editor-head">
+      <h2>People in <%= organization %></h2>
+      <button type="button" class="quiet close" data-event="cancel" title="Close">✕</button>
+    </header>
+    <form class="people-invite" data-live="invite-send" data-live-quiet>
       <label for="invite-email">Invite by email</label>
       <div class="people-invite-row">
         <input id="invite-email" name="email" type="email" placeholder="name@example.com" autocomplete="off">
-        <button type="submit" class="primary">Invite</button>
+        <button type="submit" class="send">Invite</button>
       </div>
+      <% if !problem.empty? %>
+        <p class="problem" role="alert"><%= problem %></p>
+      <% end %>
     </form>
-    <% if !problem.empty? %>
-      <p class="problem" role="alert"><%= problem %></p>
-    <% end %>
+    <h3 class="managed-count"><%= counted %></h3>
     <ul class="managed-people"><%== rows %></ul>
-    <div class="actions"><button type="button" class="quiet" data-event="cancel">Done</button></div>
   </section>
 </div>

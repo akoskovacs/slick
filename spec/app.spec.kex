@@ -5,6 +5,12 @@ using App.Models.Conversation, only: [Conversation, Channel, PrivateChat]
 using App.Models.Conversation, as: Conversation
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
+using App.Models.Ids, only: [UserId]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.Conversation, only: [ConversationId]
+using App.Models.Message, only: [MessageId]
+using App.Models.Attachment, only: [AttachmentId]
+using App.Models.Team, only: [TeamId]
 using App.Models.User, only: [User]
 using App.Models.User, as: User
 using Spec.Support, only: [World, stepped, shown, fresh, populated, said]
@@ -277,7 +283,7 @@ describe("Slick") do
       # It is told which private chats it has, once somebody has opened one.
       let before = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, ""))
       Assert.equal(before.payload.to(String).or(""), "[]")
-      step(statuses, ada, Tab {}, [("event", "direct-open"), ("user", claude.id)])
+      step(statuses, ada, Tab {}, [("event", "direct-open"), ("user", claude.id.as(String))])
       let chats = site.call(Metro.WebRequest.asked("GET", "/api/acme/dm", asBot, "")).payload.to(String).or("")
       Assert.truthy(chats.contains?("\"person\":\"${ada.id}\"") && chats.contains?("\"name\":\"Ada\""))
 
@@ -297,7 +303,7 @@ describe("Slick") do
       end
       let bob = seeded("bob@example.com")
       let eve = seeded("eve@example.com")
-      let (huddle, _) = step(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", claude.id)])
+      let (huddle, _) = step(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id.as(String)), ("person", claude.id.as(String))])
       let groups = site.call(Metro.WebRequest.asked("GET", "/api/acme/groups", asBot, "")).payload.to(String).or("")
       Assert.truthy(groups.contains?("\"id\":\"${huddle.conversation}\"") && groups.contains?("\"Ada\"") && groups.contains?("\"Bob\""))
       let groupMessages = "/api/acme/groups/${huddle.conversation}/messages"
@@ -306,7 +312,7 @@ describe("Slick") do
       step(statuses, ada, huddle, [("event", "message-send"), ("body", "@claude /mode quick")])
       let huddled = site.call(Metro.WebRequest.asked("GET", "/api/acme/invocations?after=0", asBot, "")).payload.to(String).or("")
       Assert.truthy(huddled.contains?("\"group\":\"${huddle.conversation}\""))
-      let (aside, _) = step(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id), ("person", eve.id)])
+      let (aside, _) = step(statuses, ada, Tab {}, [("event", "group-create"), ("person", bob.id.as(String)), ("person", eve.id.as(String))])
       Assert.equal(site.call(Metro.WebRequest.asked("GET", "/api/acme/groups/${aside.conversation}/messages", asBot, "")).code, 404)
     end
   end
@@ -390,12 +396,12 @@ describe("App.Live.Statuses") do
         lineFor(shown(world, world.bob, Tab {}), user.id).contains?("entry online")
       end
       Assert.falsy(online?(world.ada))
-      Metro.Live.Presence.arrived(world.statuses, world.ada.id, "one")
-      Metro.Live.Presence.arrived(world.statuses, world.ada.id, "two")
+      Metro.Live.Presence.arrived(world.statuses, world.ada.id.as(String), "one")
+      Metro.Live.Presence.arrived(world.statuses, world.ada.id.as(String), "two")
       Assert.truthy(online?(world.ada))
-      Metro.Live.Presence.departed(world.statuses, world.ada.id, "one")
+      Metro.Live.Presence.departed(world.statuses, world.ada.id.as(String), "one")
       Assert.truthy(online?(world.ada))
-      Metro.Live.Presence.departed(world.statuses, world.ada.id, "two")
+      Metro.Live.Presence.departed(world.statuses, world.ada.id.as(String), "two")
       Assert.falsy(online?(world.ada))
     end
   end
@@ -407,7 +413,7 @@ describe("App.Live.Addresses, the tab an address stands for") do
       let world = populated()
       let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
       let id = said(world, world.ada, "a thread")
-      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id.as(String))])
       Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/channels/random").conversation, random.conversation)
       Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/channels/general?thread=${id}").thread, id)
       Assert.equal(App.Live.Addresses.tabFor(world.ada, "/acmecorp/dm/${world.bob.id}").conversation, chat.conversation)
@@ -419,7 +425,7 @@ describe("App.Live.Addresses, the tab an address stands for") do
   it("takes nobody anywhere that is not there, or not theirs") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id.as(String))])
       Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/channels/nowhere").conversation, "")
       Assert.equal(App.Live.Addresses.tabFor(world.eve, "/acmecorp/dm/nobody").conversation, "")
       Assert.equal(App.Live.Addresses.tabFor(world.eve, "/nowhere/channels/general").organization, "")
@@ -441,7 +447,7 @@ describe("Organizations, kept apart") do
       Assert.falsy(theirs.contains?("# random"))
       Assert.falsy(theirs.contains?("hello"))
       Assert.equal(App.Live.Addresses.tabFor(world.mal, "/acmecorp/channels/random"), Tab {})
-      let (switched, _) = stepped(world, world.mal, Tab {}, [("event", "organization-switch"), ("id", world.acme.organization)])
+      let (switched, _) = stepped(world, world.mal, Tab {}, [("event", "organization-switch"), ("id", world.acme.organization.as(String))])
       Assert.equal(switched.organization, "")
       let forged = Tab { organization: world.acme.organization, conversation: random.conversation }
       Assert.equal(world.mal.visible(forged.organization, forged.conversation), None)
@@ -519,7 +525,7 @@ describe("App.Live.Unread") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let (random, _) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
-      let (chat, _) = stepped(world, world.bob, Tab {}, [("event", "direct-open"), ("user", world.eve.id)])
+      let (chat, _) = stepped(world, world.bob, Tab {}, [("event", "direct-open"), ("user", world.eve.id.as(String))])
       stepped(world, world.bob, chat, [("event", "message-send"), ("body", "psst, eve")])
       Assert.truthy(shown(world, world.eve, random).contains?("data-user=\"${world.bob.id}\">Bob\n      <span class=\"count\""))
     end
@@ -620,8 +626,8 @@ end
 
 describe("The events bus, telling bots what happens") do
   it("tells each bot only what it may read, and where, never what") do
-    let acme = "o1"
-    let other = "o2"
+    let acme : OrganizationId = "o1"
+    let other : OrganizationId = "o2"
     # A message in a public channel of Acme that lets bots read everything:
     # every bot of Acme's, and none of another organization's.
     let publicMessage = App.Live.Events.Event {
@@ -654,37 +660,37 @@ describe("The events bus, telling bots what happens") do
       ...publicMessage, botAccess: Conversation.NoBots, body: "hey @muse"
     }
 
-    Assert.truthy(App.Live.Events.heard?(publicMessage, "b1", "muse", [acme]))
-    Assert.truthy(App.Live.Events.heard?(publicMessage, "b2", "deploy", [acme]))
-    Assert.falsy(App.Live.Events.heard?(publicMessage, "b1", "muse", [other]))
-    Assert.falsy(App.Live.Events.heard?(privateMessage, "b2", "deploy", [acme]))
-    Assert.truthy(App.Live.Events.heard?(privateMessage, "b1", "muse", [acme]))
-    Assert.truthy(App.Live.Events.heard?(answered, "b1", "muse", [acme]))
-    Assert.falsy(App.Live.Events.heard?(answered, "b2", "deploy", [acme]))
-    Assert.truthy(App.Live.Events.heard?(commanded, "b2", "deploy", [acme]))
-    Assert.falsy(App.Live.Events.heard?(commanded, "b1", "muse", [acme]))
+    Assert.truthy(publicMessage.for?("b1", "muse", [acme]))
+    Assert.truthy(publicMessage.for?("b2", "deploy", [acme]))
+    Assert.falsy(publicMessage.for?("b1", "muse", [other]))
+    Assert.falsy(privateMessage.for?("b2", "deploy", [acme]))
+    Assert.truthy(privateMessage.for?("b1", "muse", [acme]))
+    Assert.truthy(answered.for?("b1", "muse", [acme]))
+    Assert.falsy(answered.for?("b2", "deploy", [acme]))
+    Assert.truthy(commanded.for?("b2", "deploy", [acme]))
+    Assert.falsy(commanded.for?("b1", "muse", [acme]))
     # "mentions": only the bot named, or a thread it is in.
-    Assert.truthy(App.Live.Events.heard?(mentioned, "b1", "muse", [acme]))
-    Assert.falsy(App.Live.Events.heard?(mentioned, "b2", "deploy", [acme]))
-    Assert.truthy(App.Live.Events.heard?(replied, "b1", "muse", [acme]))
-    Assert.falsy(App.Live.Events.heard?(replied, "b2", "deploy", [acme]))
+    Assert.truthy(mentioned.for?("b1", "muse", [acme]))
+    Assert.falsy(mentioned.for?("b2", "deploy", [acme]))
+    Assert.truthy(replied.for?("b1", "muse", [acme]))
+    Assert.falsy(replied.for?("b2", "deploy", [acme]))
     # "none": no bot, however it is named.
-    Assert.falsy(App.Live.Events.heard?(forbidden, "b1", "muse", [acme]))
-    Assert.falsy(App.Live.Events.heard?(forbidden, "b2", "deploy", [acme]))
+    Assert.falsy(forbidden.for?("b1", "muse", [acme]))
+    Assert.falsy(forbidden.for?("b2", "deploy", [acme]))
 
     # Where each of them is told to look, as its own API takes it: a channel
     # by its title, a group chat by its id, a private chat by who it is with.
     let between = App.Live.Events.Event {
       ...publicMessage, channel: "", first: "u1", second: "b1"
     }
-    Assert.equal(App.Live.Events.accessFor(publicMessage), "all")
-    Assert.equal(App.Live.Events.accessFor(mentioned), "mentions")
-    Assert.equal(App.Live.Events.accessFor(forbidden), "none")
-    Assert.equal(App.Live.Events.accessFor(between), "all")
-    Assert.equal(App.Live.Events.placed(publicMessage, "b1"), "channels/general")
-    Assert.equal(App.Live.Events.placed(privateMessage, "b1"), "groups/c2")
-    Assert.equal(App.Live.Events.placed(between, "b1"), "dm/u1")
-    Assert.equal(App.Live.Events.placed(between, "u1"), "dm/b1")
+    Assert.equal(publicMessage.access, "all")
+    Assert.equal(mentioned.access, "mentions")
+    Assert.equal(forbidden.access, "none")
+    Assert.equal(between.access, "all")
+    Assert.equal(publicMessage.placedFor("b1"), "channels/general")
+    Assert.equal(privateMessage.placedFor("b1"), "groups/c2")
+    Assert.equal(between.placedFor("b1"), "dm/u1")
+    Assert.equal(between.placedFor("u1"), "dm/b1")
   end
 end
 
@@ -700,10 +706,10 @@ describe("User, deciding from grants") do
       let secret = Conversation { id: "c2", kind: Channel, slug: "o1#secret", title: "secret", organizationId: "o1", access: Conversation.Private }
       let dm = Conversation { id: "d1", kind: PrivateChat, slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
 
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Member }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u2", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Admin }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u3", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.ReadOnly }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "b1", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Member }).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("u1", "o1", Grant.Member)).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("u2", "o1", Grant.Admin)).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("u3", "o1", Grant.ReadOnly)).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("b1", "o1", Grant.Member)).try
 
       # A public channel: members, admins and read-only users read it; only
       # members and admins write.
@@ -719,14 +725,14 @@ describe("User, deciding from grants") do
       Assert.falsy(bob.canRead?(secret))
       Assert.truthy(bob.canAdminister?(secret))
 
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.ConversationResource, resourceId: "c2", role: Grant.Member }).try
+      DB.Repositories.Grants.grant(Grant.userOnConversation("u1", "c2", Grant.Member)).try
       Assert.truthy(ada.canRead?(secret))
       Assert.truthy(ada.canWrite?(secret))
       Assert.falsy(ada.canAdminister?(secret))
 
       # A team that owns the channel hands its members the channel.
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u1", resourceType: Grant.TeamResource, resourceId: "t1", role: Grant.Member }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: "t1", resourceType: Grant.ConversationResource, resourceId: "c2", role: Grant.Admin }).try
+      DB.Repositories.Grants.grant(Grant.userOnTeam("u1", "t1", Grant.Member)).try
+      DB.Repositories.Grants.grant(Grant.teamOnConversation("t1", "c2", Grant.Admin)).try
       Assert.truthy(ada.canAdminister?(secret))
       Assert.falsy(carl.canRead?(secret))
 
@@ -747,10 +753,10 @@ describe("User, deciding from grants") do
 
       # A server administrator can hold that role through a team, while a
       # lesser server grant must not add its holder to the admin roster.
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.TeamSubject, subjectId: "t1", resourceType: Grant.ServerResource, resourceId: "", role: Grant.Admin }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u2", resourceType: Grant.ServerResource, resourceId: "", role: Grant.Admin }).try
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "u3", resourceType: Grant.ServerResource, resourceId: "", role: Grant.Member }).try
-      let serverAdmins = DB.Repositories.Grants.serverAdmins().try
+      DB.Repositories.Grants.grant(Grant.teamOnServer("t1", Grant.Admin)).try
+      DB.Repositories.Grants.grant(Grant.userOnServer("u2", Grant.Admin)).try
+      DB.Repositories.Grants.grant(Grant.userOnServer("u3", Grant.Member)).try
+      let serverAdmins = User.serverAdmins().try
       Assert.truthy(ada.serverAdmin?)
       Assert.truthy(serverAdmins.contains?("u1"))
       Assert.truthy(serverAdmins.contains?("u2"))
@@ -790,7 +796,7 @@ describe("User, deciding from grants") do
 
       Assert.truthy(admin.memberOf?(other.id))
       Assert.truthy(admin.canManage?(other.id))
-      Assert.equal(admin.role(Grant.OrganizationResource, other.id), Just(Grant.Admin))
+      Assert.equal(admin.role(Grant.OrganizationResource, other.id.as(Grant.GrantResourceId)), Just(Grant.Admin))
       Assert.equal(admin.home(other.id).map { |organization| organization.id }, Just(other.id))
       Assert.truthy(admin.organizations.any? { |organization| organization.id == other.id })
       Assert.truthy(App.Live.Chat.markup(statuses, admin, Tab { organization: other.id }).contains?("Manage people"))
@@ -808,13 +814,13 @@ describe("User, deciding from grants") do
       Assert.truthy(DB.Repositories.Memberships.member?(other.id, bob.id))
 
       let (_, changedRole) = step(statuses, admin, Tab { organization: other.id }, [
-        ("event", "role-set"), ("user", bob.id), ("role", "read_only")
+        ("event", "role-set"), ("user", bob.id.as(String)), ("role", "read_only")
       ])
       Assert.truthy(changedRole)
       Assert.equal(other.roleOf(bob.id), Just(Grant.ReadOnly))
 
       let (_, removed) = step(statuses, admin, Tab { organization: other.id }, [
-        ("event", "member-remove"), ("user", bob.id)
+        ("event", "member-remove"), ("user", bob.id.as(String))
       ])
       Assert.truthy(removed)
       Assert.falsy(DB.Repositories.Memberships.member?(other.id, bob.id))
@@ -822,14 +828,14 @@ describe("User, deciding from grants") do
       # Server-wide rights remain in force even when the last explicit
       # organization administrator is demoted or removed.
       let (_, demotedLastOrgAdmin) = step(statuses, admin, Tab { organization: other.id }, [
-        ("event", "role-set"), ("user", ada.id), ("role", "member")
+        ("event", "role-set"), ("user", ada.id.as(String)), ("role", "member")
       ])
       Assert.truthy(demotedLastOrgAdmin)
       Assert.equal(other.roleOf(ada.id), Just(Grant.Member))
       Assert.truthy(admin.canManage?(other.id))
 
       let (_, removedLastOrgAdmin) = step(statuses, admin, Tab { organization: other.id }, [
-        ("event", "member-remove"), ("user", ada.id)
+        ("event", "member-remove"), ("user", ada.id.as(String))
       ])
       Assert.truthy(removedLastOrgAdmin)
       Assert.falsy(DB.Repositories.Memberships.member?(other.id, ada.id))
@@ -858,33 +864,33 @@ describe("Organization, roles an administrator gives") do
       Assert.falsy(bob.canManage?(acme.organization))
 
       # A member cannot change roles; an administrator can.
-      let (_, bobTries) = step(statuses, bob, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
+      let (_, bobTries) = step(statuses, bob, Tab {}, [("event", "role-set"), ("user", eve.id.as(String)), ("role", "admin")])
       Assert.falsy(bobTries)
       Assert.falsy(eve.canManage?(acme.organization))
 
-      let (_, promoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "admin")])
+      let (_, promoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id.as(String)), ("role", "admin")])
       Assert.truthy(promoted)
       Assert.truthy(eve.canManage?(acme.organization))
 
       # Read-only: still in the organization, but cannot write.
-      let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id), ("role", "read_only")])
+      let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id.as(String)), ("role", "read_only")])
       Assert.truthy(muted)
       Assert.truthy(bob.canRead?(Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
       Assert.falsy(bob.canWrite?(Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
 
       # The last administrator cannot be demoted or removed.
-      let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id), ("role", "member")])
+      let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id.as(String)), ("role", "member")])
       Assert.truthy(demoted)
       let admins = DB.Repositories.Organizations.find(acme.organization).try
         .map { |organization| organization.admins.count }
         .or(0)
       Assert.equal(admins, 1)
 
-      let (_, selfDemote) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", ada.id), ("role", "member")])
+      let (_, selfDemote) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", ada.id.as(String)), ("role", "member")])
       Assert.falsy(selfDemote)
       Assert.truthy(ada.canManage?(acme.organization))
 
-      let (_, removedLast) = step(statuses, ada, Tab {}, [("event", "member-remove"), ("user", ada.id)])
+      let (_, removedLast) = step(statuses, ada, Tab {}, [("event", "member-remove"), ("user", ada.id.as(String))])
       Assert.falsy(removedLast)
       Assert.truthy(ada.canManage?(acme.organization))
     end
@@ -896,7 +902,7 @@ describe("User, what a channel lets its bots read") do
     with Harmat.Connection = fresh() do
       let bot = User { id: "b1", email: "b1@x", name: "muse", kind: User.Bot }
       let channel = Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: "o1", access: Conversation.Public, botAccess: Conversation.Mentions }
-      DB.Repositories.Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: "b1", resourceType: Grant.OrganizationResource, resourceId: "o1", role: Grant.Member }).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("b1", "o1", Grant.Member)).try
 
       let asked = DB.Repositories.Messages.create("c1", "u1", "a question", "").try
       let named = DB.Repositories.Messages.create("c1", "u1", "hey @muse, help", "").try

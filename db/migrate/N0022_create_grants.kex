@@ -8,15 +8,16 @@ module DB.Migrate.N0022CreateGrants
 using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [createTable, addIndex, execute]
 using Harmat.Sql, only: [sql]
+using App.Models.Grant, as: Grant
 
 let change = Migration.define :create_grants, follows: :add_groups do
   createTable(:grants) do |t|
     t.text(:id, primaryKey: true)
-    t.text(:subject_type, oneOf: ["user_subject", "team_subject"])
+    t.text(:subject_type, oneOf: Harmat.Column.choices(Type.of(Grant.UserSubject)))
     t.text(:subject_id)
-    t.text(:resource_type, oneOf: ["server_resource", "organization_resource", "conversation_resource", "team_resource"])
+    t.text(:resource_type, oneOf: Harmat.Column.choices(Type.of(Grant.ServerResource)))
     t.text(:resource_id, default: "")
-    t.text(:role, oneOf: ["admin", "member", "read_only"])
+    t.text(:role, oneOf: Harmat.Column.choices(Type.of(Grant.Admin)))
     t.text(:granted_at, default: "")
   end
   addIndex(:grants, [:subject_id])

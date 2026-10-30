@@ -33,7 +33,10 @@ foul signedUp(name, email, password, confirmation) do
   match Users.credentials(address) do
     Error(reason) => Error([reason])
     Ok(Just(_)) => Error(["An account with that email already exists. Sign in instead."])
-    Ok(None) => enrolled(User { id: Metro.Id.generate(prefix: "u"), email: address, name: name.trim }, password)
+    Ok(None) => match User { id: Metro.Id.generate(prefix: "u").as(UserId), email: address, name: name.trim }.enroll(password) do
+      Error(problems) => Error(problems)
+      Ok(user) => admitted(user.id)
+    end
   end
 end
 
@@ -82,14 +85,6 @@ foul signOut(Just(token)) do
 end
 
 private do
-  # Stores the account and signs it in.
-  foul enrolled(user: User, password: String) -> String or! [String] do
-    match Users.enroll(user, Metro.Auth.Password.hashed(password)) do
-      Error(_) => Error(["An account with that email already exists. Sign in instead."])
-      Ok(_) => admitted(user.id)
-    end
-  end
-
   foul now() -> Integer do
     return Metro.Clock.seconds()
   end

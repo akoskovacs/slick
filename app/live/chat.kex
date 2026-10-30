@@ -12,7 +12,7 @@
 module App.Live.Chat
 
 using App.Models.Grant, as: Grant
-using App.Models.Grant, only: [GrantRole]
+using App.Models.Grant, only: [GrantResourceId, GrantRole]
 using Metro.Live.Presence, only: [Presence, Note]
 using App.Live.Event, only: [Event, Routes]
 using App.Live.Tab, only: [Tab]
@@ -20,6 +20,7 @@ using App.Models.Conversation, only: [Conversation]
 using App.Models.Reading, only: [Reading]
 using App.Models.Organization, only: [Organization]
 using App.Models.User, only: [User]
+using App.Models.User, as: User
 using App.Models.Ids, only: [UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Drafts, as: Drafts
@@ -64,14 +65,13 @@ private do
   # what is unread: that is counted once the conversation is read.
   sidebarOf : Server<Presence> -> User -> Tab -> Organization -> App.Views.Chat.Page.Sidebar
   foul sidebarOf(statuses, user, tab, organization) do
-    let roster : [String] = Memberships.roster(organization.id).or([])
+    let roster : [UserId] = Memberships.roster(organization.id).or([]).map { |id| id.as(UserId) }
     let everyone : [User] = Users.everyone.or([])
-    let serverAdmins : [UserId] = Grants.serverAdmins().or([])
+    let serverAdmins : [UserId] = User.serverAdmins().or([])
     let bots : [User] = tab.dialog == App.Live.Tab.BotsDialog then user.manageableBots(organization) else []
-    let roles : {UserId: GrantRole} = Grants.over(Grant.OrganizationResource, organization.id)
+    let roles : {UserId: GrantRole} = Grants.over(Grant.OrganizationResource, organization.id.as(GrantResourceId))
       .or([])
-      .filter { |grant| grant.subjectType == Grant.UserSubject }
-      .reduce({}) { |found, grant| found.put(grant.subjectId, grant.role) }
+      .reduce({}) { |found, grant| grant.userId.map { |id| found.put(id, grant.role) }.or(found) }
     return App.Views.Chat.Page.Sidebar {
       organizations: user.organizations,
       organization: organization,
@@ -93,7 +93,7 @@ private do
   # The conversation a tab shows, with what is beside it.
   paneOf : Server<Presence> -> User -> Tab -> [User] -> Conversation -> App.Views.Chat.Page.Pane
   foul paneOf(statuses, user, tab, people, conversation) do
-    let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id, Metro.Clock.milliseconds())
+    let doing : [Note] = Metro.Live.Presence.standing(statuses, conversation.id.as(String), Metro.Clock.milliseconds())
     return App.Views.Chat.Page.Pane {
       conversation: Just(conversation),
       messages: Messages.latest(conversation.id, WINDOW).or([]),

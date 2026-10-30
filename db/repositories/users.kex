@@ -3,7 +3,7 @@
 #   DB.Repositories.Users.credentials(email)
 module DB.Repositories.Users
 
-using App.Models.Grant, only: [Grant]
+using App.Models.Grant, only: [Grant, GrantSubjectId]
 using App.Models.Grant, as: Grant
 using Harmat.Database, as: Database
 using App.Models.User, only: [User, UserDetail]
@@ -81,7 +81,7 @@ end
 # organization's to change.
 foul rekeyOrganizationBot(botId: UserId, organizationId: OrganizationId, tokenDigest: String) -> Bool or! String do
   return Database.update(DB.Schema.Users.definition)
-    .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
+    .set({api_token_digest: tokenDigest})
     .where(DB.Schema.Users.ownerOrganizationId == organizationId)
     .where(DB.Schema.Users.id == botId)
     .run
@@ -99,7 +99,7 @@ end
 # Replaces a bot's token; whether it was this owner's bot to change.
 foul rekeyBot(botId: UserId, owner: UserId, tokenDigest: String) -> Bool or! String do
   return Database.update(DB.Schema.Users.definition)
-    .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
+    .set({api_token_digest: tokenDigest})
     .where(DB.Schema.Users.ownerId == owner)
     .where(DB.Schema.Users.id == botId)
     .run
@@ -120,7 +120,7 @@ end
 # Sets what somebody says about themselves; "" and "" takes it back.
 foul setStatus(id: UserId, emoji: String, saying: String) -> Integer or! String do
   return Database.update(DB.Schema.Users.definition)
-    .set({status_emoji: emoji, status_text: saying}, columns: [:status_emoji, :status_text])
+    .set({status_emoji: emoji, status_text: saying})
     .where(DB.Schema.Users.id == id)
     .run
 end
@@ -140,7 +140,7 @@ foul update(user: User) -> Integer or! String do
     nickname_shown: user.nicknameShown?
   }
   return Database.update(DB.Schema.Users.definition)
-    .set(row, columns: [:name, :title, :department, :phone, :time_zone, :bio, :nickname, :nickname_shown])
+    .set(row)
     .where(DB.Schema.Users.id == id)
     .run
 end
@@ -150,7 +150,7 @@ end
 foul markManaged(id: UserId, columns: [UserDetail]) -> Integer or! String do
   let managed = columns.map { |column| Database.spelled(column) }.join(",")
   return Database.update(DB.Schema.Users.definition)
-    .set({managed: managed}, columns: [:managed])
+    .set({managed: managed})
     .where(DB.Schema.Users.id == id)
     .run
 end
@@ -172,7 +172,7 @@ end
 foul botIds -> [UserId] or! String do
   return Database.select([:id]).from(DB.Schema.Users.definition)
     .where(DB.Schema.Users.kind == Database.spelled(User.Bot))
-    .all(as: String)
+    .all(as: UserId)
 end
 
 private do
@@ -198,7 +198,7 @@ private do
         Database.delete(DB.Schema.Commands.definition).where(DB.Schema.Commands.botId == botId).run.try
         Database.delete(DB.Schema.Invocations.definition).where(DB.Schema.Invocations.botId == botId).run.try
         # Everything it was granted — its memberships, its roles — goes too.
-        Grants.revokeAll(Grant.UserSubject, botId).try
+        Grants.revokeAll(Grant.UserSubject, botId.as(GrantSubjectId)).try
         Database.delete(DB.Schema.Drafts.definition).where(DB.Schema.Drafts.userId == botId).run.try
         Database.delete(DB.Schema.Readings.definition).where(DB.Schema.Readings.userId == botId).run.try
         Database.delete(DB.Schema.Sessions.definition).where(DB.Schema.Sessions.userId == botId).run.try

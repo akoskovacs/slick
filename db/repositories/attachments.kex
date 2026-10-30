@@ -12,7 +12,7 @@ using App.Models.Ids, only: [UserId]
 # Notes a file somebody has just uploaded: theirs alone, until it is sent.
 foul create(userId: UserId, blob: Metro.Storage.Blob) -> Attachment or! String do
   let file = Attachment {
-    id: blob.key,
+    id: blob.key.as(AttachmentId),
     userId: userId,
     filename: blob.filename,
     contentType: blob.contentType,
@@ -68,7 +68,7 @@ foul markSent(
 ) -> Integer or! String do
   return Database.update(DB.Schema.Files.definition)
     .where(DB.Schema.Files.userId == userId)
-    .set({conversation_id: conversationId, message_id: messageId}, columns: [:conversation_id, :message_id])
+    .set({conversation_id: conversationId, message_id: messageId})
     .where(DB.Schema.Files.id.in(ids))
     .where(DB.Schema.Files.messageId == "")
     .run

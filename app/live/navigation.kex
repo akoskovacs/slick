@@ -3,48 +3,52 @@
 module App.Live.Navigation
 
 using Metro.Live.Socket, only: [unchanged]
-using App.Live.Event, only: [Event, given]
+using App.Live.Event, only: [Event]
 using App.Live.Outcome, only: [Outcome]
 using App.Live.Tab, only: [
-  Tab, closed, ConversationView, FilesView, SettingsView,
+  Tab, Dialog, ConversationView, FilesView, SettingsView,
   ChannelDialog, GroupDialog, PromoteDialog, AdmitDialog, TeamDialog,
   TeamEditDialog, OrganizationDialog, InviteDialog, PeopleDialog, StatusDialog,
   ProfileDialog, BotsDialog
 ]
+using App.Models.Message, only: [MessageId]
+using App.Models.Ids, only: [UserId]
+using App.Models.Team, only: [TeamId]
 
 # The dialogs a tab opens by name (`dialog-open` with `dialog`).
 on : String -> Event -> Outcome
 foul on("dialog-open", event) do
-  let name = given(event, "dialog")
-  if name == "people" && !event.user.canManage?(event.tab.organization)
-    return unchanged(event.tab)
+  match dialogFrom(event.given("dialog")) do
+    None => return unchanged(event.tab)
+    Just(dialog) => do
+      return unchanged(event.tab) if dialog == PeopleDialog && !event.user.canManage?(event.tab.organization)
+      return unchanged(Tab { ...event.tab.closed, dialog: dialog })
+    end
   end
-  return unchanged(opened(event.tab, name))
 end
 # Closing whatever is open over the conversation: `cancel`, from a button,
 # or from Metro's live.js on Escape or a click beside a dialog.
-foul on("cancel", event) = unchanged(closed(event.tab))
-foul on("view-messages", event) = unchanged(Tab { ...closed(event.tab), view: ConversationView })
-foul on("view-files", event) = unchanged(Tab { ...closed(event.tab), thread: "", view: FilesView })
-foul on("view-settings", event) = unchanged(Tab { ...closed(event.tab), thread: "", profile: "", team: "", view: SettingsView })
+foul on("cancel", event) = unchanged(event.tab.closed)
+foul on("view-messages", event) = unchanged(Tab { ...event.tab.closed, view: ConversationView })
+foul on("view-files", event) = unchanged(Tab { ...event.tab.closed, thread: "", view: FilesView })
+foul on("view-settings", event) = unchanged(Tab { ...event.tab.closed, thread: "", profile: "", team: "", view: SettingsView })
 # Whether somebody is looking at the tab: `attention`, from Metro's live.js.
-foul on("attention", event) = unchanged(Tab { ...event.tab, attentive?: given(event, "on") != "false" })
+foul on("attention", event) = unchanged(Tab { ...event.tab, attentive?: event.flag("on") })
 foul on(_, event) = unchanged(event.tab)
 
 private do
-  # The tab with a dialog open over the conversation, if it is one a tab has.
-  opened : Tab -> String -> Tab
-  let opened(tab, "channel") = Tab { ...closed(tab), dialog: ChannelDialog }
-  let opened(tab, "group") = Tab { ...closed(tab), dialog: GroupDialog }
-  let opened(tab, "promote") = Tab { ...closed(tab), dialog: PromoteDialog }
-  let opened(tab, "admit") = Tab { ...closed(tab), dialog: AdmitDialog }
-  let opened(tab, "team") = Tab { ...closed(tab), dialog: TeamDialog }
-  let opened(tab, "team-edit") = Tab { ...closed(tab), dialog: TeamEditDialog }
-  let opened(tab, "organization") = Tab { ...closed(tab), dialog: OrganizationDialog }
-  let opened(tab, "invite") = Tab { ...closed(tab), dialog: InviteDialog }
-  let opened(tab, "people") = Tab { ...closed(tab), dialog: PeopleDialog }
-  let opened(tab, "status") = Tab { ...closed(tab), dialog: StatusDialog }
-  let opened(tab, "profile") = Tab { ...closed(tab), dialog: ProfileDialog }
-  let opened(tab, "bots") = Tab { ...closed(tab), dialog: BotsDialog }
-  let opened(tab, _) = tab
+  dialogFrom : String -> Dialog?
+  let dialogFrom("channel") = Just(ChannelDialog)
+  let dialogFrom("group") = Just(GroupDialog)
+  let dialogFrom("promote") = Just(PromoteDialog)
+  let dialogFrom("admit") = Just(AdmitDialog)
+  let dialogFrom("team") = Just(TeamDialog)
+  let dialogFrom("team-edit") = Just(TeamEditDialog)
+  let dialogFrom("organization") = Just(OrganizationDialog)
+  let dialogFrom("invite") = Just(InviteDialog)
+  let dialogFrom("people") = Just(PeopleDialog)
+  let dialogFrom("status") = Just(StatusDialog)
+  let dialogFrom("profile") = Just(ProfileDialog)
+  let dialogFrom("bots") = Just(BotsDialog)
+  let dialogFrom(_) = None
 end

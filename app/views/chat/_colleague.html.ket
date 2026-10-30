@@ -1,0 +1,21 @@
+---
+params: [colleague: Colleague]
+---
+<li class="managed-person">
+  <span class="avatar tint-<%= colleague.tint %>" aria-hidden="true"><%= colleague.initial %></span>
+  <div class="managed-person-name">
+    <strong><%= colleague.caption %></strong>
+    <span><%= colleague.mail %></span>
+  </div>
+  <form class="managed-person-role" data-live="role-set" data-live-quiet data-live-hook="Instant">
+    <input type="hidden" name="user" value="<%= colleague.key %>">
+    <select name="role" aria-label="Role for <%= colleague.caption %>">
+      <option value="member"<% if colleague.member? %> selected<% end %>>Member</option>
+      <option value="admin"<% if colleague.admin? %> selected<% end %>>Administrator</option>
+      <option value="read_only"<% if colleague.readOnly? %> selected<% end %>>Read-only</option>
+    </select>
+    <button type="submit" class="visually-hidden">Save role for <%= colleague.caption %></button>
+  </form>
+  <button type="button" class="quiet remove-person" data-event="member-remove"
+    data-user="<%= colleague.key %>" aria-label="Remove <%= colleague.caption %>" title="Remove from organization">Remove</button>
+</li>

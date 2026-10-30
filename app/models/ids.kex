@@ -2,4 +2,8 @@
 # another so their record definitions do not introduce import cycles.
 module App.Models.Ids
 
-type UserId = String
+distinct type UserId = String
+
+make UserId do
+  let empty? -> Bool = this.as(String).empty?
+end

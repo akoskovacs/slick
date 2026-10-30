@@ -7,8 +7,8 @@ using Metro.Live.Presence, only: [Presence]
 using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, present, sized]
 using App.Live.Outcome, only: [Outcome, failed]
-using App.Live.Event, only: [Event, given, typed]
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Event, only: [Event]
+using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.Message, only: [Message, MessageId]
@@ -16,11 +16,10 @@ using App.Models.Message, as: Message
 using App.Models.Emoji, as: Emoji
 using App.Models.Reading, only: [Reading]
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using App.Models.Attachment, only: [AttachmentId]
-using DB.Repositories.Answers, as: Answers
 using DB.Repositories.Attachments, as: Attachments
 using DB.Repositories.Drafts, as: Drafts
-using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Readings, as: Readings
 
 let messageRules = rules do
@@ -45,15 +44,15 @@ foul send(events, statuses, user, tab, body) do
       return unchanged(tab) if !user.canWrite?(conversation)
       # A command for a bot is used, not said; the files waiting stay.
       if App.Live.Commands.run(events, user, conversation, "", body)
-        statuses.lifted(conversation.id, user.id)
-        return changed(closed(tab))
+        statuses.lifted(conversation.id.as(String), user.id.as(String))
+        return changed(tab.closed)
       end
 
       match post(events, user, conversation, body, tab.pending) do
         Ok(_) => do
           # Whatever they were said to be doing, they have done.
-          statuses.lifted(conversation.id, user.id)
-          return changed(Tab { ...closed(tab), pending: [] })
+          statuses.lifted(conversation.id.as(String), user.id.as(String))
+          return changed(Tab { ...tab.closed, pending: [] })
         end
         Error(reason) => return failed(tab, "Not sent: ${reason}")
       end
@@ -77,8 +76,8 @@ foul reply(events, statuses, user, tab, body) do
         Just(first) => do
           # A command for a bot is used, not said.
           if App.Live.Commands.run(events, user, conversation, first.id, body)
-            statuses.lifted(conversation.id, user.id)
-            return changed(Tab { ...closed(tab), thread: first.id })
+            statuses.lifted(conversation.id.as(String), user.id.as(String))
+            return changed(Tab { ...tab.closed, thread: first.id })
           end
           return replyTo(events, statuses, user, tab, conversation, first, body)
         end
@@ -124,7 +123,7 @@ foul react(user, tab, messageId, emoji) do
       Ok(Just(message)) => do
         return unchanged(tab) if message.conversationId != conversation.id
 
-        match Reactions.toggle(message, user.id, emoji) do
+        match message.toggleReaction(user.id, emoji) do
           Ok(_) => return changed(tab)
           Error(reason) => return failed(tab, reason)
         end
@@ -141,17 +140,17 @@ answer : Server<App.Live.Events.Bus> -> User -> Tab -> [(String, String?)] -> Ou
 foul answer(events, user, tab, entries) do
   match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
-    Just(conversation) => match DB.Repositories.Messages.find(field(entries, "message")) do
+    Just(conversation) => match DB.Repositories.Messages.find(field(entries, "message").as(MessageId)) do
       Ok(Just(message)) => do
         return unchanged(tab) if message.conversationId != conversation.id
 
         match App.Helpers.RichText.answer(message.body, entries) do
           None => return unchanged(tab)
-          Just((form, said)) => match Answers.save(conversation.organizationId, message, form, user.id, said) do
-            Ok(given) => do
+          Just((form, said)) => match message.answer(conversation.organizationId, form, user.id, said) do
+            Ok(answeredAt) => do
               # Only the bot whose form it was is told, and it is told only
               # where to look.
-              App.Live.Events.publish(events, conversation, App.Live.Events.Answer, message.id, message.parentId, given.answeredAt, message.userId, "")
+              App.Live.Events.publish(events, conversation, App.Live.Events.Answer, message.id, message.parentId, answeredAt, message.userId, "")
               return changed(tab)
             end
             Error(reason) => return unchanged(Tab { ...tab, failure: "Not answered: ${reason}" })
@@ -193,14 +192,14 @@ let detach(tab, id) = unchanged(Tab {
 # What this part answers, of the events config/live.kex routes to it, by
 # their whole names; any other does nothing.
 on : String -> Event -> Outcome
-foul on("message-send", event) = send(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
-foul on("message-reply", event) = reply(event.bus, event.statuses, event.user, event.tab, typed(event, "body"))
-foul on("message-react", event) = react(event.user, event.tab, given(event, "message"), given(event, "emoji"))
+foul on("message-send", event) = send(event.bus, event.statuses, event.user, event.tab, event.typed("body"))
+foul on("message-reply", event) = reply(event.bus, event.statuses, event.user, event.tab, event.typed("body"))
+foul on("message-react", event) = react(event.user, event.tab, event.given("message").as(MessageId), event.given("emoji"))
 foul on("message-answer", event) = answer(event.bus, event.user, event.tab, event.entries)
-foul on("draft-save", event) = saveDraft(event.user, event.tab, given(event, "place"), given(event, "body"))
-foul on("file-attach", event) = attach(event.user, event.tab, given(event, "file"))
-foul on("file-attach-failed", event) = refuseUpload(event.tab, given(event, "filename"), given(event, "reason"))
-foul on("file-detach", event) = detach(event.tab, given(event, "file"))
+foul on("draft-save", event) = saveDraft(event.user, event.tab, event.given("place"), event.given("body"))
+foul on("file-attach", event) = attach(event.user, event.tab, event.given("file").as(AttachmentId))
+foul on("file-attach-failed", event) = refuseUpload(event.tab, event.given("filename"), event.given("reason"))
+foul on("file-detach", event) = detach(event.tab, event.given("file").as(AttachmentId))
 foul on(_, event) = unchanged(event.tab)
 
 private do
@@ -210,7 +209,7 @@ private do
     match DB.Repositories.Messages.create(conversation.id, user.id, body, first.id) do
       Ok(reply) => do
         App.Live.Events.publish(events, conversation, App.Live.Events.Message, reply.id, first.id, reply.sentAt, "", body)
-        statuses.lifted(conversation.id, user.id)
+        statuses.lifted(conversation.id.as(String), user.id.as(String))
         # Who replies in a thread follows it, and has read it so far.
         Readings.markRead(user.id, Reading {
           conversationId: conversation.id,
@@ -222,7 +221,7 @@ private do
           threadId: first.id,
           body: ""
         })
-        return changed(Tab { ...closed(tab), thread: first.id })
+        return changed(Tab { ...tab.closed, thread: first.id })
       end
       Error(reason) => return failed(tab, "Not sent: ${reason}")
     end

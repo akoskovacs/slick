@@ -36,7 +36,7 @@ foul counts(user, current, mine, marks, open, openThread) do
   let (channels, people, groups) = countsIn(user, current, marks, open, openThread)
   let others = mine.reject { |each| each.id == current.id }
   let elsewhere : {OrganizationId: Integer} = others.reduce({}) do |found, other|
-    let (theirChannels, theirPeople, theirGroups) = countsIn(user, other, marks, "", "")
+      let (theirChannels, theirPeople, theirGroups) = countsIn(user, other, marks, "", "")
     found.put(other.id, sum(theirChannels) + sum(theirPeople) + sum(theirGroups))
   end
   return Unread {
@@ -149,6 +149,6 @@ private do
     Readings.markRead(user.id, reading) if reading.readAt > before
   end
 
-  sum : {String: Integer} -> Integer
+  sum : {K: Integer} -> Integer
   let sum(byPlace) = byPlace.values.reduce(0) { |total, count| total + count }
 end

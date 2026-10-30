@@ -8,7 +8,10 @@ using App.Models.Message, only: [MessageId]
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Ids, only: [UserId]
 
-type InvocationId = String
+distinct type InvocationId = String
+make InvocationId do
+  let empty? -> Bool = this.as(String).empty?
+end
 record Invocation do
   id : InvocationId
   organizationId : OrganizationId

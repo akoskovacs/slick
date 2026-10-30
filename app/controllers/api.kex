@@ -380,8 +380,8 @@ private do
       "message": message.id,
       "thread": message.parentId,
       "channel": conversation.channel? then conversation.title else "",
-      "person": conversation.direct? then conversation.counterpart(bot.id) else "",
-      "group": conversation.group? then conversation.id else "",
+      "person": conversation.direct? then conversation.counterpart(bot.id).as(String) else "",
+      "group": conversation.group? then conversation.id.as(String) else "",
       "user": given.userId,
       "author": author,
       "form": given.form,
@@ -396,8 +396,8 @@ private do
     "command": used.command,
     "arguments": used.arguments,
     "channel": conversation.channel? then conversation.title else "",
-    "person": conversation.direct? then conversation.counterpart(bot.id) else "",
-    "group": conversation.group? then conversation.id else "",
+    "person": conversation.direct? then conversation.counterpart(bot.id).as(String) else "",
+    "group": conversation.group? then conversation.id.as(String) else "",
     "thread": used.threadId,
     "user": used.userId,
     "author": people.find { |person| person.id == used.userId }.map { |person| person.shown }.or("Someone"),
@@ -427,7 +427,7 @@ foul unfolded(conversation: Conversation, rootId: MessageId) -> [Any] do
 
   # The organization a request's address names, as the bot is in it — or the
   # 404 that says it is not.
-  organizationFor : WebRequest -> String or! WebRequest
+  organizationFor : WebRequest -> OrganizationId or! WebRequest
   foul organizationFor(request) do
     let slug = request.param("organization").or("")
     let tab = App.Live.Addresses.tabFor(userFor(request), Config.RoutePaths.channel.filled({"organization": slug, "name": "general"}))

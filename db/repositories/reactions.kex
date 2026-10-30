@@ -1,10 +1,10 @@
 # Emoji on messages.
 #
-#   DB.Repositories.Reactions.toggle(message, user.id, "🎉")
+#   message.toggleReaction(user.id, "🎉")
 module DB.Repositories.Reactions
 
 using Harmat.Database, as: Database
-using App.Models.Message, only: [Message]
+using App.Models.Message, only: [MessageId]
 using App.Models.Reaction, only: [Reaction]
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Ids, only: [UserId]
@@ -18,8 +18,8 @@ end
 
 # Puts a person's emoji on a message, or takes it off if it is there.
 # Whether it is on afterwards.
-foul toggle(message: Message, userId: UserId, emoji: String) -> Bool or! String do
-  let id = "${message.id}:${userId}:${emoji}"
+foul toggle(messageId: MessageId, conversationId: ConversationId, userId: UserId, emoji: String) -> Bool or! String do
+  let id = "${messageId}:${userId}:${emoji}"
   let existing = Database.select([:id]).from(DB.Schema.Reactions.definition)
     .where(DB.Schema.Reactions.id == id)
     .first
@@ -34,8 +34,8 @@ foul toggle(message: Message, userId: UserId, emoji: String) -> Bool or! String 
     Ok(None) => do
       let row = {
         id: id,
-        conversation_id: message.conversationId,
-        message_id: message.id,
+        conversation_id: conversationId,
+        message_id: messageId,
         user_id: userId,
         emoji: emoji
       }

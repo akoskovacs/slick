@@ -44,7 +44,7 @@ let pane(tab, user, sidebar) do
       let mates = team.members.flatMap do |id|
         sidebar.people.find { |person| person.id == id }.map do |person|
           [matePartial(Mate {
-            key: person.id,
+            key: person.id.as(String),
             caption: person.id == user.id then "${person.shown} (you)" else person.shown,
             action: "profile-open",
             subject: "user",
@@ -57,7 +57,7 @@ let pane(tab, user, sidebar) do
         .filter { |channel| channel.teamId == team.id }
         .map do |channel|
           matePartial(Mate {
-            key: channel.id,
+            key: channel.id.as(String),
             caption: channelName(channel),
             action: "conversation-open",
             subject: "id"
@@ -66,7 +66,7 @@ let pane(tab, user, sidebar) do
       let candidates = sidebar.people
         .reject { |person| team.includes?(person.id) }
         .map do |person|
-          let id = Template.escapeHtml(person.id)
+          let id = Template.escapeHtml(person.id.as(String))
           "<option value=\"${id}\">${Template.escapeHtml(person.shown)}</option>"
         end
       let count = team.members.count

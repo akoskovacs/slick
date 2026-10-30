@@ -81,9 +81,9 @@ foul routes(hub, events, statuses, rootSegments) do
       Router.get("/", ~show)
       # A conversation has an address; the live view keeps the address bar
       # on the one it is showing, and a reload comes back here.
-      Router.get(channel.template, ~show)
-      Router.get(direct.template, ~show)
-      Router.get(group.template, ~show)
+      Router.get(channel, ~show)
+      Router.get(direct, ~show)
+      Router.get(group, ~show)
       Router.post("/signout", ~signOut)
       # Files: dropped into a conversation, then fetched by whoever may read
       # it there (App.Controllers.Files).

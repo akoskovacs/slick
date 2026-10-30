@@ -49,16 +49,17 @@ record Tab do
   attentive? : Bool = true
 end
 
-# The tab with nothing open over the conversation: no form, no dialog, no
-# message left from the last thing tried. Everything else it keeps.
-closed : Tab -> Tab
-let closed(tab) = Tab {
-  ...tab,
-  retitling?: false,
-  dialog: NoDialog,
-  dialogProblem: "",
-  notice: "",
-  secret: "",
-  secretFor: "",
-  failure: ""
-}
+make Tab do
+  # The tab with nothing open over the conversation: no form, no dialog,
+  # no message left from the last thing tried. Everything else it keeps.
+  let closed -> Tab = Tab {
+    ...this,
+    retitling?: false,
+    dialog: NoDialog,
+    dialogProblem: "",
+    notice: "",
+    secret: "",
+    secretFor: "",
+    failure: ""
+  }
+end
