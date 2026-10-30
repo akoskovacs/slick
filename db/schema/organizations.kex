@@ -4,7 +4,8 @@ module DB.Schema.Organizations
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# The schema is shared by the repositories that query this table.
+# Known while compiling: a query over this table is written then.
+compiled do
   let definition = Table.define :organizations do |t|
     t.text(:id, primaryKey: true)
     t.text(:slug)
@@ -15,3 +16,4 @@ using Harmat.Table, only: [Definition]
 
   let id = definition.textColumn(:id)
   let slug = definition.textColumn(:slug)
+end

@@ -7,7 +7,8 @@ using App.Models.Conversation, as: Conversation
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# The schema is shared by the repositories that query this table.
+# Known while compiling: a query over this table is written then.
+compiled do
   let definition = Table.define :conversations do |t|
     t.text(:id, primaryKey: true)
     t.text(:kind, oneOf: Harmat.Column.choices(Type.of(Conversation.Channel)))
@@ -36,3 +37,4 @@ using Harmat.Table, only: [Definition]
   let access = definition.textColumn(:access)
   let teamId = definition.textColumn(:team_id)
   let botAccess = definition.textColumn(:bot_access)
+end

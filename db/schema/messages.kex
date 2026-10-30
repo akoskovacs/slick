@@ -4,7 +4,8 @@ module DB.Schema.Messages
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# The schema is shared by the repositories that query this table.
+# Known while compiling: a query over this table is written then.
+compiled do
   let definition = Table.define :messages do |t|
     t.text(:id, primaryKey: true)
     t.text(:conversation_id)
@@ -21,3 +22,4 @@ using Harmat.Table, only: [Definition]
   let body = definition.textColumn(:body)
   let sentAt = definition.wholeColumn(:sent_at)
   let parentId = definition.textColumn(:parent_id)
+end

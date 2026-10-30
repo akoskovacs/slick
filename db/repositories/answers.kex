@@ -17,7 +17,7 @@ using App.Models.Answer, only: [Answer]
 # Every answer in a conversation.
 foul inConversation(conversationId: ConversationId) -> [Answer] or! String do
   return Database.select().from(DB.Schema.Answers.definition)
-    .where(DB.Schema.Answers.conversationId == conversationId.as(String))
+    .where(DB.Schema.Answers.conversationId == conversationId)
     .orderBy([:answered_at, :id])
     .all(as: Answer)
 end
@@ -26,8 +26,8 @@ end
 # reading what its own messages were answered with. Oldest first.
 foul askedBy(organizationId: OrganizationId, askerId: UserId) -> [Answer] or! String do
   return Database.select().from(DB.Schema.Answers.definition)
-    .where(DB.Schema.Answers.organizationId == organizationId.as(String))
-    .where(DB.Schema.Answers.askerId == askerId.as(String))
+    .where(DB.Schema.Answers.organizationId == organizationId)
+    .where(DB.Schema.Answers.askerId == askerId)
     .orderBy([:answered_at, :id])
     .all(as: Answer)
 end

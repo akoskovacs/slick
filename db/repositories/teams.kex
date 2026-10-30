@@ -42,7 +42,7 @@ end
 # Every team of an organization, by handle, each with its members.
 foul inOrganization(organizationId: OrganizationId) -> [Team] or! String do
   let rows = Database.select().from(DB.Schema.Teams.definition)
-    .where(DB.Schema.Teams.organizationId == organizationId.as(String))
+    .where(DB.Schema.Teams.organizationId == organizationId)
     .orderBy([:handle])
     .all(as: Team)
     .try
@@ -52,7 +52,7 @@ end
 # One team, with its members, or `None`.
 foul find(id: TeamId) -> Team? or! String do
   let row = Database.select().from(DB.Schema.Teams.definition)
-    .where(DB.Schema.Teams.id == id.as(String))
+    .where(DB.Schema.Teams.id == id)
     .first(as: Team)
     .try
   match row do
@@ -70,7 +70,7 @@ foul update(id: TeamId, name: String, description: String) -> Bool or! String do
   return Database.update(DB.Schema.Teams.definition)
     .set({name: name, description: description})
     .where(DB.Schema.Teams.externalId == "")
-    .where(DB.Schema.Teams.id == id.as(String))
+    .where(DB.Schema.Teams.id == id)
     .run
     .map { |changed| changed > 0 }
 end
@@ -102,7 +102,7 @@ end
 foul markManaged(id: TeamId, externalId: String) -> Integer or! String do
   return Database.update(DB.Schema.Teams.definition)
     .set({external_id: externalId})
-    .where(DB.Schema.Teams.id == id.as(String))
+    .where(DB.Schema.Teams.id == id)
     .run
 end
 

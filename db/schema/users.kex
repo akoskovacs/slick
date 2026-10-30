@@ -6,7 +6,8 @@ using Harmat.Column, only: [Column, Characters, Wide, Flag]
 using Harmat.Table, only: [Definition]
 using App.Models.User, as: User
 
-# The schema is shared by the repositories that query this table.
+# Known while compiling: a query over this table is written then.
+compiled do
   let definition = Definition {
     label: "users",
     columns: [
@@ -41,3 +42,4 @@ using App.Models.User, as: User
   let ownerId = definition.textColumn(:owner_id)
   let apiTokenDigest = definition.textColumn(:api_token_digest)
   let ownerOrganizationId = definition.textColumn(:owner_organization_id)
+end

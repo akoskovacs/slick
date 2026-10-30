@@ -7,7 +7,8 @@ using App.Models.Grant, as: Grant
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# The schema is shared by the repositories that query this table.
+# Known while compiling: a query over this table is written then.
+compiled do
   let definition = Table.define :grants do |t|
     t.text(:id, primaryKey: true)
     t.text(:subject_type, oneOf: Harmat.Column.choices(Type.of(Grant.UserSubject)))
@@ -24,3 +25,4 @@ using Harmat.Table, only: [Definition]
   let resourceType = definition.textColumn(:resource_type)
   let resourceId = definition.textColumn(:resource_id)
   let role = definition.textColumn(:role)
+end

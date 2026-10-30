@@ -12,7 +12,7 @@ using App.Models.Ids, only: [UserId]
 # Every reaction in a conversation.
 foul inConversation(conversationId: ConversationId) -> [Reaction] or! String do
   return Database.select().from(DB.Schema.Reactions.definition)
-    .where(DB.Schema.Reactions.conversationId == conversationId.as(String))
+    .where(DB.Schema.Reactions.conversationId == conversationId)
     .all(as: Reaction)
 end
 

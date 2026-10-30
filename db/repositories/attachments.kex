@@ -38,14 +38,14 @@ end
 # One file, or `None`.
 foul find(id: AttachmentId) -> Attachment? or! String do
   return Database.select().from(DB.Schema.Files.definition)
-    .where(DB.Schema.Files.id == id.as(String))
+    .where(DB.Schema.Files.id == id)
     .first(as: Attachment)
 end
 
 # Several files, by id, as many of them as there are.
 foul findAll(ids: [AttachmentId]) -> [Attachment] or! String do
   return Database.select().from(DB.Schema.Files.definition)
-    .where(DB.Schema.Files.id.in(ids.map { |id| id.as(String) }))
+    .where(DB.Schema.Files.id.in(ids))
     .orderBy([:uploaded_at, :id])
     .all(as: Attachment)
 end
@@ -53,7 +53,7 @@ end
 # Every file sent into a conversation, newest first.
 foul inConversation(conversationId: ConversationId) -> [Attachment] or! String do
   return Database.select().from(DB.Schema.Files.definition)
-    .where(DB.Schema.Files.conversationId == conversationId.as(String))
+    .where(DB.Schema.Files.conversationId == conversationId)
     .orderBy(descending: [:uploaded_at, :id])
     .all(as: Attachment)
 end
@@ -67,9 +67,9 @@ foul markSent(
   messageId: MessageId
 ) -> Integer or! String do
   return Database.update(DB.Schema.Files.definition)
-    .where(DB.Schema.Files.userId == userId.as(String))
-    .set({conversation_id: conversationId.as(String), message_id: messageId.as(String)})
-    .where(DB.Schema.Files.id.in(ids.map { |id| id.as(String) }))
+    .where(DB.Schema.Files.userId == userId)
+    .set({conversation_id: conversationId, message_id: messageId})
+    .where(DB.Schema.Files.id.in(ids))
     .where(DB.Schema.Files.messageId == "")
     .run
 end

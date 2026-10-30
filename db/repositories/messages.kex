@@ -14,7 +14,7 @@ using App.Models.Ids, only: [UserId]
 # not among them: they are read with the thread they belong to.
 foul latest(conversationId: ConversationId, limit: Integer) -> [Message] or! String do
   return Database.select().from(DB.Schema.Messages.definition)
-    .where(DB.Schema.Messages.conversationId == conversationId.as(String))
+    .where(DB.Schema.Messages.conversationId == conversationId)
     .where(DB.Schema.Messages.parentId == "")
     .orderBy(descending: [:sent_at, :id])
     .limit(limit)
@@ -27,7 +27,7 @@ end
 # thread.
 foul newerCount(conversationId: ConversationId, after: Integer) -> Integer or! String do
   return Database.select().from(DB.Schema.Messages.definition)
-    .where(DB.Schema.Messages.conversationId == conversationId.as(String))
+    .where(DB.Schema.Messages.conversationId == conversationId)
     .where(DB.Schema.Messages.parentId == "")
     .where(DB.Schema.Messages.sentAt > after)
     .count
@@ -39,7 +39,7 @@ end
 foul newerCounts(afters: {ConversationId: Integer}) -> {ConversationId: Integer} or! String do
   let each : [Cond] = afters.entries.map do |entry|
     match entry do
-      (id, after) => DB.Schema.Messages.conversationId == id.as(String) && DB.Schema.Messages.sentAt > after
+      (id, after) => DB.Schema.Messages.conversationId == id && DB.Schema.Messages.sentAt > after
     end
   end
   match each do
@@ -58,7 +58,7 @@ end
 # The replies to any of these messages newer than `after`, oldest first.
 foul repliesTo(rootIds: [MessageId], after: Integer) -> [Message] or! String do
   return Database.select().from(DB.Schema.Messages.definition)
-    .where(DB.Schema.Messages.parentId.in(rootIds.map { |id| id.as(String) }))
+    .where(DB.Schema.Messages.parentId.in(rootIds))
     .where(DB.Schema.Messages.sentAt > after)
     .orderBy([:sent_at, :id])
     .all(as: Message)
@@ -67,7 +67,7 @@ end
 # The replies to a message, oldest first.
 foul replies(rootId: MessageId) -> [Message] or! String do
   return Database.select().from(DB.Schema.Messages.definition)
-    .where(DB.Schema.Messages.parentId == rootId.as(String))
+    .where(DB.Schema.Messages.parentId == rootId)
     .orderBy([:sent_at, :id])
     .all(as: Message)
 end
@@ -76,11 +76,11 @@ end
 # from among `botIds`.
 foul botAuthors(rootId: MessageId, botIds: [UserId]) -> [UserId] or! String do
   let root = Database.select([:user_id]).from(DB.Schema.Messages.definition)
-    .where(DB.Schema.Messages.id == rootId.as(String))
+    .where(DB.Schema.Messages.id == rootId)
     .all(as: UserId)
     .or([])
   let replies = Database.select([:user_id]).from(DB.Schema.Messages.definition)
-    .where(DB.Schema.Messages.parentId == rootId.as(String))
+    .where(DB.Schema.Messages.parentId == rootId)
     .all(as: UserId)
     .or([])
   return Ok((root + replies).filter { |id| botIds.contains?(id) }.uniq)
@@ -92,7 +92,7 @@ end
 foul create(conversationId: ConversationId, userId: UserId, body: String, parent: MessageId) -> Message or! String do
   let moment = Metro.Clock.milliseconds()
   let message = Message {
-    id: "m${moment}-${Metro.Id.serial()}".as(MessageId),
+    id: "m${moment}-${Metro.Id.serial()}",
     conversationId: conversationId,
     userId: userId,
     body: body,
@@ -113,14 +113,14 @@ foul create(conversationId: ConversationId, userId: UserId, body: String, parent
       .values(row)
       .run
       .try
-    if parent.as(String).empty?
+    if parent.empty?
       Ok(inserted)
     else
       let replies = replies(parent).try
       let replyCount = replies.count
       Database.update(DB.Schema.Messages.definition)
         .set({reply_count: replyCount})
-        .where(DB.Schema.Messages.id == parent.as(String))
+        .where(DB.Schema.Messages.id == parent)
         .run
     end
   end
@@ -130,6 +130,6 @@ end
 # One message, or `None`.
 foul find(id: MessageId) -> Message? or! String do
   return Database.select().from(DB.Schema.Messages.definition)
-    .where(DB.Schema.Messages.id == id.as(String))
+    .where(DB.Schema.Messages.id == id)
     .first(as: Message)
 end

@@ -5,8 +5,9 @@ module DB.Schema.Answers
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# The schema is shared by the repositories that query this table.
-let definition = Table.define :answers do |t|
+# Known while compiling: a query over this table is written then.
+compiled do
+  let definition = Table.define :answers do |t|
     t.text(:id, primaryKey: true)
     t.text(:message_id)
     t.text(:conversation_id)
@@ -16,11 +17,12 @@ let definition = Table.define :answers do |t|
     t.int(:form)
     t.text(:answer)
     t.bigint(:answered_at)
-end
+  end
 
-let id = definition.textColumn(:id)
-let messageId = definition.textColumn(:message_id)
-let conversationId = definition.textColumn(:conversation_id)
-let organizationId = definition.textColumn(:organization_id)
-let askerId = definition.textColumn(:asker_id)
-let userId = definition.textColumn(:user_id)
+  let id = definition.textColumn(:id)
+  let messageId = definition.textColumn(:message_id)
+  let conversationId = definition.textColumn(:conversation_id)
+  let organizationId = definition.textColumn(:organization_id)
+  let askerId = definition.textColumn(:asker_id)
+  let userId = definition.textColumn(:user_id)
+end

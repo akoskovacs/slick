@@ -5,7 +5,8 @@ module DB.Schema.Teams
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# The schema is shared by the repositories that query this table.
+# Known while compiling: a query over this table is written then.
+compiled do
   let definition = Table.define :teams do |t|
     t.text(:id, primaryKey: true)
     t.text(:organization_id)
@@ -21,3 +22,4 @@ using Harmat.Table, only: [Definition]
   let organizationId = definition.textColumn(:organization_id)
   let handle = definition.textColumn(:handle)
   let externalId = definition.textColumn(:external_id)
+end

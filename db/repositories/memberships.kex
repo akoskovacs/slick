@@ -12,7 +12,7 @@ using DB.Repositories.Grants, as: Grants
 # Puts a person in an organization as a member. Fails when they are already
 # in it: the grant of the same name is already there.
 foul add(organizationId: OrganizationId, userId: UserId) -> Integer or! String do
-  return Error("${userId.as(String)} is already in ${organizationId.as(String)}") if Grants.holds?(Grant.UserSubject, userId.as(GrantSubjectId), Grant.OrganizationResource, organizationId.as(GrantResourceId))
+  return Error("${userId} is already in ${organizationId}") if Grants.holds?(Grant.UserSubject, userId.as(GrantSubjectId), Grant.OrganizationResource, organizationId.as(GrantResourceId))
   return Grants.grant(Grant.userOnOrganization(userId, organizationId, Grant.Member)).map { |_| 1 }
 end
 

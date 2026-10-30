@@ -6,7 +6,8 @@ module DB.Schema.Drafts
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# The schema is shared by the repositories that query this table.
+# Known while compiling: a query over this table is written then.
+compiled do
   let definition = Table.define :drafts do |t|
     t.text(:id, primaryKey: true)
     t.text(:user_id)
@@ -20,3 +21,4 @@ using Harmat.Table, only: [Definition]
   let id = definition.textColumn(:id)
   let userId = definition.textColumn(:user_id)
   let conversationId = definition.textColumn(:conversation_id)
+end
