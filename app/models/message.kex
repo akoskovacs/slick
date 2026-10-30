@@ -19,7 +19,7 @@ record Message do
   # Milliseconds since 1970: the order of a conversation.
   sentAt : Integer = 0
   # The message this one replies to; "" when it is not a reply.
-  parentId : MessageId = "".as(MessageId)
+  parentId : MessageId = ""
   # How many replies it has.
   replyCount : Integer = 0
 end

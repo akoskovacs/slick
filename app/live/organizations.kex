@@ -130,7 +130,7 @@ foul removeMember(user, tab, personId) do
     None => return unchanged(tab)
     Just(organization) => do
       let managingPeople = tab.dialog == PeopleDialog
-      let away = managingPeople then tab else Tab { ...tab.closed, profile: "".as(UserId) }
+      let away = managingPeople then tab else Tab { ...tab.closed, profile: "" }
       if !user.canManage?(organization.id)
         return managingPeople
           then unchanged(Tab { ...tab, dialogProblem: "Only an administrator can remove a member." })

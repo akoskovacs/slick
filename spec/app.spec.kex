@@ -536,7 +536,7 @@ describe("DB.Store, transactions") do
   it("undoes what a transaction did when it answers an Error, and keeps it on Ok") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let draft = do |body| App.Models.Draft.Draft { conversationId: "c-nowhere".as(ConversationId), body: body } end
+      let draft = do |body| App.Models.Draft.Draft { conversationId: "c-nowhere", body: body } end
       let undone = Harmat.Database.transaction do
         DB.Repositories.Drafts.save(world.ada.id, draft("undone")).try
         Error("changed my mind")
@@ -618,7 +618,7 @@ describe("App.Controllers.Files") do
 
   it("says sizes to a tenth, in decimal units") do
     let sizedAs = do |count|
-      App.Models.Attachment.Attachment { id: "f".as(AttachmentId), userId: "u".as(UserId), filename: "x", contentType: "", byteSize: count }.sized
+      App.Models.Attachment.Attachment { id: "f", userId: "u", filename: "x", contentType: "", byteSize: count }.sized
     end
     Assert.equal([28, 4312, 1536000, 2500000000].map { |count| sizedAs(count) }, ["28 B", "4.3 KB", "1.5 MB", "2.5 GB"])
   end
@@ -626,25 +626,25 @@ end
 
 describe("The events bus, telling bots what happens") do
   it("tells each bot only what it may read, and where, never what") do
-    let acme = "o1".as(OrganizationId)
-    let other = "o2".as(OrganizationId)
+    let acme : OrganizationId = "o1"
+    let other : OrganizationId = "o2"
     # A message in a public channel of Acme that lets bots read everything:
     # every bot of Acme's, and none of another organization's.
     let publicMessage = App.Live.Events.Event {
       kind: App.Live.Events.Message, organizationId: acme, organization: "acme",
-      conversationId: "c1".as(ConversationId), channel: "general", message: "m1".as(MessageId), at: 100, public?: true, botAccess: Conversation.AllBots
+      conversationId: "c1", channel: "general", message: "m1", at: 100, public?: true, botAccess: Conversation.AllBots
     }
     # A message in a private channel of Acme: only its participants.
     let privateMessage = App.Live.Events.Event {
-      ...publicMessage, conversationId: "c2".as(ConversationId), channel: "", group: "c2".as(ConversationId), public?: false, people: ["u1".as(UserId), "b1".as(UserId)]
+      ...publicMessage, conversationId: "c2", channel: "", group: "c2", public?: false, people: ["u1", "b1"]
     }
     # An answer to a form: the one bot whose form it was.
     let answered = App.Live.Events.Event {
-      ...publicMessage, kind: App.Live.Events.Answer, message: "m9".as(MessageId), bot: "b1".as(UserId)
+      ...publicMessage, kind: App.Live.Events.Answer, message: "m9", bot: "b1"
     }
     # A command: the one bot it was used for.
     let commanded = App.Live.Events.Event {
-      ...publicMessage, kind: App.Live.Events.Command, message: "".as(MessageId), bot: "b2".as(UserId)
+      ...publicMessage, kind: App.Live.Events.Command, message: "", bot: "b2"
     }
     # A channel that only tells bots what names them, and a mention in it.
     let mentioned = App.Live.Events.Event {
@@ -653,63 +653,63 @@ describe("The events bus, telling bots what happens") do
     # A reply in a thread a bot already replied in: told to that bot, though
     # it is not named.
     let replied = App.Live.Events.Event {
-      ...publicMessage, botAccess: Conversation.Mentions, body: "and 3 + 3?", thread: "m1".as(MessageId), replied: ["b1".as(UserId)]
+      ...publicMessage, botAccess: Conversation.Mentions, body: "and 3 + 3?", thread: "m1", replied: ["b1"]
     }
     # A channel bots may read nothing of.
     let forbidden = App.Live.Events.Event {
       ...publicMessage, botAccess: Conversation.NoBots, body: "hey @muse"
     }
 
-    Assert.truthy(publicMessage.for?("b1".as(UserId), "muse", [acme]))
-    Assert.truthy(publicMessage.for?("b2".as(UserId), "deploy", [acme]))
-    Assert.falsy(publicMessage.for?("b1".as(UserId), "muse", [other]))
-    Assert.falsy(privateMessage.for?("b2".as(UserId), "deploy", [acme]))
-    Assert.truthy(privateMessage.for?("b1".as(UserId), "muse", [acme]))
-    Assert.truthy(answered.for?("b1".as(UserId), "muse", [acme]))
-    Assert.falsy(answered.for?("b2".as(UserId), "deploy", [acme]))
-    Assert.truthy(commanded.for?("b2".as(UserId), "deploy", [acme]))
-    Assert.falsy(commanded.for?("b1".as(UserId), "muse", [acme]))
+    Assert.truthy(publicMessage.for?("b1", "muse", [acme]))
+    Assert.truthy(publicMessage.for?("b2", "deploy", [acme]))
+    Assert.falsy(publicMessage.for?("b1", "muse", [other]))
+    Assert.falsy(privateMessage.for?("b2", "deploy", [acme]))
+    Assert.truthy(privateMessage.for?("b1", "muse", [acme]))
+    Assert.truthy(answered.for?("b1", "muse", [acme]))
+    Assert.falsy(answered.for?("b2", "deploy", [acme]))
+    Assert.truthy(commanded.for?("b2", "deploy", [acme]))
+    Assert.falsy(commanded.for?("b1", "muse", [acme]))
     # "mentions": only the bot named, or a thread it is in.
-    Assert.truthy(mentioned.for?("b1".as(UserId), "muse", [acme]))
-    Assert.falsy(mentioned.for?("b2".as(UserId), "deploy", [acme]))
-    Assert.truthy(replied.for?("b1".as(UserId), "muse", [acme]))
-    Assert.falsy(replied.for?("b2".as(UserId), "deploy", [acme]))
+    Assert.truthy(mentioned.for?("b1", "muse", [acme]))
+    Assert.falsy(mentioned.for?("b2", "deploy", [acme]))
+    Assert.truthy(replied.for?("b1", "muse", [acme]))
+    Assert.falsy(replied.for?("b2", "deploy", [acme]))
     # "none": no bot, however it is named.
-    Assert.falsy(forbidden.for?("b1".as(UserId), "muse", [acme]))
-    Assert.falsy(forbidden.for?("b2".as(UserId), "deploy", [acme]))
+    Assert.falsy(forbidden.for?("b1", "muse", [acme]))
+    Assert.falsy(forbidden.for?("b2", "deploy", [acme]))
 
     # Where each of them is told to look, as its own API takes it: a channel
     # by its title, a group chat by its id, a private chat by who it is with.
     let between = App.Live.Events.Event {
-      ...publicMessage, channel: "", first: "u1".as(UserId), second: "b1".as(UserId)
+      ...publicMessage, channel: "", first: "u1", second: "b1"
     }
     Assert.equal(publicMessage.access, "all")
     Assert.equal(mentioned.access, "mentions")
     Assert.equal(forbidden.access, "none")
     Assert.equal(between.access, "all")
-    Assert.equal(publicMessage.placedFor("b1".as(UserId)), "channels/general")
-    Assert.equal(privateMessage.placedFor("b1".as(UserId)), "groups/c2")
-    Assert.equal(between.placedFor("b1".as(UserId)), "dm/u1")
-    Assert.equal(between.placedFor("u1".as(UserId)), "dm/b1")
+    Assert.equal(publicMessage.placedFor("b1"), "channels/general")
+    Assert.equal(privateMessage.placedFor("b1"), "groups/c2")
+    Assert.equal(between.placedFor("b1"), "dm/u1")
+    Assert.equal(between.placedFor("u1"), "dm/b1")
   end
 end
 
 describe("User, deciding from grants") do
   it("gives roles from grants, with teams carrying their roles to members") do
     with Harmat.Connection = fresh() do
-      let ada = User { id: "u1".as(UserId), email: "ada@x", name: "Ada" }
-      let bob = User { id: "u2".as(UserId), email: "bob@x", name: "Bob" }
-      let carl = User { id: "u3".as(UserId), email: "carl@x", name: "Carl" }
-      let bot = User { id: "b1".as(UserId), email: "b1@x", name: "muse", kind: User.Bot }
+      let ada = User { id: "u1", email: "ada@x", name: "Ada" }
+      let bob = User { id: "u2", email: "bob@x", name: "Bob" }
+      let carl = User { id: "u3", email: "carl@x", name: "Carl" }
+      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: User.Bot }
 
-      let general = Conversation { id: "c1".as(ConversationId), kind: Channel, slug: "o1#general", title: "general", organizationId: "o1".as(OrganizationId), access: Conversation.Public }
-      let secret = Conversation { id: "c2".as(ConversationId), kind: Channel, slug: "o1#secret", title: "secret", organizationId: "o1".as(OrganizationId), access: Conversation.Private }
-      let dm = Conversation { id: "d1".as(ConversationId), kind: PrivateChat, slug: "o1@u1:u2", firstUser: "u1".as(UserId), secondUser: "u2".as(UserId), organizationId: "o1".as(OrganizationId) }
+      let general = Conversation { id: "c1", kind: Channel, slug: "o1#general", title: "general", organizationId: "o1", access: Conversation.Public }
+      let secret = Conversation { id: "c2", kind: Channel, slug: "o1#secret", title: "secret", organizationId: "o1", access: Conversation.Private }
+      let dm = Conversation { id: "d1", kind: PrivateChat, slug: "o1@u1:u2", firstUser: "u1", secondUser: "u2", organizationId: "o1" }
 
-      DB.Repositories.Grants.grant(Grant.userOnOrganization("u1".as(UserId), "o1".as(OrganizationId), Grant.Member)).try
-      DB.Repositories.Grants.grant(Grant.userOnOrganization("u2".as(UserId), "o1".as(OrganizationId), Grant.Admin)).try
-      DB.Repositories.Grants.grant(Grant.userOnOrganization("u3".as(UserId), "o1".as(OrganizationId), Grant.ReadOnly)).try
-      DB.Repositories.Grants.grant(Grant.userOnOrganization("b1".as(UserId), "o1".as(OrganizationId), Grant.Member)).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("u1", "o1", Grant.Member)).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("u2", "o1", Grant.Admin)).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("u3", "o1", Grant.ReadOnly)).try
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("b1", "o1", Grant.Member)).try
 
       # A public channel: members, admins and read-only users read it; only
       # members and admins write.
@@ -725,14 +725,14 @@ describe("User, deciding from grants") do
       Assert.falsy(bob.canRead?(secret))
       Assert.truthy(bob.canAdminister?(secret))
 
-      DB.Repositories.Grants.grant(Grant.userOnConversation("u1".as(UserId), "c2".as(ConversationId), Grant.Member)).try
+      DB.Repositories.Grants.grant(Grant.userOnConversation("u1", "c2", Grant.Member)).try
       Assert.truthy(ada.canRead?(secret))
       Assert.truthy(ada.canWrite?(secret))
       Assert.falsy(ada.canAdminister?(secret))
 
       # A team that owns the channel hands its members the channel.
-      DB.Repositories.Grants.grant(Grant.userOnTeam("u1".as(UserId), "t1".as(TeamId), Grant.Member)).try
-      DB.Repositories.Grants.grant(Grant.teamOnConversation("t1".as(TeamId), "c2".as(ConversationId), Grant.Admin)).try
+      DB.Repositories.Grants.grant(Grant.userOnTeam("u1", "t1", Grant.Member)).try
+      DB.Repositories.Grants.grant(Grant.teamOnConversation("t1", "c2", Grant.Admin)).try
       Assert.truthy(ada.canAdminister?(secret))
       Assert.falsy(carl.canRead?(secret))
 
@@ -742,10 +742,10 @@ describe("User, deciding from grants") do
       Assert.falsy(carl.canRead?(dm))
 
       # Making channels and teams, and managing the organization.
-      Assert.truthy(ada.canCreate?("o1".as(OrganizationId)))
-      Assert.falsy(carl.canCreate?("o1".as(OrganizationId)))
-      Assert.truthy(bob.canManage?("o1".as(OrganizationId)))
-      Assert.falsy(ada.canManage?("o1".as(OrganizationId)))
+      Assert.truthy(ada.canCreate?("o1"))
+      Assert.falsy(carl.canCreate?("o1"))
+      Assert.truthy(bob.canManage?("o1"))
+      Assert.falsy(ada.canManage?("o1"))
 
       # Bots are users: a bot that is a member reads what a member reads.
       Assert.truthy(bot.canRead?(general))
@@ -753,9 +753,9 @@ describe("User, deciding from grants") do
 
       # A server administrator can hold that role through a team, while a
       # lesser server grant must not add its holder to the admin roster.
-      DB.Repositories.Grants.grant(Grant.teamOnServer("t1".as(TeamId), Grant.Admin)).try
-      DB.Repositories.Grants.grant(Grant.userOnServer("u2".as(UserId), Grant.Admin)).try
-      DB.Repositories.Grants.grant(Grant.userOnServer("u3".as(UserId), Grant.Member)).try
+      DB.Repositories.Grants.grant(Grant.teamOnServer("t1", Grant.Admin)).try
+      DB.Repositories.Grants.grant(Grant.userOnServer("u2", Grant.Admin)).try
+      DB.Repositories.Grants.grant(Grant.userOnServer("u3", Grant.Member)).try
       let serverAdmins = User.serverAdmins().try
       Assert.truthy(ada.serverAdmin?)
       Assert.truthy(serverAdmins.contains?("u1"))
@@ -875,8 +875,8 @@ describe("Organization, roles an administrator gives") do
       # Read-only: still in the organization, but cannot write.
       let (_, muted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", bob.id.as(String)), ("role", "read_only")])
       Assert.truthy(muted)
-      Assert.truthy(bob.canRead?(Conversation { id: "c1".as(ConversationId), kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
-      Assert.falsy(bob.canWrite?(Conversation { id: "c1".as(ConversationId), kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
+      Assert.truthy(bob.canRead?(Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
+      Assert.falsy(bob.canWrite?(Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: acme.organization, access: Conversation.Public }))
 
       # The last administrator cannot be demoted or removed.
       let (_, demoted) = step(statuses, ada, Tab {}, [("event", "role-set"), ("user", eve.id.as(String)), ("role", "member")])
@@ -900,23 +900,23 @@ end
 describe("User, what a channel lets its bots read") do
   it("gates a bot by the setting, and by whether it is named or in the thread") do
     with Harmat.Connection = fresh() do
-      let bot = User { id: "b1".as(UserId), email: "b1@x", name: "muse", kind: User.Bot }
-      let channel = Conversation { id: "c1".as(ConversationId), kind: Channel, slug: "o#g", title: "g", organizationId: "o1".as(OrganizationId), access: Conversation.Public, botAccess: Conversation.Mentions }
-      DB.Repositories.Grants.grant(Grant.userOnOrganization("b1".as(UserId), "o1".as(OrganizationId), Grant.Member)).try
+      let bot = User { id: "b1", email: "b1@x", name: "muse", kind: User.Bot }
+      let channel = Conversation { id: "c1", kind: Channel, slug: "o#g", title: "g", organizationId: "o1", access: Conversation.Public, botAccess: Conversation.Mentions }
+      DB.Repositories.Grants.grant(Grant.userOnOrganization("b1", "o1", Grant.Member)).try
 
-      let asked = DB.Repositories.Messages.create("c1".as(ConversationId), "u1".as(UserId), "a question", "".as(MessageId)).try
-      let named = DB.Repositories.Messages.create("c1".as(ConversationId), "u1".as(UserId), "hey @muse, help", "".as(MessageId)).try
-      DB.Repositories.Messages.create("c1".as(ConversationId), "b1".as(UserId), "I am on it", asked.id).try
+      let asked = DB.Repositories.Messages.create("c1", "u1", "a question", "").try
+      let named = DB.Repositories.Messages.create("c1", "u1", "hey @muse, help", "").try
+      DB.Repositories.Messages.create("c1", "b1", "I am on it", asked.id).try
 
       # "mentions": the newest messages are not listed, a thread it is named
       # in is read, and a thread it has replied in is read.
-      Assert.falsy(bot.botMayRead?(channel, "".as(MessageId)))
+      Assert.falsy(bot.botMayRead?(channel, ""))
       Assert.truthy(bot.botMayRead?(channel, named.id))
       Assert.truthy(bot.botMayRead?(channel, asked.id))
 
       # "all": everything.
-      DB.Repositories.Conversations.setBotAccess("c1".as(ConversationId), Conversation.AllBots).try
-      Assert.truthy(bot.botMayRead?(Conversation { ...channel, botAccess: Conversation.AllBots }, "".as(MessageId)))
+      DB.Repositories.Conversations.setBotAccess("c1", Conversation.AllBots).try
+      Assert.truthy(bot.botMayRead?(Conversation { ...channel, botAccess: Conversation.AllBots }, ""))
 
       # "none": nothing.
       let none = Conversation { ...channel, botAccess: Conversation.NoBots }

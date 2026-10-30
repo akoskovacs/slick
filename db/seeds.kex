@@ -72,9 +72,9 @@ private do
 
     let general = Conversations.create(acme.id, Conversation.GENERAL, ada.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(general.id, "Company-wide announcements and chatter").try
-    let welcome = Messages.create(general.id, ada.id, "Welcome to Acme :wave:", "".as(MessageId)).try
-    Messages.create(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "".as(MessageId)).try
-    let plan = Messages.create(general.id, ada.id, "It is. The checklist:\n- migrate\n- restart\n- tell everyone", "".as(MessageId)).try
+    let welcome = Messages.create(general.id, ada.id, "Welcome to Acme :wave:", "").try
+    Messages.create(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "").try
+    let plan = Messages.create(general.id, ada.id, "It is. The checklist:\n- migrate\n- restart\n- tell everyone", "").try
     Messages.create(general.id, eve.id, "I can take the migration.", plan.id).try
     Messages.create(general.id, ada.id, "Yours, thank you.", plan.id).try
     welcome.toggleReaction(bob.id, "👍").try
@@ -82,18 +82,18 @@ private do
 
     let random = Conversations.create(acme.id, "random", bob.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(random.id, "Anything goes :tada:").try
-    Messages.create(random.id, bob.id, "Lunch at one?", "".as(MessageId)).try
-    Messages.create(random.id, eve.id, "`yes`", "".as(MessageId)).try
+    Messages.create(random.id, bob.id, "Lunch at one?", "").try
+    Messages.create(random.id, eve.id, "`yes`", "").try
 
     let chat = Conversations.findOrCreateDirect(acme.id, ada.id, bob.id).try
-    Messages.create(chat.id, ada.id, "Can you look at my pull request today?", "".as(MessageId)).try
-    Messages.create(chat.id, bob.id, "After lunch.", "".as(MessageId)).try
+    Messages.create(chat.id, ada.id, "Can you look at my pull request today?", "").try
+    Messages.create(chat.id, bob.id, "After lunch.", "").try
 
     let trio = Conversations.findOrCreateGroup(acme.id, [bob.id, eve.id], ada.id).try
-    Messages.create(trio.id, eve.id, "Shall we plan the offsite here?", "".as(MessageId)).try
+    Messages.create(trio.id, eve.id, "Shall we plan the offsite here?", "").try
 
     let design = Team {
-      id: "".as(TeamId),
+      id: "",
       organizationId: acme.id,
       handle: "design",
       name: "Design",
@@ -102,7 +102,7 @@ private do
     }
     let team = design.create(ada.id).try
     let studio = Conversations.create(acme.id, "studio", eve.id, access: Conversation.Private, teamId: team.id).try
-    Messages.create(studio.id, eve.id, "New mockups are up, @design", "".as(MessageId)).try
+    Messages.create(studio.id, eve.id, "New mockups are up, @design", "").try
 
     let bots = BOTS.map { |name| bot(name, acme.id).try }
     bots.each { |made| Memberships.add(acme.id, made.id).try }

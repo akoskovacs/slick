@@ -27,7 +27,7 @@ describe("App.Live.Conversations, channels") do
       let (random, changed) = stepped(world, world.ada, Tab {}, [("event", "channel-create"), ("title", "random")])
       Assert.truthy(changed)
       Assert.truthy(!random.conversation.empty?)
-      let stored = DB.Repositories.Conversations.find(random.conversation).try.or(Conversation { id: "".as(ConversationId) })
+      let stored = DB.Repositories.Conversations.find(random.conversation).try.or(Conversation { id: "" })
       Assert.equal(stored.kind, Channel)
       Assert.truthy(shown(world, world.bob, Tab {}).contains?("# random"))
     end

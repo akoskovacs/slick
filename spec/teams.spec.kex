@@ -113,7 +113,7 @@ describe("App.Live.Teams, opening one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let design = createDesign(world)
-      let (opened, _) = stepped(world, world.bob, Tab { thread: "m1".as(MessageId), profile: world.eve.id }, [("event", "team-open"), ("id", design.team.as(String))])
+      let (opened, _) = stepped(world, world.bob, Tab { thread: "m1", profile: world.eve.id }, [("event", "team-open"), ("id", design.team.as(String))])
       Assert.equal(opened.team, design.team)
       Assert.equal(opened.thread, "")
       Assert.equal(opened.profile, "")

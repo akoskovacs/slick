@@ -34,7 +34,7 @@ end
 
 describe("App.Live.Organizations, making one") do
   it("shows a database failure instead of claiming the name is taken") do
-    let founder = User { id: "u1".as(UserId), email: "founder@example.com", name: "Founder" }
+    let founder = User { id: "u1", email: "founder@example.com", name: "Founder" }
     let (failed, changed) = App.Live.Organizations.create(founder, Tab {}, "Acme", [])
     Assert.falsy(changed)
     Assert.equal(failed.dialog, App.Live.Tab.OrganizationDialog)
@@ -50,7 +50,7 @@ describe("App.Live.Organizations, making one") do
       Assert.equal(DB.Repositories.Organizations.find(tab.organization).map { |found| found.map { |org| org.id } }, Ok(Just(tab.organization)))
       Assert.equal(DB.Repositories.Grants.organizationsOf(founder.id), Ok([tab.organization]))
       Assert.equal(founder.organizations.map { |org| org.id }, [tab.organization])
-      Assert.equal(founder.home("".as(OrganizationId)).map { |org| org.id }, Just(tab.organization))
+      Assert.equal(founder.home("").map { |org| org.id }, Just(tab.organization))
       let html = App.Live.Chat.markup(Process.spawn(Presence {}), founder, tab)
       assert(html.contains?("# general"), "created organization did not render #general")
       assert(html.contains?("data-live-path=\"/acme/channels/general\""), "created organization did not navigate to #general")

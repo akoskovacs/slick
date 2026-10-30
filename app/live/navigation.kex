@@ -30,8 +30,8 @@ end
 # or from Metro's live.js on Escape or a click beside a dialog.
 foul on("cancel", event) = unchanged(event.tab.closed)
 foul on("view-messages", event) = unchanged(Tab { ...event.tab.closed, view: ConversationView })
-foul on("view-files", event) = unchanged(Tab { ...event.tab.closed, thread: "".as(MessageId), view: FilesView })
-foul on("view-settings", event) = unchanged(Tab { ...event.tab.closed, thread: "".as(MessageId), profile: "".as(UserId), team: "".as(TeamId), view: SettingsView })
+foul on("view-files", event) = unchanged(Tab { ...event.tab.closed, thread: "", view: FilesView })
+foul on("view-settings", event) = unchanged(Tab { ...event.tab.closed, thread: "", profile: "", team: "", view: SettingsView })
 # Whether somebody is looking at the tab: `attention`, from Metro's live.js.
 foul on("attention", event) = unchanged(Tab { ...event.tab, attentive?: event.flag("on") })
 foul on(_, event) = unchanged(event.tab)

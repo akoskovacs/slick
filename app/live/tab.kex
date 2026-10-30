@@ -15,18 +15,18 @@ type View = ConversationView | FilesView | SettingsView
 record Tab do
   # The organization the tab is in, by id; "" is the first one its person
   # belongs to.
-  organization : OrganizationId = "".as(OrganizationId)
+  organization : OrganizationId = ""
   # The conversation the tab is showing, by id; "" is the organization's
   # #general.
-  conversation : ConversationId = "".as(ConversationId)
+  conversation : ConversationId = ""
   # The message whose thread is open beside it, by id; "" when none is.
-  thread : MessageId = "".as(MessageId)
+  thread : MessageId = ""
   # The person or bot whose profile is open beside it, by id; "" when none
   # is. A profile, a team and a thread take the same place, so each closes
   # the others.
-  profile : UserId = "".as(UserId)
+  profile : UserId = ""
   # The team open beside it, by id; "" when none is.
-  team : TeamId = "".as(TeamId)
+  team : TeamId = ""
   # Whether the topic is being edited.
   retitling? : Bool = false
   # The dialog open over the conversation, if any, and what was wrong with

@@ -16,8 +16,8 @@ end
 record Attachment do
   id : AttachmentId
   userId : UserId
-  conversationId : ConversationId = "".as(ConversationId)
-  messageId : MessageId = "".as(MessageId)
+  conversationId : ConversationId = ""
+  messageId : MessageId = ""
   filename : String
   contentType : String
   byteSize : Integer

@@ -12,7 +12,7 @@ let threadPartial = Template.html(Kex.embed("_thread.html.ket"))
 
 # The id of the message an open thread starts with; "" when none is open.
 opened : [Message] -> MessageId
-let opened([]) = "".as(MessageId)
+let opened([]) = ""
 let opened([opening | replies]) = opening.id
 
 # The thread beside the conversation: its first message, then the replies.

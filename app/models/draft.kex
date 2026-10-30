@@ -9,8 +9,8 @@ using App.Models.Ids, only: [UserId]
 record Draft do
   conversationId : ConversationId
   # The message the thread starts with; "" for the conversation's own box.
-  threadId : MessageId = "".as(MessageId)
+  threadId : MessageId = ""
   # Who a private chat is with; "" in a channel.
-  personId : UserId = "".as(UserId)
+  personId : UserId = ""
   body : String
 end

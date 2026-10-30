@@ -52,7 +52,7 @@ foul open(user, tab, id) do
   match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => match root(conversation, id) do
-      Just(first) => return unchanged(Tab { ...tab.closed, thread: first.id, profile: "".as(UserId), team: "".as(TeamId) })
+      Just(first) => return unchanged(Tab { ...tab.closed, thread: first.id, profile: "", team: "" })
       None => return unchanged(tab)
     end
   end

@@ -22,19 +22,19 @@ describe("App.Live.Navigation") do
   it("closes what is open over the conversation, and keeps the rest") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let open = Tab { team: "t1".as(TeamId), dialog: App.Live.Tab.BotsDialog, dialogProblem: "x", notice: "y" }
+      let open = Tab { team: "t1", dialog: App.Live.Tab.BotsDialog, dialogProblem: "x", notice: "y" }
       let (cancelled, _) = stepped(world, world.ada, open, [("event", "cancel")])
-      Assert.equal(cancelled, Tab { team: "t1".as(TeamId) })
+      Assert.equal(cancelled, Tab { team: "t1" })
     end
   end
 
   it("shows a conversation's files, its settings, and its messages again") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let (files, _) = stepped(world, world.ada, Tab { thread: "m1".as(MessageId) }, [("event", "view-files")])
+      let (files, _) = stepped(world, world.ada, Tab { thread: "m1" }, [("event", "view-files")])
       Assert.equal(files.view, App.Live.Tab.FilesView)
       Assert.equal(files.thread, "")
-      let (settings, _) = stepped(world, world.ada, Tab { profile: "u1".as(UserId), team: "t1".as(TeamId) }, [("event", "view-settings")])
+      let (settings, _) = stepped(world, world.ada, Tab { profile: "u1", team: "t1" }, [("event", "view-settings")])
       Assert.equal(settings, Tab { view: App.Live.Tab.SettingsView })
       let (messages, _) = stepped(world, world.ada, files, [("event", "view-messages")])
       Assert.equal(messages.view, App.Live.Tab.ConversationView)

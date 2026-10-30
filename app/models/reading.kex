@@ -8,7 +8,7 @@ using App.Models.Message, only: [MessageId]
 record Reading do
   conversationId : ConversationId
   # The message the thread starts with; "" for the conversation itself.
-  threadId : MessageId = "".as(MessageId)
+  threadId : MessageId = ""
   # The `sentAt` of the newest message they have been shown there.
   readAt : Integer
 end

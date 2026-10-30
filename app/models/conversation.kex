@@ -20,14 +20,14 @@ record Conversation do
   slug : String = ""
   title : String = ""
   topic : String = ""
-  firstUser : UserId = "".as(UserId)
-  secondUser : UserId = "".as(UserId)
-  organizationId : OrganizationId = "".as(OrganizationId)
+  firstUser : UserId = ""
+  secondUser : UserId = ""
+  organizationId : OrganizationId = ""
   # "public" for a channel anyone in the organization may read; "private"
   # for one only its participants may — as a group chat always is.
   access : ConversationAccess = Public
   # The team that owns a channel; "" for none.
-  teamId : TeamId = "".as(TeamId)
+  teamId : TeamId = ""
   # How much of it its bots may read: "no_bots", "mentions" or "all_bots".
   botAccess : BotAccess = Mentions
   # Who may read a private channel or a group chat: its participants and,

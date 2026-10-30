@@ -33,7 +33,7 @@ make Organization do
     return true if Grants.organizationsOf(userId).or([]).contains?(@id)
 
     let teams = Grants.teamsOf(userId).or([])
-    return Grants.over(Grant.ServerResource, "".as(GrantResourceId)).or([]).any? do |grant|
+    return Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
       grant.role == Grant.Admin && (
         grant.userId == Just(userId) || grant.teamId.map { |teamId| teams.contains?(teamId) }.or(false)
       )

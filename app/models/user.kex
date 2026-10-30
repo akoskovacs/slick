@@ -44,8 +44,8 @@ record User do
   kind : UserKind = Person
   # A bot belongs to a person or to an organization: one of these is set
   # on a bot, and neither on a person.
-  ownerId : UserId = "".as(UserId)
-  ownerOrganizationId : OrganizationId = "".as(OrganizationId)
+  ownerId : UserId = ""
+  ownerOrganizationId : OrganizationId = ""
   # What they say about themselves: an emoji and a few words, either or
   # both, or neither.
   statusEmoji : String = ""
@@ -73,7 +73,7 @@ end
 # The users who hold the server-wide administrator role, directly or
 # through an administrator team. Resolve them in batches for rosters.
 foul serverAdmins() -> [UserId] or! String do
-  let grants = Grants.over(Grant.ServerResource, "".as(GrantResourceId)).try
+  let grants = Grants.over(Grant.ServerResource, "").try
   let admins = grants.filter { |grant| grant.role == Grant.Admin }
   let direct = admins.flatMap { |grant| grant.userId.map { |id| [id] }.or([]) }
   let teams = admins.flatMap { |grant| grant.teamId.map { |id| [id.as(GrantResourceId)] }.or([]) }
@@ -145,7 +145,7 @@ make User do
     let token = "${User.BOT_TOKEN_PREFIX}${Metro.Auth.Token.fresh()}"
     let bot = User {
       id: id, email: "${id}@bots.invalid", name: name, kind: Bot,
-      ownerId: organizationId.empty? then @id else "".as(UserId), ownerOrganizationId: organizationId
+      ownerId: organizationId.empty? then @id else "", ownerOrganizationId: organizationId
     }
     Users.createBot(bot, Metro.Auth.Token.digest(token)).map { |made| (made, token) }
   end
@@ -344,7 +344,7 @@ make User do
   # through a team.
   foul serverAdmin? -> Bool do
     let teams = Grants.teamsOf(@id).or([])
-    Grants.over(Grant.ServerResource, "".as(GrantResourceId)).or([]).any? do |grant|
+    Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
       grant.role == Grant.Admin && (
         grant.userId == Just(@id) || grant.teamId.map { |teamId| teams.contains?(teamId) }.or(false)
       )

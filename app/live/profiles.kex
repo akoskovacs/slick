@@ -27,7 +27,7 @@ foul open(user, tab, id) do
     None => return unchanged(tab)
     Just(organization) => do
       return unchanged(tab) if id != user.id && !organization.member?(id)
-      return unchanged(Tab { ...tab.closed, thread: "".as(MessageId), profile: id, team: "".as(TeamId) })
+      return unchanged(Tab { ...tab.closed, thread: "", profile: id, team: "" })
     end
   end
 end
@@ -86,7 +86,7 @@ end
 # their whole names; any other does nothing.
 on : String -> Event -> Outcome
 foul on("profile-open", event) = open(event.user, event.tab, event.given("user").as(UserId))
-foul on("profile-close", event) = unchanged(Tab { ...event.tab.closed, profile: "".as(UserId) })
+foul on("profile-close", event) = unchanged(Tab { ...event.tab.closed, profile: "" })
 foul on("profile-update", event) = update(event.user, event.tab, event.entries)
 foul on("status-set", event) = setStatus(event.user, event.tab, event.typed("emoji"), event.typed("text"))
 foul on("status-clear", event) = setStatus(event.user, event.tab, "", "")

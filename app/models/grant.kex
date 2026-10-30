@@ -23,14 +23,14 @@ type GrantResourceType = ServerResource | OrganizationResource | ConversationRes
 type GrantRole = Admin | Member | ReadOnly
 
 record Grant do
-  id : GrantId = "".as(GrantId)
+  id : GrantId = ""
   # Who holds the grant: a "user" (person or bot) or a "team".
   subjectType : GrantSubjectType = UserSubject
   subjectId : GrantSubjectId
   # What it is over: "server", "organization", "conversation" or "team".
   resourceType : GrantResourceType = ServerResource
   # The id of that thing; "" for the server.
-  resourceId : GrantResourceId = "".as(GrantResourceId)
+  resourceId : GrantResourceId = ""
   # "admin", "member" or "read_only".
   role : GrantRole = Member
   # Milliseconds since 1970.
@@ -83,7 +83,7 @@ let userOnServer(userId, role) = Grant {
   subjectType: UserSubject,
   subjectId: userId.as(GrantSubjectId),
   resourceType: ServerResource,
-  resourceId: "".as(GrantResourceId),
+  resourceId: "",
   role: role
 }
 
@@ -93,7 +93,7 @@ let teamOnServer(teamId, role) = Grant {
   subjectType: TeamSubject,
   subjectId: teamId.as(GrantSubjectId),
   resourceType: ServerResource,
-  resourceId: "".as(GrantResourceId),
+  resourceId: "",
   role: role
 }
 
@@ -102,7 +102,7 @@ idFor : GrantSubjectType -> GrantSubjectId -> GrantResourceType -> GrantResource
 let idFor(subjectType, subjectId, resourceType, resourceId) do
   let subject = Type.of(subjectType).constructorValue(subjectType).or("${subjectType}")
   let resource = Type.of(resourceType).constructorValue(resourceType).or("${resourceType}")
-  "${subject}:${subjectId.as(String)}:${resource}:${resourceId.as(String)}".as(GrantId)
+  "${subject}:${subjectId.as(String)}:${resource}:${resourceId.as(String)}"
 end
 
 idForUserOnOrganization : UserId -> OrganizationId -> GrantId

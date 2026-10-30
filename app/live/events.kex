@@ -40,21 +40,21 @@ record Event do
   kind : EventKind
   # The organization it happened in: its id, and its address as the API
   # takes it.
-  organizationId : OrganizationId = "".as(OrganizationId)
+  organizationId : OrganizationId = ""
   organization : String = ""
-  conversationId : ConversationId = "".as(ConversationId)
+  conversationId : ConversationId = ""
   # The conversation as the API addresses it: a channel by its title, and a
   # group chat by its id. A private chat is addressed by who it is with, so
   # instead the two of it are kept, and each bot is told its own address.
   channel : String = ""
-  group : ConversationId = "".as(ConversationId)
-  first : UserId = "".as(UserId)
-  second : UserId = "".as(UserId)
+  group : ConversationId = ""
+  first : UserId = ""
+  second : UserId = ""
   # The thread it happened in; "" for the conversation itself.
-  thread : MessageId = "".as(MessageId)
+  thread : MessageId = ""
   # The message at the middle of it: the one said, or the one a form was
   # answered in. "" for a command, which is no message.
-  message : MessageId = "".as(MessageId)
+  message : MessageId = ""
   # When it happened, in milliseconds since 1970.
   at : Integer = 0
   # Who may be told of it: a message, whoever could read it — a whole
@@ -63,7 +63,7 @@ record Event do
   # an answer or a command, the one bot it is for.
   public? : Bool = false
   people : [UserId] = []
-  bot : UserId = "".as(UserId)
+  bot : UserId = ""
   # The message said — kept on the server only, so the bus can tell which
   # bots it names; never sent out.
   body : String = ""
@@ -196,9 +196,9 @@ foul publish(events, conversation, kind, messageId, threadId, at, bot, body) do
         organization: organization.slug,
         conversationId: conversation.id,
         channel: conversation.channel? then conversation.title else "",
-        group: conversation.group? then conversation.id else "".as(ConversationId),
-        first: conversation.direct? then conversation.firstUser else "".as(UserId),
-        second: conversation.direct? then conversation.secondUser else "".as(UserId),
+        group: conversation.group? then conversation.id else "",
+        first: conversation.direct? then conversation.firstUser else "",
+        second: conversation.direct? then conversation.secondUser else "",
         thread: threadId,
         message: messageId,
         at: at,

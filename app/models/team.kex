@@ -16,7 +16,7 @@ make TeamId do
 end
 record Team do
   id : TeamId
-  organizationId : OrganizationId = "".as(OrganizationId)
+  organizationId : OrganizationId = ""
   # What it is mentioned by, without the `@`: "design".
   handle : String = ""
   name : String = ""

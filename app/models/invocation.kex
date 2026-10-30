@@ -17,7 +17,7 @@ record Invocation do
   organizationId : OrganizationId
   conversationId : ConversationId
   # The message the thread starts with; "" in the conversation itself.
-  threadId : MessageId = "".as(MessageId)
+  threadId : MessageId = ""
   botId : UserId
   userId : UserId
   # Without the slash: "mode".
