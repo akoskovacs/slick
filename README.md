@@ -9,7 +9,7 @@ client-side application: the browser shows markup and sends events.
 
 ![Slick showing the #general channel of the Acme organization, with a thread open beside it](docs/screenshot.png)
 
-*The development workspace `tey seed` makes, signed in as Ada.*
+*The development workspace `tey db:seed` makes, signed in as Ada.*
 
 ## What it does
 
@@ -89,7 +89,7 @@ Or locally, with unixODBC and a SQLite ODBC driver too
 
 ```sh
 sh script/setup.sh   # once: dependencies, the ODBC port program
-tey seed             # once: the development workspace in the screenshot
+tey db:seed          # once: the development workspace in the screenshot
 tey server           # http://127.0.0.1:4000
 ```
 
@@ -101,13 +101,15 @@ manage organizations across the server; Ada administers Acme.
 | Command | |
 | --- | --- |
 | `tey server` | run pending migrations, then serve |
-| `tey migrate` | run the migrations this database has not run |
-| `tey rollback` | undo the newest migration; `tey rollback 3` undoes three |
-| `tey seed` | migrate, then plant what the environment's database starts with |
+| `tey db:migrate` | run the migrations this database has not run |
+| `tey db:rollback` | undo the newest migration; `tey db:rollback 3` undoes three |
+| `tey db:seed` | migrate, then plant what the environment's database starts with |
 | `tey db:create` | create the environment's SQLite database file |
 | `tey db:drop` | drop the environment's SQLite database file |
 | `tey console` | the application in Kex's REPL, its queries logged (`bin/console`) |
-| `tey test` | the specs |
+| `tey test` | the specs, apart from the browser's |
+| `tey test:browser` | the browser specs, in a headless Chrome |
+| `tey test:watch` | the browser specs in a visible Chrome, paced to watch |
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
 | `tey dev` | the server, then the bot beside it — [slick-ai-bot](../slick-ai-bot) — once it answers; Ctrl-C stops all of them |
 
@@ -115,9 +117,12 @@ The browser specs use Chrome and a temporary SQLite database. With the
 dependencies and ODBC port program set up as above, run them with:
 
 ```sh
-tey test spec/browser/slick.spec.kex
-SHAKESPEARE_WATCH=1 tey test spec/browser/slick.spec.kex  # watch in Chrome
+tey test:browser
+tey test:watch                                    # watch in Chrome
+tey test:watch -- --only "creates a team and adds somebody to it"
 ```
+
+`tey test` alone runs only the specs in `spec/`, not those in `spec/browser/`.
 
 The browser dependency is a pinned Shakespeare release. To try a change to
 Shakespeare first, point `package.kex` at the adjacent checkout with
@@ -127,7 +132,7 @@ pressed in the terminal.
  `tey dev` (script/dev.sh) takes `HOST` and `PORT` as `tey server` does, and
  `BOT_OPERATORS`, the Slick ids of the people who may allow the bot's tools
  and choose what each conversation asks. The bot uses its development token
- — `tey seed` plants one — unless `BOT_TOKEN` says otherwise, and is skipped
+ — `tey db:seed` plants one — unless `BOT_TOKEN` says otherwise, and is skipped
  when its folder (`SLICK_BOT_DIR`) is not there.
 
 The development seed creates `claude`, `muse`, and `opencode` identities.
@@ -235,7 +240,7 @@ its `blocks`. A form is a block too: `{"type": "form", "fields": [{"label":
 notes"}]}`. The whole of it is described at the top of
 `app/controllers/api.kex`.
 
-`tey seed` makes a development bot called `claude`, with token
+`tey db:seed` makes a development bot called `claude`, with token
 `slick_bot_development_claude`. The separate [slick-ai-bot](../slick-ai-bot)
 project is the bot: it answers when named in a channel or written to in
 private, with Muse, OpenCode or Claude, chosen per conversation; see its
@@ -250,9 +255,9 @@ README for setup.
 | `production` | whatever `DATABASE_DSN` names |
 
 ```sh
-tey migrate
-tey rollback
-tey seed       # development: admin@example.com plus Acme and its demo users
+tey db:migrate
+tey db:rollback
+tey db:seed    # development: admin@example.com plus Acme and its demo users
 ```
 
 Seeds are apart from the migrations (`db/seeds.kex`), and planting them
