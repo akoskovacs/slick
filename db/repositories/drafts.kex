@@ -10,7 +10,7 @@ using App.Models.Ids, only: [UserId]
 # Everything a person has started writing and not sent.
 foul pending(userId: UserId) -> [Draft] or! String do
   return Database.select().from(DB.Schema.Drafts.definition)
-    .where(DB.Schema.Drafts.userId == userId)
+    .where(DB.Schema.Drafts.userId == userId.as(String))
     .all(as: Draft)
 end
 

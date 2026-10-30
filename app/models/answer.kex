@@ -9,9 +9,9 @@ using App.Models.Ids, only: [UserId]
 
 record Answer do
   messageId : MessageId
-  conversationId : ConversationId = ""
+  conversationId : ConversationId = "".as(ConversationId)
   # Who wrote the message that asked.
-  askerId : UserId = ""
+  askerId : UserId = "".as(UserId)
   # Who answered.
   userId : UserId
   # Which of the message's blocks the form is.

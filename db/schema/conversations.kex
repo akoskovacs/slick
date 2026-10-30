@@ -7,11 +7,10 @@ using App.Models.Conversation, as: Conversation
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# Known while compiling: a query over this table is written then.
-compiled do
+# The schema is shared by the repositories that query this table.
   let definition = Table.define :conversations do |t|
     t.text(:id, primaryKey: true)
-    t.text(:kind, oneOf: ["channel", "private_chat", "group"])
+    t.text(:kind, oneOf: Harmat.Column.choices(Type.of(Conversation.Channel)))
     t.text(:slug)
     t.text(:title, default: "")
     t.text(:topic, default: "")
@@ -20,9 +19,9 @@ compiled do
     t.text(:created_by, default: "")
     t.bigint(:created_at)
     t.text(:organization_id, default: "")
-    t.text(:access, default: "public", oneOf: ["public", "private"])
+    t.text(:access, default: Harmat.Column.choices(Type.of(Conversation.Public)).first.or(""), oneOf: Harmat.Column.choices(Type.of(Conversation.Public)))
     t.text(:team_id, default: "")
-    t.text(:bot_access, default: "mentions", oneOf: ["no_bots", "mentions", "all_bots"])
+    t.text(:bot_access, default: Type.of(Conversation.NoBots).constructorValue(Conversation.Mentions).or(""), oneOf: Harmat.Column.choices(Type.of(Conversation.NoBots)))
   end
 
   let id = definition.textColumn(:id)
@@ -37,4 +36,3 @@ compiled do
   let access = definition.textColumn(:access)
   let teamId = definition.textColumn(:team_id)
   let botAccess = definition.textColumn(:bot_access)
-end

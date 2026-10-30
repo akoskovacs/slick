@@ -18,7 +18,7 @@ foul cabinet(user, tab, conversation) do
   let small = stored.filter { |file| file.textual? && file.byteSize <= GLIMPSED }
   let glimpsed = tab.view == App.Live.Tab.FilesView then small else []
   let glimpses = glimpsed.reduce({}) do |found, file|
-    let content : Binary or! String = Metro.Storage.get(file.id)
+    let content : Binary or! String = Metro.Storage.get(file.id.as(String))
     let text = content.map { |bytes| bytes.to(String).or("") }.or("")
     found.put(file.id, text.take(400))
   end

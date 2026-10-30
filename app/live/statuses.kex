@@ -23,9 +23,9 @@ foul say(statuses, user, tab, text, milliseconds) do
     None => return false
     Just(conversation) => do
       if milliseconds <= 0
-        statuses.lifted(conversation.id, user.id)
+        statuses.lifted(conversation.id.as(String), user.id.as(String))
       else
-        statuses.noted(conversation.id, user.id, text, Metro.Clock.milliseconds() + milliseconds)
+        statuses.noted(conversation.id.as(String), user.id.as(String), text, Metro.Clock.milliseconds() + milliseconds)
       end
       return true
     end

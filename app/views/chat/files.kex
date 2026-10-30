@@ -47,7 +47,7 @@ end
 # A file as the page shows it.
 enclosed : Attachment -> [User] -> String -> Enclosure
 let enclosed(file, people, glimpse) = Enclosure {
-  key: file.id,
+  key: file.id.as(String),
   caption: file.filename,
   link: file.address,
   weight: file.sized,

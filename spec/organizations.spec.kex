@@ -2,6 +2,8 @@ using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
 using Metro.Live.Presence, only: [Presence]
 using Spec.Support, only: [World, stepped, shown, fresh, populated, registered]
+using App.Models.Ids, only: [UserId]
+using App.Models.Organization, only: [OrganizationId]
 
 # Organizations from a tab. Each example starts from a world of its own
 # (Spec.Support).
@@ -32,7 +34,7 @@ end
 
 describe("App.Live.Organizations, making one") do
   it("shows a database failure instead of claiming the name is taken") do
-    let founder = User { id: "u1", email: "founder@example.com", name: "Founder" }
+    let founder = User { id: "u1".as(UserId), email: "founder@example.com", name: "Founder" }
     let (failed, changed) = App.Live.Organizations.create(founder, Tab {}, "Acme", [])
     Assert.falsy(changed)
     Assert.equal(failed.dialog, App.Live.Tab.OrganizationDialog)
@@ -48,7 +50,7 @@ describe("App.Live.Organizations, making one") do
       Assert.equal(DB.Repositories.Organizations.find(tab.organization).map { |found| found.map { |org| org.id } }, Ok(Just(tab.organization)))
       Assert.equal(DB.Repositories.Grants.organizationsOf(founder.id), Ok([tab.organization]))
       Assert.equal(founder.organizations.map { |org| org.id }, [tab.organization])
-      Assert.equal(founder.home("").map { |org| org.id }, Just(tab.organization))
+      Assert.equal(founder.home("".as(OrganizationId)).map { |org| org.id }, Just(tab.organization))
       let html = App.Live.Chat.markup(Process.spawn(Presence {}), founder, tab)
       assert(html.contains?("# general"), "created organization did not render #general")
       assert(html.contains?("data-live-path=\"/acme/channels/general\""), "created organization did not navigate to #general")
@@ -141,7 +143,7 @@ describe("App.Live.Organizations, switching") do
       let both = shown(world, world.ada, Tab {})
       Assert.truthy(both.contains?("title=\"Acme Corp\""))
       Assert.truthy(both.contains?("title=\"Other\""))
-      let (inOther, changed) = stepped(world, world.ada, Tab {}, [("event", "organization-switch"), ("id", world.other.organization)])
+      let (inOther, changed) = stepped(world, world.ada, Tab {}, [("event", "organization-switch"), ("id", world.other.organization.as(String))])
       Assert.falsy(changed)
       Assert.equal(inOther.organization, world.other.organization)
       let otherSide = shown(world, world.ada, inOther)
@@ -154,7 +156,7 @@ describe("App.Live.Organizations, switching") do
   it("switches nobody into an organization they are not in") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "organization-switch"), ("id", world.acme.organization)])
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "organization-switch"), ("id", world.acme.organization.as(String))])
       Assert.equal(malTries, Tab {})
     end
   end

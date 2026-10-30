@@ -17,8 +17,10 @@ module DB.Seeds
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Conversation, as: Conversation
 using Metro.Environment, only: [Environment, Development]
-using App.Models.Team, only: [Team]
+using App.Models.Team, only: [Team, TeamId]
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
+using App.Models.Message, only: [MessageId]
 using App.Models.User, as: User
 using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
@@ -28,7 +30,6 @@ using DB.Repositories.Grants, as: Grants
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Messages, as: Messages
 using DB.Repositories.Organizations, as: Organizations
-using DB.Repositories.Reactions, as: Reactions
 using DB.Repositories.Teams, as: Teams
 using DB.Repositories.Users, as: Users
 
@@ -53,13 +54,7 @@ private do
   foul demo() -> [String] or! String do
     let admin = person("Server Admin", "admin@example.com").try
     let wasServerAdmin = admin.serverAdmin?
-    Grants.grant(Grant {
-      subjectType: Grant.UserSubject,
-      subjectId: admin.id,
-      resourceType: Grant.ServerResource,
-      resourceId: "",
-      role: Grant.Admin
-    }).try
+    Grants.grant(Grant.userOnServer(admin.id, Grant.Admin)).try
 
     let existing = Organizations.findBySlug("acme").try
     if existing.set?
@@ -77,37 +72,37 @@ private do
 
     let general = Conversations.create(acme.id, Conversation.GENERAL, ada.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(general.id, "Company-wide announcements and chatter").try
-    let welcome = Messages.create(general.id, ada.id, "Welcome to Acme :wave:", "").try
-    Messages.create(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "").try
-    let plan = Messages.create(general.id, ada.id, "It is. The checklist:\n- migrate\n- restart\n- tell everyone", "").try
+    let welcome = Messages.create(general.id, ada.id, "Welcome to Acme :wave:", "".as(MessageId)).try
+    Messages.create(general.id, bob.id, "Glad to be here. Is the *release* still on for Friday?", "".as(MessageId)).try
+    let plan = Messages.create(general.id, ada.id, "It is. The checklist:\n- migrate\n- restart\n- tell everyone", "".as(MessageId)).try
     Messages.create(general.id, eve.id, "I can take the migration.", plan.id).try
     Messages.create(general.id, ada.id, "Yours, thank you.", plan.id).try
-    Reactions.toggle(welcome, bob.id, "👍").try
-    Reactions.toggle(welcome, eve.id, "🎉").try
+    welcome.toggleReaction(bob.id, "👍").try
+    welcome.toggleReaction(eve.id, "🎉").try
 
     let random = Conversations.create(acme.id, "random", bob.id, botAccess: Conversation.AllBots).try
     Conversations.setTopic(random.id, "Anything goes :tada:").try
-    Messages.create(random.id, bob.id, "Lunch at one?", "").try
-    Messages.create(random.id, eve.id, "`yes`", "").try
+    Messages.create(random.id, bob.id, "Lunch at one?", "".as(MessageId)).try
+    Messages.create(random.id, eve.id, "`yes`", "".as(MessageId)).try
 
     let chat = Conversations.findOrCreateDirect(acme.id, ada.id, bob.id).try
-    Messages.create(chat.id, ada.id, "Can you look at my pull request today?", "").try
-    Messages.create(chat.id, bob.id, "After lunch.", "").try
+    Messages.create(chat.id, ada.id, "Can you look at my pull request today?", "".as(MessageId)).try
+    Messages.create(chat.id, bob.id, "After lunch.", "".as(MessageId)).try
 
     let trio = Conversations.findOrCreateGroup(acme.id, [bob.id, eve.id], ada.id).try
-    Messages.create(trio.id, eve.id, "Shall we plan the offsite here?", "").try
+    Messages.create(trio.id, eve.id, "Shall we plan the offsite here?", "".as(MessageId)).try
 
     let design = Team {
-      id: "",
+      id: "".as(TeamId),
       organizationId: acme.id,
       handle: "design",
       name: "Design",
       description: "Everything people see",
       members: [ada.id, eve.id]
     }
-    let team = Teams.create(design, ada.id).try
+    let team = design.create(ada.id).try
     let studio = Conversations.create(acme.id, "studio", eve.id, access: Conversation.Private, teamId: team.id).try
-    Messages.create(studio.id, eve.id, "New mockups are up, @design", "").try
+    Messages.create(studio.id, eve.id, "New mockups are up, @design", "".as(MessageId)).try
 
     let bots = BOTS.map { |name| bot(name, acme.id).try }
     bots.each { |made| Memberships.add(acme.id, made.id).try }
@@ -129,7 +124,7 @@ private do
   foul bot(name: String, organizationId: OrganizationId) -> User or! String do
     let id = Metro.Id.generate(prefix: "b")
     let made = User {
-      id: id,
+      id: id.as(UserId),
       email: "${id}@bots.invalid",
       name: name,
       kind: User.Bot,
@@ -144,7 +139,7 @@ private do
       Just((found, _)) => return Ok(found)
       None => do
         let id = Metro.Id.generate(prefix: "u")
-        return Users.enroll(User { id: id, email: email, name: name }, Metro.Auth.Password.hashed(PASSWORD))
+        return Users.enroll(User { id: id.as(UserId), email: email, name: name }, Metro.Auth.Password.hashed(PASSWORD))
       end
     end
   end

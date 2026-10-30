@@ -9,9 +9,9 @@ using App.Models.Ids, only: [UserId]
 foul forBot(botId: UserId) -> [UserId] or! String do
   return Database.select([:user_id])
     .from(DB.Schema.BotOperators.definition)
-    .where(DB.Schema.BotOperators.botId == botId)
+    .where(DB.Schema.BotOperators.botId == botId.as(String))
     .orderBy([:user_id])
-    .all(as: String)
+    .all(as: UserId)
 end
 
 # A bot's operators, all of them at once: the old ones and the new ones are
@@ -19,7 +19,7 @@ end
 foul replace(botId: UserId, users: [UserId]) -> Bool or! String do
   let swapped : Integer or! String = Database.transaction do
     Database.delete(DB.Schema.BotOperators.definition)
-      .where(DB.Schema.BotOperators.botId == botId)
+      .where(DB.Schema.BotOperators.botId == botId.as(String))
       .run
       .try
     let rows = users.uniq.map do |userId|

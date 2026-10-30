@@ -1,8 +1,7 @@
 module DB.Schema.BotOperators
 
 using Harmat.Table, as: Table
-# Known while compiling: a query over this table is written then.
-compiled do
+# The schema is shared by the repositories that query this table.
   let definition = Table.define :bot_operators do |t|
     t.text(:id, primaryKey: true)
     t.text(:bot_id)
@@ -10,4 +9,3 @@ compiled do
   end
 
   let botId = definition.textColumn(:bot_id)
-end

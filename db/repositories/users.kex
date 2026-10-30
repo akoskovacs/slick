@@ -3,7 +3,7 @@
 #   DB.Repositories.Users.credentials(email)
 module DB.Repositories.Users
 
-using App.Models.Grant, only: [Grant]
+using App.Models.Grant, only: [Grant, GrantSubjectId]
 using App.Models.Grant, as: Grant
 using Harmat.Database, as: Database
 using App.Models.User, only: [User, UserDetail]
@@ -64,7 +64,7 @@ end
 # A person's bots, by name.
 foul botsOf(owner: UserId) -> [User] or! String do
   return Database.select(SHOWN).from(DB.Schema.Users.definition)
-    .where(DB.Schema.Users.ownerId == owner)
+    .where(DB.Schema.Users.ownerId == owner.as(String))
     .orderBy([:name, :id])
     .all(as: User)
 end
@@ -72,7 +72,7 @@ end
 # An organization's bots, by name.
 foul botsOfOrganization(organizationId: OrganizationId) -> [User] or! String do
   return Database.select(SHOWN).from(DB.Schema.Users.definition)
-    .where(DB.Schema.Users.ownerOrganizationId == organizationId)
+    .where(DB.Schema.Users.ownerOrganizationId == organizationId.as(String))
     .orderBy([:name, :id])
     .all(as: User)
 end
@@ -81,9 +81,9 @@ end
 # organization's to change.
 foul rekeyOrganizationBot(botId: UserId, organizationId: OrganizationId, tokenDigest: String) -> Bool or! String do
   return Database.update(DB.Schema.Users.definition)
-    .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
-    .where(DB.Schema.Users.ownerOrganizationId == organizationId)
-    .where(DB.Schema.Users.id == botId)
+    .set({api_token_digest: tokenDigest})
+    .where(DB.Schema.Users.ownerOrganizationId == organizationId.as(String))
+    .where(DB.Schema.Users.id == botId.as(String))
     .run
     .map { |changed| changed > 0 }
 end
@@ -99,9 +99,9 @@ end
 # Replaces a bot's token; whether it was this owner's bot to change.
 foul rekeyBot(botId: UserId, owner: UserId, tokenDigest: String) -> Bool or! String do
   return Database.update(DB.Schema.Users.definition)
-    .set({api_token_digest: tokenDigest}, columns: [:api_token_digest])
-    .where(DB.Schema.Users.ownerId == owner)
-    .where(DB.Schema.Users.id == botId)
+    .set({api_token_digest: tokenDigest})
+    .where(DB.Schema.Users.ownerId == owner.as(String))
+    .where(DB.Schema.Users.id == botId.as(String))
     .run
     .map { |changed| changed > 0 }
 end
@@ -109,19 +109,19 @@ end
 # Deletes a bot — this owner's own — and everything of it: what it could do,
 # what it was in, and the places it had been. Whether it was there to delete.
 foul removeBot(botId: UserId, owner: UserId) -> Bool or! String do
-  return removing(botId, owner, "")
+  return removing(botId, owner, "".as(OrganizationId))
 end
 
 # The same, for an organization's bot.
 foul removeOrganizationBot(botId: UserId, organizationId: OrganizationId) -> Bool or! String do
-  return removing(botId, "", organizationId)
+  return removing(botId, "".as(UserId), organizationId)
 end
 
 # Sets what somebody says about themselves; "" and "" takes it back.
 foul setStatus(id: UserId, emoji: String, saying: String) -> Integer or! String do
   return Database.update(DB.Schema.Users.definition)
-    .set({status_emoji: emoji, status_text: saying}, columns: [:status_emoji, :status_text])
-    .where(DB.Schema.Users.id == id)
+    .set({status_emoji: emoji, status_text: saying})
+    .where(DB.Schema.Users.id == id.as(String))
     .run
 end
 
@@ -140,8 +140,8 @@ foul update(user: User) -> Integer or! String do
     nickname_shown: user.nicknameShown?
   }
   return Database.update(DB.Schema.Users.definition)
-    .set(row, columns: [:name, :title, :department, :phone, :time_zone, :bio, :nickname, :nickname_shown])
-    .where(DB.Schema.Users.id == id)
+    .set(row)
+    .where(DB.Schema.Users.id == id.as(String))
     .run
 end
 
@@ -150,14 +150,14 @@ end
 foul markManaged(id: UserId, columns: [UserDetail]) -> Integer or! String do
   let managed = columns.map { |column| Database.spelled(column) }.join(",")
   return Database.update(DB.Schema.Users.definition)
-    .set({managed: managed}, columns: [:managed])
-    .where(DB.Schema.Users.id == id)
+    .set({managed: managed})
+    .where(DB.Schema.Users.id == id.as(String))
     .run
 end
 
 foul find(id: UserId) -> User? or! String do
   return Database.select().from(DB.Schema.Users.definition)
-    .where(DB.Schema.Users.id == id)
+    .where(DB.Schema.Users.id == id.as(String))
     .first(as: User)
 end
 
@@ -172,7 +172,7 @@ end
 foul botIds -> [UserId] or! String do
   return Database.select([:id]).from(DB.Schema.Users.definition)
     .where(DB.Schema.Users.kind == Database.spelled(User.Bot))
-    .all(as: String)
+    .all(as: UserId)
 end
 
 private do
@@ -183,25 +183,25 @@ private do
   # said stays, as what anybody who is gone has said does ("Someone").
   foul removing(botId: UserId, owner: UserId, organizationId: OrganizationId) -> Bool or! String do
     let done : Bool or! String = Harmat.Database.transaction do
-      let gone : Integer = (if owner.empty?
+      let gone : Integer = (if owner.as(String).empty?
         Database.delete(DB.Schema.Users.definition)
-          .where(DB.Schema.Users.id == botId)
+          .where(DB.Schema.Users.id == botId.as(String))
           .where(DB.Schema.Users.kind == Database.spelled(User.Bot))
-          .where(DB.Schema.Users.ownerOrganizationId == organizationId)
+          .where(DB.Schema.Users.ownerOrganizationId == organizationId.as(String))
       else
         Database.delete(DB.Schema.Users.definition)
-          .where(DB.Schema.Users.id == botId)
+          .where(DB.Schema.Users.id == botId.as(String))
           .where(DB.Schema.Users.kind == Database.spelled(User.Bot))
-          .where(DB.Schema.Users.ownerId == owner)
+          .where(DB.Schema.Users.ownerId == owner.as(String))
       end).run.try
       if gone > 0
-        Database.delete(DB.Schema.Commands.definition).where(DB.Schema.Commands.botId == botId).run.try
-        Database.delete(DB.Schema.Invocations.definition).where(DB.Schema.Invocations.botId == botId).run.try
+        Database.delete(DB.Schema.Commands.definition).where(DB.Schema.Commands.botId == botId.as(String)).run.try
+        Database.delete(DB.Schema.Invocations.definition).where(DB.Schema.Invocations.botId == botId.as(String)).run.try
         # Everything it was granted — its memberships, its roles — goes too.
-        Grants.revokeAll(Grant.UserSubject, botId).try
-        Database.delete(DB.Schema.Drafts.definition).where(DB.Schema.Drafts.userId == botId).run.try
-        Database.delete(DB.Schema.Readings.definition).where(DB.Schema.Readings.userId == botId).run.try
-        Database.delete(DB.Schema.Sessions.definition).where(DB.Schema.Sessions.userId == botId).run.try
+        Grants.revokeAll(Grant.UserSubject, botId.as(GrantSubjectId)).try
+        Database.delete(DB.Schema.Drafts.definition).where(DB.Schema.Drafts.userId == botId.as(String)).run.try
+        Database.delete(DB.Schema.Readings.definition).where(DB.Schema.Readings.userId == botId.as(String)).run.try
+        Database.delete(DB.Schema.Sessions.definition).where(DB.Schema.Sessions.userId == botId.as(String)).run.try
       end
       Ok(gone > 0)
     end

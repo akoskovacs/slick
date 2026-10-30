@@ -2,7 +2,7 @@
 # replies, and a box to reply in.
 module App.Views.Chat.Threads
 
-using App.Models.Message, only: [Message]
+using App.Models.Message, only: [Message, MessageId]
 using App.Views.Chat.Names, only: [tallied]
 using App.Views.Chat.Messages, only: [Room, bubble, woven]
 using App.Views.Chat.Composer, only: [mentionable, offered, picked]
@@ -11,8 +11,8 @@ let composerPartial = Template.html(Kex.embed("_composer.html.ket"))
 let threadPartial = Template.html(Kex.embed("_thread.html.ket"))
 
 # The id of the message an open thread starts with; "" when none is open.
-opened : [Message] -> String
-let opened([]) = ""
+opened : [Message] -> MessageId
+let opened([]) = "".as(MessageId)
 let opened([opening | replies]) = opening.id
 
 # The thread beside the conversation: its first message, then the replies.
@@ -20,7 +20,7 @@ pane : Room -> [Message] -> String -> String
 let pane(room, thread, unsent) do
   let opener = thread.take(1).map { |message| bubble(room, message, true, false) }.join("")
   let uses = room.invocations.filter { |used| used.threadId == opened(thread) }
-  let followups = woven(room, thread.drop(1), uses, "", 0, true)
+  let followups = woven(room, thread.drop(1), uses, "".as(App.Models.Ids.UserId), 0, true)
   let summary = followups.empty? then "No replies yet" else tallied(followups.count)
   let composer = composerPartial(
     "message-reply",

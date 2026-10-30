@@ -40,21 +40,21 @@ record Event do
   kind : EventKind
   # The organization it happened in: its id, and its address as the API
   # takes it.
-  organizationId : OrganizationId = ""
+  organizationId : OrganizationId = "".as(OrganizationId)
   organization : String = ""
-  conversationId : ConversationId = ""
+  conversationId : ConversationId = "".as(ConversationId)
   # The conversation as the API addresses it: a channel by its title, and a
   # group chat by its id. A private chat is addressed by who it is with, so
   # instead the two of it are kept, and each bot is told its own address.
   channel : String = ""
-  group : ConversationId = ""
-  first : UserId = ""
-  second : UserId = ""
+  group : ConversationId = "".as(ConversationId)
+  first : UserId = "".as(UserId)
+  second : UserId = "".as(UserId)
   # The thread it happened in; "" for the conversation itself.
-  thread : MessageId = ""
+  thread : MessageId = "".as(MessageId)
   # The message at the middle of it: the one said, or the one a form was
   # answered in. "" for a command, which is no message.
-  message : MessageId = ""
+  message : MessageId = "".as(MessageId)
   # When it happened, in milliseconds since 1970.
   at : Integer = 0
   # Who may be told of it: a message, whoever could read it — a whole
@@ -63,7 +63,7 @@ record Event do
   # an answer or a command, the one bot it is for.
   public? : Bool = false
   people : [UserId] = []
-  bot : UserId = ""
+  bot : UserId = "".as(UserId)
   # The message said — kept on the server only, so the bus can tell which
   # bots it names; never sent out.
   body : String = ""
@@ -85,15 +85,15 @@ record Seat do
   socket : Net.HTTP.WebSocket.Connection
 end
 
-# How much of what has happened is remembered. A bot that asks for more is
-# told to start again.
-let KEPT = 1000
-
 record Bus do
   log : [Event] = []
   cursor : Integer = 0
   seats : {String: Seat} = {}
 end
+
+# How much of what has happened is remembered. A bot that asks for more is
+# told to start again.
+let KEPT = 1000
 
 serving Bus do
   # Notes one thing that happened and tells every bot that may hear it,
@@ -104,7 +104,7 @@ serving Bus do
     let older = whole.count - KEPT
     new.cursor = numbered.cursor
     new.log = older > 0 then whole.drop(older) else whole
-    new.seats = @seats.filter { |_, seat| !for?(numbered, seat) || seat.socket.send(Text(told(seat, numbered))).ok? }
+    new.seats = @seats.filter { |_, seat| !numbered.for?(seat.bot, seat.name, seat.organizations) || seat.socket.send(Text(numbered.told(seat))).ok? }
     return new
   end
 
@@ -119,8 +119,8 @@ serving Bus do
     if again
       socket.send(Text("{\"kind\":\"reset\",\"cursor\":${current}}"))
     else
-      @log.filter { |event| event.cursor > after && for?(event, seat) }
-        .each { |event| socket.send(Text(told(seat, event))) }
+      @log.filter { |event| event.cursor > after && event.for?(seat.bot, seat.name, seat.organizations) }
+        .each { |event| socket.send(Text(event.told(seat))) }
       socket.send(Text("{\"kind\":\"ready\",\"cursor\":${current}}"))
     end
     new.seats = @seats.put(id, seat)
@@ -134,71 +134,53 @@ serving Bus do
   end
 end
 
-# Whether a seat may be told of an event: an answer or a command by the bot
-# it is for; a message by what the conversation lets its bots read — nothing,
-# everything it may read, or only what names it and the threads it is in.
-for? : Event -> Seat -> Bool
-let for?(event, seat) = heard?(event, seat.bot, seat.name, seat.organizations)
+make Event do
+  # Whether this seat may be told of the event: an answer or command by the
+  # bot it is for; a message allowed by the conversation's bot access.
+  let for?(bot: UserId, name: String, organizations: [OrganizationId]) -> Bool do
+    return bot == @bot && organizations.contains?(@organizationId) if !@bot.empty?
+    return false if !organizations.contains?(@organizationId)
+    return @first == bot || @second == bot if !@first.empty?
+    return false if @botAccess == Conversation.NoBots
+    let admitted = @public? || @people.contains?(bot)
+    return admitted if @botAccess == Conversation.AllBots
+    admitted && (@body.lowerCase.contains?("@${name.lowerCase}") || @replied.contains?(bot))
+  end
 
-# The same, for a bot by its id, its name and the ids of its organizations.
-heard? : Event -> UserId -> String -> [OrganizationId] -> Bool
-let heard?(event, bot, name, organizations) do
-  return bot == event.bot && organizations.contains?(event.organizationId) if event.bot != ""
-  return false if !organizations.contains?(event.organizationId)
+  # The bot API's access values are words, rather than the database's snake
+  # case enum names.
+  let access -> String do
+    return "all" if !@first.empty? || @botAccess == Conversation.AllBots
+    return "mentions" if @botAccess == Conversation.Mentions
+    "none"
+  end
 
-  # A private chat: the two of it, whatever the channel's setting.
-  return event.first == bot || event.second == bot if event.first != ""
+  # Where this event happened, as the API of the bot asked takes it.
+  let placedFor(bot: UserId) -> String do
+    return "dm/${@first == bot then @second else @first}" if !@first.empty?
+    return "channels/${@channel}" if !@channel.empty?
+    "groups/${@group}"
+  end
 
-  # A channel or a group chat, gated by what it lets its bots read.
-  return false if event.botAccess == Conversation.NoBots
-  let admitted = event.public? || event.people.contains?(bot)
-  return admitted if event.botAccess == Conversation.AllBots
-
-  admitted && (User.mentioned?(name, event.body) || event.replied.contains?(bot))
-end
-
-# The bot API's access values are words, rather than the database's snake
-# case enum names. In particular, slick-ai-bot uses "all" to answer in a
-# channel instead of treating a whole-channel message as a thread reply.
-accessFor : Event -> String
-let accessFor(event) do
-  return "all" if event.first != "" || event.botAccess == Conversation.AllBots
-  return "mentions" if event.botAccess == Conversation.Mentions
-  "none"
-end
-
-# An event as the bot told of it is shown it: where, as the API takes it,
-# how much of it the bot may read there ("all" in a private chat), and
-# never more than that.
-told : Seat -> Event -> String
-let told(seat, event) do
-  let fields : {String: Any} = {
-    "cursor": event.cursor,
-    "kind": Harmat.Database.spelled(event.kind),
-    "organization": event.organization,
-    "place": placed(event, seat.bot),
-    "thread": event.thread,
-    "message": event.message,
-    "at": event.at,
-    "access": accessFor(event)
-  }
-  JSON.stringify(fields)
-end
-
-# Where an event happened, as the API of the bot asked takes it: a channel
-# by its title, a group chat by its id, and a private chat by who it is with.
-placed : Event -> UserId -> String
-let placed(event, bot) do
-  return "dm/${event.first == bot then event.second else event.first}" if event.first != ""
-  return "channels/${event.channel}" if event.channel != ""
-  return "groups/${event.group}"
+  # Show the event as the bot API expects it. The bot fetches its content
+  # through the API after this notification.
+  let told(seat: Seat) -> String do
+    let fields : {String: Any} = {
+      "cursor": @cursor,
+      "kind": Harmat.Database.spelled(@kind),
+      "organization": @organization,
+      "place": placedFor(seat.bot),
+      "thread": @thread,
+      "message": @message,
+      "at": @at,
+      "access": access
+    }
+    JSON.stringify(fields)
+  end
 end
 
 # Notes what happened to the events bus, for the bots that are watching.
-# Nothing is told but where: what a bot may read of it, it fetches through
-# the API as ever. A bot "" is no bot: the event is for whoever may read
-# the conversation. `body` is the message said, kept on the server only so
-# the bus can tell which bots it names.
+# Nothing is told but where; each bot fetches content through the API.
 publish : Server<Bus> -> Conversation -> EventKind -> MessageId -> MessageId -> Integer -> UserId -> String -> Void
 foul publish(events, conversation, kind, messageId, threadId, at, bot, body) do
   match DB.Repositories.Organizations.find(conversation.organizationId) do
@@ -214,9 +196,9 @@ foul publish(events, conversation, kind, messageId, threadId, at, bot, body) do
         organization: organization.slug,
         conversationId: conversation.id,
         channel: conversation.channel? then conversation.title else "",
-        group: conversation.group? then conversation.id else "",
-        first: conversation.direct? then conversation.firstUser else "",
-        second: conversation.direct? then conversation.secondUser else "",
+        group: conversation.group? then conversation.id else "".as(ConversationId),
+        first: conversation.direct? then conversation.firstUser else "".as(UserId),
+        second: conversation.direct? then conversation.secondUser else "".as(UserId),
         thread: threadId,
         message: messageId,
         at: at,

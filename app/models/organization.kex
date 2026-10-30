@@ -3,12 +3,16 @@
 module App.Models.Organization
 
 using App.Models.Ids, only: [UserId]
-using App.Models.Grant, only: [GrantRole]
+using App.Models.Grant, only: [GrantResourceId, GrantRole]
 using App.Models.Grant, as: Grant
 using DB.Repositories.Grants, as: Grants
 
-type OrganizationId = String
+distinct type OrganizationId = String
+make OrganizationId do
+  let empty? -> Bool = this.as(String).empty?
+end
 let GENERAL_TOPIC = "Company-wide announcements and chatter"
+
 record Organization do
   id : OrganizationId
   # The name as it appears in addresses: /acme/channels/general.
@@ -17,19 +21,6 @@ record Organization do
 end
 
 make Organization do
-  # Whether this person belongs to the organization.
-  foul member?(userId: UserId) -> Bool do
-    return true if Grants.organizationsOf(userId).or([]).contains?(@id)
-
-    let teams = Grants.teamsOf(userId).or([])
-    return Grants.over(Grant.ServerResource, "").or([]).any? do |grant|
-      grant.role == Grant.Admin && (
-        (grant.subjectType == Grant.UserSubject && grant.subjectId == userId) ||
-        (grant.subjectType == Grant.TeamSubject && teams.contains?(grant.subjectId))
-      )
-    end
-  end
-
   # The address form of a name: its letters and digits, lower case.
   slugged : String -> String
   let slugged(name) do
@@ -37,12 +28,24 @@ make Organization do
     return slug.map { |char| "${char}" }.join("")
   end
 
+  # Whether this person belongs to the organization.
+  foul member?(userId: UserId) -> Bool do
+    return true if Grants.organizationsOf(userId).or([]).contains?(@id)
+
+    let teams = Grants.teamsOf(userId).or([])
+    return Grants.over(Grant.ServerResource, "".as(GrantResourceId)).or([]).any? do |grant|
+      grant.role == Grant.Admin && (
+        grant.userId == Just(userId) || grant.teamId.map { |teamId| teams.contains?(teamId) }.or(false)
+      )
+    end
+  end
+
   # The administrators of this organization, by id.
-  foul admins -> [UserId] = Grants.roleHolders(Grant.OrganizationResource, @id, Grant.Admin).or([])
+  foul admins -> [UserId] = Grants.roleHolders(Grant.OrganizationResource, @id.as(GrantResourceId), Grant.Admin).or([])
 
   # The role a person holds here, directly or through one of their teams.
   foul roleOf(userId: UserId) -> GrantRole? do
     let teams = Grants.teamsOf(userId).or([])
-    Grant.roleFor(userId, teams, Grants.over(Grant.OrganizationResource, @id).or([]))
+    Grant.roleFor(userId, teams, Grants.over(Grant.OrganizationResource, @id.as(GrantResourceId)).or([]))
   end
 end

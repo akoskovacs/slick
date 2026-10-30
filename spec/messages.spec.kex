@@ -1,6 +1,7 @@
 using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User]
 using Spec.Support, only: [World, stepped, shown, fresh, populated, said]
+using App.Models.Message, only: [MessageId]
 
 # Messages and threads from a tab. Each example starts from a world of its
 # own (Spec.Support).
@@ -146,7 +147,7 @@ describe("App.Live.Messages, drafts") do
       stepped(world, world.ada, Tab {}, [("event", "draft-save"), ("place", "send"), ("body", "half a thought")])
       Assert.truthy(shown(world, world.ada, random).contains?("# general\n      <span class=\"drafted\""))
       Assert.falsy(shown(world, world.ada, Tab {}).contains?("class=\"drafted\""))
-      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id)])
+      let (chat, _) = stepped(world, world.ada, Tab {}, [("event", "direct-open"), ("user", world.bob.id.as(String))])
       stepped(world, world.ada, chat, [("event", "draft-save"), ("place", "send"), ("body", "psst")])
       Assert.truthy(shown(world, world.ada, Tab {}).contains?("data-user=\"${world.bob.id}\">Bob\n      <span class=\"drafted\""))
     end
@@ -208,10 +209,10 @@ describe("App.Live.Threads") do
       let id = said(world, world.ada, "a thread")
       let (thread, _) = stepped(world, world.bob, Tab {}, [("event", "thread-open"), ("message", id)])
       stepped(world, world.bob, thread, [("event", "message-reply"), ("body", "a reply")])
-      let replies : [App.Models.Message.Message] = DB.Repositories.Messages.replies(id).or([])
+      let replies : [App.Models.Message.Message] = DB.Repositories.Messages.replies(id.as(MessageId)).or([])
       let replyId = replies.first.map { |reply| reply.id }.or("")
       Assert.truthy(!replyId.empty?)
-      let (again, _) = stepped(world, world.eve, Tab {}, [("event", "thread-open"), ("message", replyId)])
+      let (again, _) = stepped(world, world.eve, Tab {}, [("event", "thread-open"), ("message", replyId.as(String))])
       Assert.equal(again.thread, id)
     end
   end

@@ -1,7 +1,6 @@
 # One grant of a role to a subject over a resource: who may do what where.
 #
-#   Grant { subjectType: UserSubject, subjectId: user.id,
-#           resourceType: OrganizationResource, resourceId: org.id, role: Admin }
+#   Grant.userOnOrganization(user.id, org.id, Grant.Admin)
 #
 # The subject is a user (person or bot) or a team; the resource a server
 # (resourceId ""), an organization, a conversation (a channel or a group
@@ -10,38 +9,121 @@ module App.Models.Grant
 
 using App.Models.Ids, only: [UserId]
 using App.Models.Team, only: [TeamId]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.Conversation, only: [ConversationId]
 
-type GrantId = String
+distinct type GrantId = String
+make GrantId do
+  let empty? -> Bool = this.as(String).empty?
+end
+distinct type GrantSubjectId = String
+distinct type GrantResourceId = String
 type GrantSubjectType = UserSubject | TeamSubject
 type GrantResourceType = ServerResource | OrganizationResource | ConversationResource | TeamResource
 type GrantRole = Admin | Member | ReadOnly
 
 record Grant do
-  id : GrantId = ""
+  id : GrantId = "".as(GrantId)
   # Who holds the grant: a "user" (person or bot) or a "team".
   subjectType : GrantSubjectType = UserSubject
-  subjectId : String
+  subjectId : GrantSubjectId
   # What it is over: "server", "organization", "conversation" or "team".
   resourceType : GrantResourceType = ServerResource
   # The id of that thing; "" for the server.
-  resourceId : String = ""
+  resourceId : GrantResourceId = "".as(GrantResourceId)
   # "admin", "member" or "read_only".
   role : GrantRole = Member
   # Milliseconds since 1970.
   grantedAt : Integer = 0
 end
 
+# Grants a user access to an organization.
+userOnOrganization : UserId -> OrganizationId -> GrantRole -> Grant
+let userOnOrganization(userId, organizationId, role) = Grant {
+  subjectType: UserSubject,
+  subjectId: userId.as(GrantSubjectId),
+  resourceType: OrganizationResource,
+  resourceId: organizationId.as(GrantResourceId),
+  role: role
+}
+
+# Grants a user access to a conversation.
+userOnConversation : UserId -> ConversationId -> GrantRole -> Grant
+let userOnConversation(userId, conversationId, role) = Grant {
+  subjectType: UserSubject,
+  subjectId: userId.as(GrantSubjectId),
+  resourceType: ConversationResource,
+  resourceId: conversationId.as(GrantResourceId),
+  role: role
+}
+
+# Grants a user access to a team.
+userOnTeam : UserId -> TeamId -> GrantRole -> Grant
+let userOnTeam(userId, teamId, role) = Grant {
+  subjectType: UserSubject,
+  subjectId: userId.as(GrantSubjectId),
+  resourceType: TeamResource,
+  resourceId: teamId.as(GrantResourceId),
+  role: role
+}
+
+# Lets a team administer a conversation.
+teamOnConversation : TeamId -> ConversationId -> GrantRole -> Grant
+let teamOnConversation(teamId, conversationId, role) = Grant {
+  subjectType: TeamSubject,
+  subjectId: teamId.as(GrantSubjectId),
+  resourceType: ConversationResource,
+  resourceId: conversationId.as(GrantResourceId),
+  role: role
+}
+
+# Grants the server-wide role to a user.
+userOnServer : UserId -> GrantRole -> Grant
+let userOnServer(userId, role) = Grant {
+  subjectType: UserSubject,
+  subjectId: userId.as(GrantSubjectId),
+  resourceType: ServerResource,
+  resourceId: "".as(GrantResourceId),
+  role: role
+}
+
+# Grants a server-wide role to a team.
+teamOnServer : TeamId -> GrantRole -> Grant
+let teamOnServer(teamId, role) = Grant {
+  subjectType: TeamSubject,
+  subjectId: teamId.as(GrantSubjectId),
+  resourceType: ServerResource,
+  resourceId: "".as(GrantResourceId),
+  role: role
+}
+
+# The stable id for one subject's grant over one resource.
+idFor : GrantSubjectType -> GrantSubjectId -> GrantResourceType -> GrantResourceId -> GrantId
+let idFor(subjectType, subjectId, resourceType, resourceId) do
+  let subject = Type.of(subjectType).constructorValue(subjectType).or("${subjectType}")
+  let resource = Type.of(resourceType).constructorValue(resourceType).or("${resourceType}")
+  "${subject}:${subjectId.as(String)}:${resource}:${resourceId.as(String)}".as(GrantId)
+end
+
+idForUserOnOrganization : UserId -> OrganizationId -> GrantId
+let idForUserOnOrganization(userId, organizationId) = idFor(UserSubject, userId.as(GrantSubjectId), OrganizationResource, organizationId.as(GrantResourceId))
+
+idForUserOnTeam : UserId -> TeamId -> GrantId
+let idForUserOnTeam(userId, teamId) = idFor(UserSubject, userId.as(GrantSubjectId), TeamResource, teamId.as(GrantResourceId))
+
+idForTeamOnConversation : TeamId -> ConversationId -> GrantId
+let idForTeamOnConversation(teamId, conversationId) = idFor(TeamSubject, teamId.as(GrantSubjectId), ConversationResource, conversationId.as(GrantResourceId))
+
 make Grant do
   roleFrom : String -> GrantRole?
   let roleFrom(text) = Type.of(Admin).parse(text).optional
 
-  # The strongest role a person holds, directly or through one of their
-  # teams, among these grants.
+  # The strongest role a person holds, directly or through one of their teams.
   roleFor : UserId -> [TeamId] -> [Grant] -> GrantRole?
   let roleFor(userId, teamIds, grants) do
     let roles = grants.flatMap do |grant|
-      let held = grant.subjectType == UserSubject && grant.subjectId == userId
-      let viaTeam = grant.subjectType == TeamSubject && teamIds.contains?(grant.subjectId)
+      let held = grant.userId == Just(userId)
+      let viaTeam = grant.teamId.map { |teamId| teamIds.contains?(teamId) }.or(false)
       held || viaTeam then [grant.role] else []
     end
     return Just(Admin) if roles.contains?(Admin)
@@ -49,6 +131,13 @@ make Grant do
     return Just(ReadOnly) if roles.contains?(ReadOnly)
     None
   end
+
+  # The typed id of the subject, when it is a user. The stored column is
+  # shared with team ids; this keeps that conversion next to its enum.
+  let userId -> UserId? = @subjectType == UserSubject then Just(@subjectId.as(String).as(UserId)) else None
+
+  # The typed id of the subject, when it is a team.
+  let teamId -> TeamId? = @subjectType == TeamSubject then Just(@subjectId.as(String).as(TeamId)) else None
 
   let admin? -> Bool = @role == Admin
   let readOnly? -> Bool = @role == ReadOnly

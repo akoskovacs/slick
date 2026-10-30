@@ -5,6 +5,7 @@ module App.Views.Chat.Names
 
 using App.Models.Conversation, only: [Conversation]
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 
 # A channel as a list shows it: `# name`, or `🔒 name` for a private one.
 channelName : Conversation -> String
@@ -19,7 +20,7 @@ let gathered(group, user, people) = group.participants
   .join(", ")
 
 # What somebody is called, by id; `otherwise` for nobody known.
-shownAs : [User] -> String -> String -> String
+shownAs : [User] -> UserId -> String -> String
 let shownAs(people, id, otherwise) = people
   .find { |person| person.id == id }
   .map { |person| person.shown }

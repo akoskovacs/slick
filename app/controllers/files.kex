@@ -5,11 +5,8 @@ module App.Controllers.Files
 
 using Metro.WebRequest, only: [WebRequest]
 using App.Controllers.Application, only: [userFor]
-using App.Models.Attachment, only: [Attachment]
-using App.Models.Ids, only: [UserId]
 using DB.Repositories.Attachments, as: Attachments
-using DB.Repositories.Conversations, as: Conversations
-using DB.Repositories.Memberships, as: Memberships
+using App.Models.Attachment, only: [AttachmentId]
 
 # Keeps a file somebody drops into a conversation. It is theirs alone until
 # the message it goes with is sent: the answer is what the live script
@@ -32,26 +29,11 @@ end
 fetched : WebRequest -> WebRequest
 foul fetched(request) do
   let user = userFor(request)
-  match Attachments.find(request.param("id").or("")) do
+  match Attachments.find(request.param("id").or("").as(AttachmentId)) do
     Ok(Just(file)) => do
-      return request.plain(404, "Not Found") if !allowed?(user.id, file)
+      return request.plain(404, "Not Found") if !file.availableTo?(user.id)
       return Metro.Storage.served(request, file.blob)
     end
     _ => return request.plain(404, "Not Found")
-  end
-end
-
-private do
-  allowed? : UserId -> Attachment -> Bool
-  foul allowed?(userId, file) do
-    return file.userId == userId if !file.sent?
-
-    match Conversations.find(file.conversationId) do
-      Ok(Just(conversation)) => do
-        let member = Memberships.member?(conversation.organizationId, userId)
-        return member && conversation.admits?(userId)
-      end
-      _ => return false
-    end
   end
 end

@@ -5,7 +5,8 @@ module DB.Migrate.N0024AddBotAccess
 
 using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [addColumn]
+using App.Models.Conversation, as: Conversation
 
 let change = Migration.define :add_bot_access, follows: :retire_membership_tables do
-  addColumn(:conversations) { |t| t.text(:bot_access, default: "mentions", oneOf: ["no_bots", "mentions", "all_bots"]) }
+  addColumn(:conversations) { |t| t.text(:bot_access, default: Type.of(Conversation.NoBots).constructorValue(Conversation.Mentions).or(""), oneOf: Harmat.Column.choices(Type.of(Conversation.NoBots))) }
 end

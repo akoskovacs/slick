@@ -3,7 +3,7 @@
 # (DB.Repositories.Grants; docs/permissions.md).
 module DB.Repositories.Memberships
 
-using App.Models.Grant, only: [Grant]
+using App.Models.Grant, only: [Grant, GrantSubjectId, GrantResourceId]
 using App.Models.Grant, as: Grant
 using App.Models.Organization, only: [OrganizationId]
 using App.Models.Ids, only: [UserId]
@@ -12,19 +12,19 @@ using DB.Repositories.Grants, as: Grants
 # Puts a person in an organization as a member. Fails when they are already
 # in it: the grant of the same name is already there.
 foul add(organizationId: OrganizationId, userId: UserId) -> Integer or! String do
-  return Error("${userId} is already in ${organizationId}") if Grants.holds?(Grant.UserSubject, userId, Grant.OrganizationResource, organizationId)
-  return Grants.grant(Grant { subjectType: Grant.UserSubject, subjectId: userId, resourceType: Grant.OrganizationResource, resourceId: organizationId, role: Grant.Member }).map { |_| 1 }
+  return Error("${userId.as(String)} is already in ${organizationId.as(String)}") if Grants.holds?(Grant.UserSubject, userId.as(GrantSubjectId), Grant.OrganizationResource, organizationId.as(GrantResourceId))
+  return Grants.grant(Grant.userOnOrganization(userId, organizationId, Grant.Member)).map { |_| 1 }
 end
 
 # Whether a person is in an organization.
 foul member?(organizationId: OrganizationId, userId: UserId) -> Bool do
-  return Grants.holds?(Grant.UserSubject, userId, Grant.OrganizationResource, organizationId)
+  return Grants.holds?(Grant.UserSubject, userId.as(GrantSubjectId), Grant.OrganizationResource, organizationId.as(GrantResourceId))
 end
 
 # When a person joined an organization, in milliseconds since 1970; 0 if
 # they are not in it.
 foul joinedAt(organizationId: OrganizationId, userId: UserId) -> Integer do
-  return Grants.grantedAt(Grant.UserSubject, userId, Grant.OrganizationResource, organizationId)
+  return Grants.grantedAt(Grant.UserSubject, userId.as(GrantSubjectId), Grant.OrganizationResource, organizationId.as(GrantResourceId))
 end
 
 # The ids of the organizations a person is in, oldest membership first.
@@ -34,5 +34,5 @@ end
 
 # The ids of the people in an organization.
 foul roster(organizationId: OrganizationId) -> [UserId] or! String do
-  return Grants.members(Grant.OrganizationResource, organizationId)
+  return Grants.members(Grant.OrganizationResource, organizationId.as(GrantResourceId))
 end

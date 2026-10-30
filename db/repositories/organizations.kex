@@ -11,7 +11,7 @@ using App.Models.Ids, only: [UserId]
 # index on `slug` decides.
 foul create(name: String, slug: String, by: UserId) -> Organization or! String do
   let organization = Organization {
-    id: Metro.Id.generate(prefix: "o"),
+    id: Metro.Id.generate(prefix: "o").as(OrganizationId),
     slug: slug,
     name: name
   }
@@ -38,7 +38,7 @@ end
 # The organization with this id, or `None`.
 foul find(id: OrganizationId) -> Organization? or! String do
   return Database.select().from(DB.Schema.Organizations.definition)
-    .where(DB.Schema.Organizations.id == id)
+    .where(DB.Schema.Organizations.id == id.as(String))
     .first(as: Organization)
 end
 

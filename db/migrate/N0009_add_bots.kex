@@ -5,9 +5,10 @@ module DB.Migrate.N0009AddBots
 
 using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [addColumn, addIndex]
+using App.Models.User, as: User
 
 let change = Migration.define :add_bots, follows: :create_organizations do
-  addColumn(:users) { |t| t.text(:kind, default: "person", oneOf: ["person", "bot"]) }
+  addColumn(:users) { |t| t.text(:kind, default: Harmat.Column.choices(Type.of(User.Person)).first.or(""), oneOf: Harmat.Column.choices(Type.of(User.Person))) }
   addColumn(:users) { |t| t.text(:owner_id, default: "") }
   addColumn(:users) { |t| t.text(:api_token_digest, default: "") }
   addIndex(:users, [:owner_id])

@@ -3,10 +3,12 @@ module App.Live.Threads
 
 using Metro.Live.Socket, only: [unchanged]
 using App.Live.Outcome, only: [Outcome]
-using App.Live.Event, only: [Event, given]
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Event, only: [Event]
+using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Message, only: [Message, MessageId]
+using App.Models.Ids, only: [UserId]
+using App.Models.Team, only: [TeamId]
 using App.Models.User, only: [User]
 using DB.Repositories.Messages, as: Messages
 
@@ -50,7 +52,7 @@ foul open(user, tab, id) do
   match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => match root(conversation, id) do
-      Just(first) => return unchanged(Tab { ...closed(tab), thread: first.id, profile: "", team: "" })
+      Just(first) => return unchanged(Tab { ...tab.closed, thread: first.id, profile: "".as(UserId), team: "".as(TeamId) })
       None => return unchanged(tab)
     end
   end
@@ -59,6 +61,6 @@ end
 # What this part answers, of the events config/live.kex routes to it, by
 # their whole names; any other does nothing.
 on : String -> Event -> Outcome
-foul on("thread-open", event) = open(event.user, event.tab, given(event, "message"))
+foul on("thread-open", event) = open(event.user, event.tab, event.given("message").as(MessageId))
 foul on("thread-close", event) = unchanged(Tab { organization: event.tab.organization, conversation: event.tab.conversation })
 foul on(_, event) = unchanged(event.tab)

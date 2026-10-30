@@ -4,8 +4,7 @@ module DB.Schema.Reactions
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# Known while compiling: a query over this table is written then.
-compiled do
+# The schema is shared by the repositories that query this table.
   let definition = Table.define :reactions do |t|
     t.text(:id, primaryKey: true)
     t.text(:conversation_id)
@@ -19,4 +18,3 @@ compiled do
   let messageId = definition.textColumn(:message_id)
   let userId = definition.textColumn(:user_id)
   let emoji = definition.textColumn(:emoji)
-end

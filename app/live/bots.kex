@@ -4,19 +4,21 @@
 # closed, and nowhere else.
 module App.Live.Bots
 
-using App.Models.Conversation, only: [Conversation]
+using App.Models.Conversation, only: [Conversation, BotAccess]
 using App.Models.Conversation, as: Conversation
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
-using App.Live.Event, only: [Event, given, typed, picked]
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Event, only: [Event]
+using App.Live.Tab, only: [Tab]
 using App.Models.Organization, only: [Organization, OrganizationId]
 using App.Models.User, only: [User]
 using App.Models.Ids, only: [UserId]
 using DB.Repositories.Conversations, as: Conversations
 using DB.Repositories.Memberships, as: Memberships
 using DB.Repositories.Users, as: Users
+
+type BotOwner = PersonalOwner | OrganizationOwner
 
 let DIALOG = App.Live.Tab.BotsDialog
 
@@ -26,7 +28,7 @@ end
 
 # Makes a bot in the tab's organization: this person's own when `owner` is
 # "me", and otherwise the organization's.
-create : User -> Tab -> String -> String -> Outcome
+create : User -> Tab -> String -> BotOwner -> Outcome
 foul create(user, tab, name, owner) do
   let problems = Metro.Validation.checked(botRules, {"name": name}).messages
   return refused(tab, DIALOG, problems.first.or("")) if !problems.empty?
@@ -34,10 +36,10 @@ foul create(user, tab, name, owner) do
   match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
-      if owner != "me" && !user.canManage?(organization.id)
+      if owner == OrganizationOwner && !user.canManage?(organization.id)
         return refused(tab, DIALOG, "Only an administrator of ${organization.name} can make a bot for it.")
       end
-      let ownerOrganization = owner == "me" then "" else organization.id
+      let ownerOrganization = owner == PersonalOwner then "".as(OrganizationId) else organization.id
       match user.buildBot(ownerOrganization, name) do
         Error(reason) => return refused(tab, DIALOG, reason)
         Ok((bot, token)) => do
@@ -125,11 +127,8 @@ end
 
 # How much of a channel or group chat its bots may read. Only an
 # administrator changes it.
-setAccess : User -> Tab -> String -> Outcome
+setAccess : User -> Tab -> BotAccess -> Outcome
 foul setAccess(user, tab, access) do
-  let selected = Conversation.botAccessFrom(access)
-  return unchanged(tab) if !selected.set?
-
   match user.visible(tab.organization, tab.conversation) do
     None => return unchanged(tab)
     Just(conversation) => do
@@ -138,8 +137,8 @@ foul setAccess(user, tab, access) do
         return failed(tab, "Only an administrator can change what bots read here.")
       end
 
-      match Conversations.setBotAccess(conversation.id, selected.or(Conversation.Mentions)) do
-        Ok(true) => return changed(Tab { ...closed(tab), notice: "Bots here read ${access}." })
+      match Conversations.setBotAccess(conversation.id, access) do
+        Ok(true) => return changed(Tab { ...tab.closed, notice: "Bots here read ${Harmat.Database.spelled(access)}." })
         Ok(false) => return failed(tab, "That conversation is not there.")
         Error(reason) => return failed(tab, reason)
       end
@@ -150,13 +149,30 @@ end
 # What this part answers, of the events config/live.kex routes to it, by
 # their whole names; any other does nothing.
 on : String -> Event -> Outcome
-foul on("bot-create", event) = create(event.user, event.tab, typed(event, "name"), given(event, "owner"))
-foul on("bot-rotate", event) = rotateToken(event.user, event.tab, given(event, "id"))
-foul on("bot-add", event) = add(event.user, event.tab, given(event, "id"))
-foul on("bot-remove", event) = remove(event.user, event.tab, given(event, "id"))
-foul on("bot-operators-set", event) = setOperators(event.user, event.tab, given(event, "bot"), picked(event, "operator"))
-foul on("bot-access-set", event) = setAccess(event.user, event.tab, given(event, "access"))
+foul on("bot-create", event) do
+  match ownerFrom(event.given("owner")) do
+    Just(owner) => create(event.user, event.tab, event.typed("name"), owner)
+    None => refused(event.tab, DIALOG, "Choose who the bot belongs to.")
+  end
+end
+foul on("bot-rotate", event) = rotateToken(event.user, event.tab, event.given("id").as(UserId))
+foul on("bot-add", event) = add(event.user, event.tab, event.given("id").as(UserId))
+foul on("bot-remove", event) = remove(event.user, event.tab, event.given("id").as(UserId))
+foul on("bot-operators-set", event) = setOperators(event.user, event.tab, event.given("bot").as(UserId), event.picked("operator").map { |id| id.as(UserId) })
+foul on("bot-access-set", event) do
+  match Conversation.botAccessFrom(event.given("access")) do
+    Just(access) => setAccess(event.user, event.tab, access)
+    None => unchanged(event.tab)
+  end
+end
 foul on(_, event) = unchanged(event.tab)
+
+private do
+  ownerFrom : String -> BotOwner?
+  let ownerFrom("me") = Just(PersonalOwner)
+  let ownerFrom("organization") = Just(OrganizationOwner)
+  let ownerFrom(_) = None
+end
 
 private do
   notManager : Organization -> String
@@ -164,7 +180,7 @@ private do
 
   # The tab with the bots dialog open, and nothing else over it.
   opened : Tab -> Tab
-  let opened(tab) = Tab { ...closed(tab), dialog: DIALOG }
+  let opened(tab) = Tab { ...tab.closed, dialog: DIALOG }
 
   # The dialog, showing a bot's new token until it is closed.
   revealed : Tab -> String -> String -> Tab

@@ -6,6 +6,7 @@ using App.Live.Unread, only: [Unread]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
 using App.Models.User, only: [User]
+using App.Models.Ids, only: [UserId]
 using App.Views.Chat.Names, only: [counted]
 
 # One line of the sidebar.
@@ -55,7 +56,7 @@ let personEntry(
   Entry {
     action: "direct-open",
     subject: "user",
-    key: person.id,
+      key: person.id.as(String),
     caption: person.shown,
     current?: chatting,
     badged: person.bot? then "BOT" else "",
@@ -68,7 +69,7 @@ let personEntry(
 end
 
 # Whether a private chat with somebody has something written and not sent.
-waiting : [Draft] -> String -> Bool
+waiting : [Draft] -> UserId -> Bool
 let waiting(drafts, personId) = drafts.any? do |draft|
   !draft.personId.empty? && draft.personId == personId
 end

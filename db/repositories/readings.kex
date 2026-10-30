@@ -15,7 +15,7 @@ using App.Models.Ids, only: [UserId]
 # follow.
 foul marks(userId: UserId) -> [Reading] or! String do
   return Database.select([:conversation_id, :thread_id, :read_at]).from(DB.Schema.Readings.definition)
-    .where(DB.Schema.Readings.userId == userId)
+    .where(DB.Schema.Readings.userId == userId.as(String))
     .all(as: Reading)
 end
 

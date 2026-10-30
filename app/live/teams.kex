@@ -6,12 +6,13 @@ module App.Live.Teams
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused, failed]
-using App.Live.Event, only: [Event, given, typed, picked]
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Event, only: [Event]
+using App.Live.Tab, only: [Tab]
 using App.Models.Team, only: [Team, TeamId]
 using App.Models.Team, as: Team
 using App.Models.User, only: [User]
 using App.Models.Ids, only: [UserId]
+using App.Models.Message, only: [MessageId]
 using DB.Repositories.Memberships, as: Memberships
 
 let teamRules = rules do
@@ -48,7 +49,7 @@ foul create(user, tab, name, description, given) do
         return refused(tab, App.Live.Tab.TeamDialog, "You may not make a team in ${organization.name}.")
       end
       let team = Team {
-        id: "",
+        id: "".as(TeamId),
         organizationId: organization.id,
         handle: handle,
         name: name,
@@ -56,7 +57,7 @@ foul create(user, tab, name, description, given) do
         members: [user.id]
       }
 
-      match DB.Repositories.Teams.create(team, user.id) do
+      match team.create(user.id) do
         Ok(made) => return changed(beside(tab, made.id))
         Error(_) => return refused(tab, App.Live.Tab.TeamDialog, "There is already a team called @${handle}.")
       end
@@ -71,12 +72,12 @@ foul update(user, tab, name, description) do
   return refused(tab, App.Live.Tab.TeamEditDialog, problems.first.or("")) if !problems.empty?
 
   match current(user, tab) do
-    None => return unchanged(closed(tab))
+    None => return unchanged(tab.closed)
     Just(team) => do
       return refused(tab, App.Live.Tab.TeamEditDialog, "@${team.handle} is ${SYNCED}") if team.managed?
 
-      match DB.Repositories.Teams.update(team.id, name, description) do
-        Ok(_) => return changed(closed(tab))
+      match team.update(name, description) do
+        Ok(_) => return changed(tab.closed)
         Error(reason) => return refused(tab, App.Live.Tab.TeamEditDialog, reason)
       end
     end
@@ -92,8 +93,8 @@ foul addMembers(user, tab, picked) do
       return failed(tab, "@${team.handle} is ${SYNCED}") if team.managed?
 
       let newcomers = picked.filter { |id| Memberships.member?(team.organizationId, id) }
-      match DB.Repositories.Teams.addMembers(team.id, newcomers) do
-        Ok(count) => return (closed(tab), count > 0)
+      match team.addMembers(newcomers) do
+        Ok(count) => return (tab.closed, count > 0)
         Error(reason) => return failed(tab, reason)
       end
     end
@@ -108,8 +109,8 @@ foul removeMember(user, tab, id) do
     Just(team) => do
       return failed(tab, "@${team.handle} is ${SYNCED}") if team.managed?
 
-      match DB.Repositories.Teams.removeMember(team.id, id) do
-        Ok(count) => return (closed(tab), count > 0)
+      match team.removeMember(id) do
+        Ok(count) => return (tab.closed, count > 0)
         Error(reason) => return failed(tab, reason)
       end
     end
@@ -119,14 +120,14 @@ end
 # What this part answers, of the events config/live.kex routes to it, by
 # their whole names; any other does nothing.
 on : String -> Event -> Outcome
-foul on("team-open", event) = open(event.user, event.tab, given(event, "id"))
-foul on("team-close", event) = unchanged(Tab { ...closed(event.tab), team: "" })
-foul on("team-create", event) = create(event.user, event.tab, typed(event, "name"), typed(event, "description"), typed(event, "handle").lowerCase)
-foul on("team-update", event) = update(event.user, event.tab, typed(event, "name"), typed(event, "description"))
+foul on("team-open", event) = open(event.user, event.tab, event.given("id").as(TeamId))
+foul on("team-close", event) = unchanged(Tab { ...event.tab.closed, team: "".as(TeamId) })
+foul on("team-create", event) = create(event.user, event.tab, event.typed("name"), event.typed("description"), event.typed("handle").lowerCase)
+foul on("team-update", event) = update(event.user, event.tab, event.typed("name"), event.typed("description"))
 foul on("team-join", event) = addMembers(event.user, event.tab, [event.user.id])
-foul on("team-add", event) = addMembers(event.user, event.tab, picked(event, "person"))
+foul on("team-add", event) = addMembers(event.user, event.tab, event.picked("person").map { |id| id.as(UserId) })
 foul on("team-leave", event) = removeMember(event.user, event.tab, event.user.id)
-foul on("team-remove", event) = removeMember(event.user, event.tab, given(event, "user"))
+foul on("team-remove", event) = removeMember(event.user, event.tab, event.given("user").as(UserId))
 foul on(_, event) = unchanged(event.tab)
 
 private do
@@ -147,9 +148,9 @@ private do
   # The tab with a team open beside the conversation, and nothing over it.
   beside : Tab -> TeamId -> Tab
   let beside(tab, id) = Tab {
-    ...closed(tab),
-    thread: "",
-    profile: "",
+    ...tab.closed,
+    thread: "".as(MessageId),
+    profile: "".as(UserId),
     team: id
   }
 end

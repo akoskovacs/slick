@@ -3,6 +3,8 @@ using App.Models.Grant, only: [Grant]
 using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using Spec.Support, only: [World, stepped, shown, fresh, populated]
+using App.Models.Organization, only: [OrganizationId]
+using App.Models.Conversation, only: [ConversationId]
 
 # Profiles from a tab. Each example starts from a world of its own
 # (Spec.Support).
@@ -21,7 +23,7 @@ let BOBS = [
 
 # Bob's profile, open in a tab of Ada's.
 foul bobsProfile(world: World) -> Tab do
-  let (opened, _) = stepped(world, world.ada, Tab {}, [("event", "profile-open"), ("user", world.bob.id)])
+  let (opened, _) = stepped(world, world.ada, Tab {}, [("event", "profile-open"), ("user", world.bob.id.as(String))])
   opened
 end
 
@@ -31,16 +33,10 @@ describe("App.Live.Profiles, opening one") do
       let world = populated()
       let token = App.Services.Authentication.register("Server Admin", "admin@example.com", "a long enough phrase").try
       let admin : User = App.Services.Authentication.current(Just(token)).try
-      DB.Repositories.Grants.grant(Grant {
-        subjectType: Grant.UserSubject,
-        subjectId: admin.id,
-        resourceType: Grant.ServerResource,
-        resourceId: "",
-        role: Grant.Admin
-      }).try
+      DB.Repositories.Grants.grant(Grant.userOnServer(admin.id, Grant.Admin)).try
 
       let (profile, _) = stepped(world, admin, Tab { organization: world.acme.organization }, [
-        ("event", "profile-open"), ("user", admin.id)
+        ("event", "profile-open"), ("user", admin.id.as(String))
       ])
       Assert.equal(profile.profile, admin.id)
       let card = shown(world, admin, profile)
@@ -77,7 +73,7 @@ describe("App.Live.Profiles, opening one") do
       let world = populated()
       let (made, _) = stepped(world, world.bob, Tab {}, [("event", "bot-create"), ("name", "deploy-bot"), ("owner", "me")])
       let bot : User = App.Services.Bots.bearer(Just("Bearer ${made.secret}")).or(world.bob)
-      let (botProfile, _) = stepped(world, world.ada, Tab {}, [("event", "profile-open"), ("user", bot.id)])
+      let (botProfile, _) = stepped(world, world.ada, Tab {}, [("event", "profile-open"), ("user", bot.id.as(String))])
       let card = shown(world, world.ada, botProfile)
       Assert.truthy(card.contains?("Belongs to"))
       Assert.truthy(card.contains?("data-event=\"profile-open\" data-user=\"${world.bob.id}\">Bob</button>"))
@@ -89,13 +85,13 @@ describe("App.Live.Profiles, opening one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       stepped(world, world.ada, Tab {}, [("event", "message-send"), ("body", "a thread")])
-      let general = world.ada.visible("", "").map { |chat| chat.id }.or("")
+      let general = world.ada.visible("".as(OrganizationId), "".as(ConversationId)).map { |chat| chat.id }.or("")
       let said : [App.Models.Message.Message] = DB.Repositories.Messages.latest(general, 1).or([])
       let id = said.first.map { |message| message.id }.or("")
       let profile = bobsProfile(world)
       let (cancelled, _) = stepped(world, world.ada, profile, [("event", "cancel")])
       Assert.equal(cancelled.profile, world.bob.id)
-      let (thread, _) = stepped(world, world.ada, profile, [("event", "thread-open"), ("message", id)])
+      let (thread, _) = stepped(world, world.ada, profile, [("event", "thread-open"), ("message", id.as(String))])
       Assert.equal(thread.profile, "")
       Assert.equal(thread.thread, id)
       let (closed, _) = stepped(world, world.ada, profile, [("event", "profile-close")])
@@ -106,7 +102,7 @@ describe("App.Live.Profiles, opening one") do
   it("shows nobody outside the organization, whatever the tab names") do
     with Harmat.Connection = fresh() do
       let world = populated()
-      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "profile-open"), ("user", world.eve.id)])
+      let (malTries, _) = stepped(world, world.mal, Tab {}, [("event", "profile-open"), ("user", world.eve.id.as(String))])
       Assert.equal(malTries.profile, "")
       Assert.falsy(shown(world, world.mal, Tab { profile: world.eve.id }).contains?("Profile of Eve"))
     end

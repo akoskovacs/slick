@@ -39,10 +39,10 @@ let welcome(tab, user) = welcomePartial(
 # conversation itself with what is beside it.
 index : Tab -> User -> Sidebar -> Pane -> String
 let index(tab, user, sidebar, pane) do
-  let shown = pane.conversation.map { |open| open.id }.or("")
+  let shown = pane.conversation.map { |open| open.id }.or("".as(App.Models.Conversation.ConversationId))
   let badges = sidebar.organizations.map do |each|
     badgePartial(Badge {
-      key: each.id,
+      key: each.id.as(String),
       glyph: each.name.take(1).upperCase,
       caption: each.name,
       current?: each.id == sidebar.organization.id,
@@ -54,7 +54,7 @@ let index(tab, user, sidebar, pane) do
     entryPartial(Entry {
       action: "conversation-open",
       subject: "id",
-      key: channel.id,
+      key: channel.id.as(String),
       caption: channelName(channel),
       current?: here,
       drafted?: !here && sidebar.drafts.any? { |draft| draft.conversationId == channel.id },
@@ -86,7 +86,7 @@ let index(tab, user, sidebar, pane) do
     entryPartial(Entry {
       action: "conversation-open",
       subject: "id",
-      key: group.id,
+      key: group.id.as(String),
       caption: gathered(group, user, sidebar.people),
       current?: here,
       drafted?: !here && sidebar.drafts.any? { |draft| draft.conversationId == group.id },
@@ -97,7 +97,7 @@ let index(tab, user, sidebar, pane) do
     entryPartial(Entry {
       action: "team-open",
       subject: "id",
-      key: team.id,
+      key: team.id.as(String),
       caption: "@${team.handle}",
       current?: team.id == tab.team
     })
@@ -171,7 +171,7 @@ private do
   let topbar(me, placed?) do
     let set = !me.statusEmoji.empty? || !me.statusText.empty?
     let saying = set then "${me.statusEmoji} ${me.statusText}".trim else "No status set"
-    topbarPartial(me.shown, me.statusEmoji, saying, set, placed? then me.id else "")
+    topbarPartial(me.shown, me.statusEmoji, saying, set, placed? then me.id.as(String) else "")
   end
 
   # Where a conversation is, as an address: the one the address bar shows
@@ -195,6 +195,6 @@ private do
       Group => group
       _ => direct
     end
-    App.Paths.threaded(address, opened(thread))
+    App.Paths.threaded(address, opened(thread).as(String))
   end
 end

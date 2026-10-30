@@ -6,13 +6,18 @@ using Units.Data
 using App.Models.Conversation, only: [ConversationId]
 using App.Models.Message, only: [MessageId]
 using App.Models.Ids, only: [UserId]
+using DB.Repositories.Conversations, as: Conversations
+using DB.Repositories.Memberships, as: Memberships
 
-type AttachmentId = String
+distinct type AttachmentId = String
+make AttachmentId do
+  let empty? -> Bool = this.as(String).empty?
+end
 record Attachment do
   id : AttachmentId
   userId : UserId
-  conversationId : ConversationId = ""
-  messageId : MessageId = ""
+  conversationId : ConversationId = "".as(ConversationId)
+  messageId : MessageId = "".as(MessageId)
   filename : String
   contentType : String
   byteSize : Integer
@@ -43,10 +48,22 @@ make Attachment do
 
   # The blob `Metro.Storage.served` answers with.
   let blob -> Metro.Storage.Blob = Metro.Storage.Blob {
-    key: @id,
+    key: @id.as(String),
     filename: @filename,
     contentType: @contentType,
     byteSize: @byteSize,
     checksum: @checksum
   }
+
+  # A file is private to its uploader until it has been sent; afterwards
+  # only members who can read its conversation may fetch it.
+  foul availableTo?(userId: UserId) -> Bool do
+    return @userId == userId if !@sent?
+
+    match Conversations.find(@conversationId) do
+      Ok(Just(conversation)) =>
+        Memberships.member?(conversation.organizationId, userId) && conversation.admits?(userId)
+      _ => false
+    end
+  end
 end

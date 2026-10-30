@@ -5,8 +5,9 @@ module App.Live.Organizations
 using Metro.Validation, only: [rules, validates, present, sized]
 using Metro.Live.Socket, only: [unchanged, changed]
 using App.Live.Outcome, only: [Outcome, refused]
-using App.Live.Event, only: [Event, given, typed]
-using App.Live.Tab, only: [Tab, Dialog, closed, PeopleDialog]
+using App.Live.Event, only: [Event]
+using App.Live.Tab, only: [Tab, Dialog, PeopleDialog]
+using App.Models.Grant, only: [GrantRole]
 using App.Models.Grant, as: Grant
 using App.Models.User, only: [User]
 using App.Models.Ids, only: [UserId]
@@ -68,7 +69,7 @@ foul invite(user, tab, email) do
         Ok(Just((person, _))) => match Memberships.add(organization.id, person.id) do
           Ok(_) => return manager
             then changed(Tab { ...tab, dialogProblem: "", notice: "${person.shown} is now in ${organization.name}." })
-            else changed(Tab { ...closed(tab), notice: "${person.shown} is now in ${organization.name}." })
+            else changed(Tab { ...tab.closed, notice: "${person.shown} is now in ${organization.name}." })
           Error(reason) => return refused(tab, dialog,
             reason == "${person.id} is already in ${organization.id}"
               then "${person.shown} is already in ${organization.name}."
@@ -84,17 +85,15 @@ end
 # Gives a person a role in the tab's organization. Only an administrator
 # changes roles, only of someone in the organization, and the last
 # administrator cannot be demoted.
-setRole : User -> Tab -> UserId -> String -> Outcome
+setRole : User -> Tab -> UserId -> GrantRole -> Outcome
 foul setRole(user, tab, personId, role) do
-  let selected = Grant.roleFrom(role)
-  return unchanged(tab) if !selected.set?
   return unchanged(tab) if personId == user.id
 
   match user.home(tab.organization) do
     None => return unchanged(tab)
     Just(organization) => do
       let managingPeople = tab.dialog == PeopleDialog
-      let profile = managingPeople then tab else Tab { ...closed(tab), profile: personId }
+      let profile = managingPeople then tab else Tab { ...tab.closed, profile: personId }
       if !user.canManage?(organization.id)
         return managingPeople
           then unchanged(Tab { ...tab, dialogProblem: "Only an administrator can change a member's role." })
@@ -106,19 +105,13 @@ foul setRole(user, tab, personId, role) do
           then unchanged(Tab { ...tab, dialogProblem: "They are not in ${organization.name}." })
           else unchanged(Tab { ...profile, failure: "They are not in ${organization.name}." })
       end
-      if selected != Just(Grant.Admin) && was == Just(Grant.Admin) && organization.admins.count <= 1 && !user.serverAdmin?
+      if role != Grant.Admin && was == Just(Grant.Admin) && organization.admins.count <= 1 && !user.serverAdmin?
         return managingPeople
           then unchanged(Tab { ...tab, dialogProblem: "The last administrator cannot be demoted." })
           else unchanged(Tab { ...profile, failure: "The last administrator cannot be demoted." })
       end
 
-      let grant = Grant {
-        subjectType: Grant.UserSubject,
-        subjectId: personId,
-        resourceType: Grant.OrganizationResource,
-        resourceId: organization.id,
-        role: selected.or(Grant.Member)
-      }
+      let grant = Grant.userOnOrganization(personId, organization.id, role)
       match Grants.grant(grant) do
         Ok(_) => return changed(Tab { ...profile, notice: "Their role has been updated." })
         Error(reason) => return managingPeople
@@ -137,7 +130,7 @@ foul removeMember(user, tab, personId) do
     None => return unchanged(tab)
     Just(organization) => do
       let managingPeople = tab.dialog == PeopleDialog
-      let away = managingPeople then tab else Tab { ...closed(tab), profile: "" }
+      let away = managingPeople then tab else Tab { ...tab.closed, profile: "".as(UserId) }
       if !user.canManage?(organization.id)
         return managingPeople
           then unchanged(Tab { ...tab, dialogProblem: "Only an administrator can remove a member." })
@@ -155,7 +148,7 @@ foul removeMember(user, tab, personId) do
           else unchanged(Tab { ...away, failure: "The last administrator cannot be removed." })
       end
 
-      match Grants.revoke(Grants.key(Grant.UserSubject, personId, Grant.OrganizationResource, organization.id)) do
+      match Grants.revoke(Grant.idForUserOnOrganization(personId, organization.id)) do
         Ok(_) => return changed(Tab { ...away, notice: "They are no longer in ${organization.name}." })
         Error(reason) => return managingPeople
           then unchanged(Tab { ...tab, dialogProblem: reason })
@@ -168,9 +161,14 @@ end
 # What this part answers, of the events config/live.kex routes to it, by
 # their whole names; any other does nothing.
 on : String -> Event -> [String] -> Outcome
-foul on("organization-switch", event, _) = switch(event.user, event.tab, given(event, "id"))
-foul on("organization-create", event, rootSegments) = create(event.user, event.tab, typed(event, "name"), rootSegments)
-foul on("invite-send", event, _) = invite(event.user, event.tab, typed(event, "email").lowerCase)
-foul on("role-set", event, _) = setRole(event.user, event.tab, given(event, "user"), given(event, "role"))
-foul on("member-remove", event, _) = removeMember(event.user, event.tab, given(event, "user"))
+foul on("organization-switch", event, _) = switch(event.user, event.tab, event.given("id").as(OrganizationId))
+foul on("organization-create", event, rootSegments) = create(event.user, event.tab, event.typed("name"), rootSegments)
+foul on("invite-send", event, _) = invite(event.user, event.tab, event.typed("email").lowerCase)
+foul on("role-set", event, _) do
+  match Grant.roleFrom(event.given("role")) do
+    Just(role) => setRole(event.user, event.tab, event.given("user").as(UserId), role)
+    None => unchanged(event.tab)
+  end
+end
+foul on("member-remove", event, _) = removeMember(event.user, event.tab, event.given("user").as(UserId))
 foul on(_, event, _) = unchanged(event.tab)

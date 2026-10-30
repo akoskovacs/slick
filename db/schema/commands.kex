@@ -5,8 +5,7 @@ module DB.Schema.Commands
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# Known while compiling: a query over this table is written then.
-compiled do
+# The schema is shared by the repositories that query this table.
   let definition = Table.define :commands do |t|
     t.text(:id, primaryKey: true)
     t.text(:bot_id)
@@ -16,4 +15,3 @@ compiled do
 
   let id = definition.textColumn(:id)
   let botId = definition.textColumn(:bot_id)
-end

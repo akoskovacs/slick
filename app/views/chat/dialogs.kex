@@ -50,6 +50,19 @@ record Detail do
   locked? : Bool = false
 end
 
+# Somebody in the organization, in the dialog that manages its people.
+record Colleague do
+  key : String
+  caption : String
+  mail : String
+  initial : String
+  tint : String
+  # Their role in the organization, as the one of these that is true.
+  member? : Bool = false
+  admin? : Bool = false
+  readOnly? : Bool = false
+end
+
 # Somebody who can be picked, in a dialog that picks people.
 record Pick do
   key : String
@@ -69,6 +82,7 @@ let moodPartial = Template.html(Kex.embed("_mood.html.ket"))
 let detailsPartial = Template.html(Kex.embed("_details.html.ket"))
 let detailPartial = Template.html(Kex.embed("_detail.html.ket"))
 let managePeoplePartial = Template.html(Kex.embed("_manage_people.html.ket"))
+let colleaguePartial = Template.html(Kex.embed("_colleague.html.ket"))
 
 # The dialog a tab has open, if any.
 dialog : Tab -> Sidebar -> User -> Conversation? -> String
@@ -114,13 +128,13 @@ private do
         .filter { |person| !person.bot? }
         .map do |person|
           operatorPartial(Operator {
-            key: person.id,
+            key: person.id.as(String),
             caption: person.shown,
             chosen?: chosen.contains?(person.id)
           })
         end
       botPartial(Robot {
-        key: bot.id,
+        key: bot.id.as(String),
         caption: bot.shown,
         here?: shared || sidebar.people.any? { |person| person.id == bot.id },
         spot: sidebar.organization.name,
@@ -142,7 +156,7 @@ private do
     let owners = sidebar.teams
       .filter { |team| team.includes?(me.id) }
       .map do |team|
-        "<option value=\"${Template.escapeHtml(team.id)}\">@${Template.escapeHtml(team.handle)}</option>"
+        "<option value=\"${Template.escapeHtml(team.id.as(String))}\">@${Template.escapeHtml(team.handle)}</option>"
       end
     return channelPartial(
       "Create a channel",
@@ -252,33 +266,26 @@ private do
     )
   end
   let shown(PeopleDialog, tab, sidebar, me, conversation) do
-    let rows = sidebar.people
+    let others = sidebar.people
       .filter { |person| !person.bot? && person.id != me.id && sidebar.roles.get(person.id).set? }
+    let rows = others
       .map do |person|
         let role = sidebar.roles.get(person.id).or(Grant.Member)
-        let id = Template.escapeHtml(person.id)
-        let name = Template.escapeHtml(person.shown)
-        let email = Template.escapeHtml(person.email)
-        let memberSelected = role == Grant.Member then " selected" else ""
-        let adminSelected = role == Grant.Admin then " selected" else ""
-        let readOnlySelected = role == Grant.ReadOnly then " selected" else ""
-        [
-          "<li class='managed-person'><div class='managed-person-name'>",
-          "<strong>${name}</strong><span>${email}</span></div>",
-          "<form class='managed-person-role' data-live='role-set' data-live-quiet>",
-          "<input type='hidden' name='user' value='${id}'>",
-          "<label><span class='visually-hidden'>Role for ${name}</span><select name='role' aria-label='Role for ${name}'>",
-          "<option value='member'${memberSelected}>Member</option>",
-          "<option value='admin'${adminSelected}>Administrator</option>",
-          "<option value='read_only'${readOnlySelected}>Read-only</option>",
-          "</select></label><button type='submit' class='quiet'>Save</button></form>",
-          "<button type='button' class='quiet remove-person' data-event='member-remove' ",
-          "data-user='${id}' aria-label='Remove ${name}'>Remove</button></li>"
-        ].join("")
+        colleaguePartial(Colleague {
+          key: person.id.as(String),
+          caption: person.shown,
+          mail: person.email,
+          initial: person.shown.take(1).upperCase,
+          tint: "${BEAM.erlang.phash2(person.id, 8)}",
+          member?: role == Grant.Member,
+          admin?: role == Grant.Admin,
+          readOnly?: role == Grant.ReadOnly
+        })
       end
       .join("\n")
     let empty = rows.empty? then "<li class='empty'>No other people in this organization yet.</li>" else rows
-    return managePeoplePartial(sidebar.organization.name, empty, tab.dialogProblem)
+    let counted = others.count == 1 then "1 other person" else "${others.count} other people"
+    return managePeoplePartial(sidebar.organization.name, empty, counted, tab.dialogProblem)
   end
   let shown(_, tab, sidebar, me, conversation) = ""
 
@@ -287,7 +294,7 @@ private do
   let picks(people) = people
     .map do |person|
       pickPartial(Pick {
-        key: person.id,
+        key: person.id.as(String),
         caption: person.shown,
         badged: person.bot? then "BOT" else ""
       })

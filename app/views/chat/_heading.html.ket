@@ -3,9 +3,11 @@ params: [title: String, topic: String, channel?: Bool, retitling?: Bool, filing?
 ---
 <header class="heading">
   <div class="heading-row">
-    <h1><%= title %></h1>
     <% if direct? %>
-      <button type="button" class="quiet" data-event="profile-open" data-user="<%= profileUser %>">View profile</button>
+      <h1><button type="button" class="title-button" data-event="profile-open" data-user="<%= profileUser %>"
+        title="View profile"><%= title %><span class="chevron" aria-hidden="true">⌄</span></button></h1>
+    <% else %>
+      <h1><%= title %></h1>
     <% end %>
   </div>
   <% if retitling? %>

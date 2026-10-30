@@ -41,7 +41,7 @@ params: [card: Card]
     <% if card.manageable? %>
       <details class="member-management">
         <summary>Manage member</summary>
-      <form class="role-picker" data-live="role-set" data-live-quiet>
+      <form class="role-picker" data-live="role-set" data-live-quiet data-live-hook="Instant">
         <input type="hidden" name="user" value="<%= card.key %>">
         <label for="member-role">Workspace role</label>
         <select id="member-role" name="role" aria-label="Role">
@@ -49,9 +49,9 @@ params: [card: Card]
           <option value="admin"<% if card.admin? %> selected<% end %>>Administrator</option>
           <option value="read_only"<% if card.readOnly? %> selected<% end %>>Read-only</option>
         </select>
-        <button type="submit" class="primary">Save role</button>
+        <button type="submit" class="visually-hidden">Save role</button>
       </form>
-      <button type="button" class="quiet" data-event="member-remove" data-user="<%= card.key %>">Remove from organization</button>
+      <button type="button" class="quiet remove-person" data-event="member-remove" data-user="<%= card.key %>">Remove from organization</button>
       </details>
     <% end %>
     <dl class="details">

@@ -6,8 +6,7 @@ module DB.Schema.Readings
 using Harmat.Table, as: Table
 using Harmat.Table, only: [Definition]
 
-# Known while compiling: a query over this table is written then.
-compiled do
+# The schema is shared by the repositories that query this table.
   let definition = Table.define :readings do |t|
     t.text(:id, primaryKey: true)
     t.text(:user_id)
@@ -20,4 +19,3 @@ compiled do
   let userId = definition.textColumn(:user_id)
   let conversationId = definition.textColumn(:conversation_id)
   let readAt = definition.wholeColumn(:read_at)
-end

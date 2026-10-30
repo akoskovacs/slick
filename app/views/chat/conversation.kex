@@ -72,7 +72,7 @@ let pane(
         room.administrator && (open.channel? || open.group?),
         setting,
         open.direct?,
-        open.direct? then open.counterpart(room.viewer.id) else ""
+        open.direct? then open.counterpart(room.viewer.id) else "".as(App.Models.Ids.UserId)
       )
       let queued = cabinet.queued
         .map { |file| queuedPartial(enclosed(file, room.people, "")) }
@@ -95,7 +95,7 @@ let pane(
         open.channel? then settingsPane(open, organization, room) else groupSettingsPartial(Harmat.Database.spelled(open.botAccess))
       else
         let uses = room.invocations.filter { |used| used.threadId.empty? }
-        let bubbles = woven(room, messages, uses, "", 0, false)
+        let bubbles = woven(room, messages, uses, "".as(App.Models.Ids.UserId), 0, false)
         let emptied = if open.solo?
           soloIntro
         else
@@ -157,7 +157,7 @@ private do
     doing
       .map do |note|
         statusPartial(Standing {
-          who: shownAs(people, note.member, "Someone"),
+          who: shownAs(people, note.member.as(App.Models.Ids.UserId), "Someone"),
           doing: note.saying.empty? then "is typing…" else "${note.saying}…",
           lapses: "${note.lapses}"
         })

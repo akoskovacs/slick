@@ -2,9 +2,15 @@
 module App.Models.Message
 
 using App.Models.Conversation, only: [ConversationId]
+using App.Models.Organization, only: [OrganizationId]
 using App.Models.Ids, only: [UserId]
+using DB.Repositories.Answers, as: Answers
+using DB.Repositories.Reactions, as: Reactions
 
-type MessageId = String
+distinct type MessageId = String
+make MessageId do
+  let empty? -> Bool = this.as(String).empty?
+end
 record Message do
   id : MessageId
   conversationId : ConversationId
@@ -13,9 +19,22 @@ record Message do
   # Milliseconds since 1970: the order of a conversation.
   sentAt : Integer = 0
   # The message this one replies to; "" when it is not a reply.
-  parentId : MessageId = ""
+  parentId : MessageId = "".as(MessageId)
   # How many replies it has.
   replyCount : Integer = 0
+end
+
+make Message do
+  # Puts a person's emoji on the message, or takes it off if it is there.
+  # Whether it is on afterwards.
+  foul toggleReaction(userId: UserId, emoji: String) -> Bool or! String do
+    Reactions.toggle(@id, @conversationId, userId, emoji)
+  end
+
+  # Records a person's answer to one of this message's forms.
+  foul answer(organizationId: OrganizationId, form: Integer, userId: UserId, text: String) -> Integer or! String do
+    Answers.save(organizationId, @id, @conversationId, @userId, form, userId, text)
+  end
 end
 
 # The longest message accepted.

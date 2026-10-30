@@ -5,10 +5,12 @@ module App.Live.Profiles
 using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, sized]
 using App.Live.Outcome, only: [Outcome, refused]
-using App.Live.Event, only: [Event, given, typed]
-using App.Live.Tab, only: [Tab, closed]
+using App.Live.Event, only: [Event]
+using App.Live.Tab, only: [Tab]
 using App.Models.User, only: [User, UserDetail, Name]
 using App.Models.Ids, only: [UserId]
+using App.Models.Message, only: [MessageId]
+using App.Models.Team, only: [TeamId]
 using App.Models.User, as: User
 using App.Models.Emoji, as: Emoji
 using DB.Repositories.Users, as: Users
@@ -25,7 +27,7 @@ foul open(user, tab, id) do
     None => return unchanged(tab)
     Just(organization) => do
       return unchanged(tab) if id != user.id && !organization.member?(id)
-      return unchanged(Tab { ...closed(tab), thread: "", profile: id, team: "" })
+      return unchanged(Tab { ...tab.closed, thread: "".as(MessageId), profile: id, team: "".as(TeamId) })
     end
   end
 end
@@ -57,8 +59,8 @@ foul update(user, tab, entries) do
         nickname: chosen(given, User.Nickname),
         nicknameShown?: field(entries, "show_nickname") == "yes"
       }
-      match Users.update(described) do
-        Ok(_) => return changed(closed(tab))
+      match described.save do
+        Ok(_) => return changed(tab.closed)
         Error(reason) => return refused(tab, App.Live.Tab.ProfileDialog, reason)
       end
     end
@@ -74,8 +76,8 @@ foul setStatus(user, tab, emoji, saying) do
   return refused(tab, App.Live.Tab.StatusDialog, problems.first.or("")) if !problems.empty?
   return refused(tab, App.Live.Tab.StatusDialog, "Pick one of the emoji offered.") if !Emoji.status?(emoji)
 
-  match Users.setStatus(user.id, emoji, saying) do
-    Ok(_) => return changed(closed(tab))
+  match user.setStatus(emoji, saying) do
+    Ok(_) => return changed(tab.closed)
     Error(reason) => return refused(tab, App.Live.Tab.StatusDialog, reason)
   end
 end
@@ -83,10 +85,10 @@ end
 # What this part answers, of the events config/live.kex routes to it, by
 # their whole names; any other does nothing.
 on : String -> Event -> Outcome
-foul on("profile-open", event) = open(event.user, event.tab, given(event, "user"))
-foul on("profile-close", event) = unchanged(Tab { ...closed(event.tab), profile: "" })
+foul on("profile-open", event) = open(event.user, event.tab, event.given("user").as(UserId))
+foul on("profile-close", event) = unchanged(Tab { ...event.tab.closed, profile: "".as(UserId) })
 foul on("profile-update", event) = update(event.user, event.tab, event.entries)
-foul on("status-set", event) = setStatus(event.user, event.tab, typed(event, "emoji"), typed(event, "text"))
+foul on("status-set", event) = setStatus(event.user, event.tab, event.typed("emoji"), event.typed("text"))
 foul on("status-clear", event) = setStatus(event.user, event.tab, "", "")
 foul on(_, event) = unchanged(event.tab)
 

@@ -33,14 +33,14 @@ foul joined(request, socket, routes) do
   let events = eventsFor(request)
   let user = userFor(request)
   let seat = "${Metro.Id.serial()}"
-  Metro.Live.Presence.arrived(statuses, user.id, seat)
+  Metro.Live.Presence.arrived(statuses, user.id.as(String), seat)
   hub.changed(seat, "everyone")
   Metro.Live.Socket.attached(
     socket, hub, "everyone", App.Live.Addresses.tabFor(user, request.query("at").or("/")),
     { |tab, event| App.Live.Chat.handled(routes, events, statuses, user, tab, event) },
     { |tab| App.Live.Chat.markup(statuses, user, tab) }
   )
-  Metro.Live.Presence.departed(statuses, user.id, seat)
+  Metro.Live.Presence.departed(statuses, user.id.as(String), seat)
   hub.changed(seat, "everyone")
 rescue |error|
   # Something the page cannot run around. It is said on the way out — in

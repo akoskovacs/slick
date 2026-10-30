@@ -11,7 +11,7 @@ using App.Models.Ids, only: [UserId]
 foul declare(botId: UserId, commands: [Command]) -> Integer or! String do
   let replaced : Integer or! String = Database.transaction do
     Database.delete(DB.Schema.Commands.definition)
-      .where(DB.Schema.Commands.botId == botId)
+      .where(DB.Schema.Commands.botId == botId.as(String))
       .run
       .try
     let rows = commands.map do |command|
@@ -30,7 +30,7 @@ end
 # The commands of some bots, by name.
 foul forBots(botIds: [UserId]) -> [Command] or! String do
   return Database.select().from(DB.Schema.Commands.definition)
-    .where(DB.Schema.Commands.botId.in(botIds))
+    .where(DB.Schema.Commands.botId.in(botIds.map { |id| id.as(String) }))
     .orderBy([:name, :bot_id])
     .all(as: Command)
 end

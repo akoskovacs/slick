@@ -9,13 +9,14 @@ module DB.Migrate.N0021AddGroups
 
 using Harmat.Migration, as: Migration
 using Harmat.Migration, only: [changeColumn, addColumn, createTable, addIndex]
+using App.Models.Conversation, as: Conversation
 
 let change = Migration.define :add_groups, follows: :create_teams do
   changeColumn(:conversations,
     from: { |t| t.text(:kind, oneOf: ["channel", "private_chat"]) },
-    to: do |t| t.text(:kind, oneOf: ["channel", "private_chat", "group"])
+    to: do |t| t.text(:kind, oneOf: Harmat.Column.choices(Type.of(Conversation.Channel)))
   end)
-  addColumn(:conversations) { |t| t.text(:access, default: "public", oneOf: ["public", "private"]) }
+  addColumn(:conversations) { |t| t.text(:access, default: Harmat.Column.choices(Type.of(Conversation.Public)).first.or(""), oneOf: Harmat.Column.choices(Type.of(Conversation.Public))) }
   addColumn(:conversations) { |t| t.text(:team_id, default: "") }
   addIndex(:conversations, [:team_id])
   createTable(:participants) do |t|

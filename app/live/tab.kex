@@ -15,18 +15,18 @@ type View = ConversationView | FilesView | SettingsView
 record Tab do
   # The organization the tab is in, by id; "" is the first one its person
   # belongs to.
-  organization : OrganizationId = ""
+  organization : OrganizationId = "".as(OrganizationId)
   # The conversation the tab is showing, by id; "" is the organization's
   # #general.
-  conversation : ConversationId = ""
+  conversation : ConversationId = "".as(ConversationId)
   # The message whose thread is open beside it, by id; "" when none is.
-  thread : MessageId = ""
+  thread : MessageId = "".as(MessageId)
   # The person or bot whose profile is open beside it, by id; "" when none
   # is. A profile, a team and a thread take the same place, so each closes
   # the others.
-  profile : UserId = ""
+  profile : UserId = "".as(UserId)
   # The team open beside it, by id; "" when none is.
-  team : TeamId = ""
+  team : TeamId = "".as(TeamId)
   # Whether the topic is being edited.
   retitling? : Bool = false
   # The dialog open over the conversation, if any, and what was wrong with
@@ -49,16 +49,17 @@ record Tab do
   attentive? : Bool = true
 end
 
-# The tab with nothing open over the conversation: no form, no dialog, no
-# message left from the last thing tried. Everything else it keeps.
-closed : Tab -> Tab
-let closed(tab) = Tab {
-  ...tab,
-  retitling?: false,
-  dialog: NoDialog,
-  dialogProblem: "",
-  notice: "",
-  secret: "",
-  secretFor: "",
-  failure: ""
-}
+make Tab do
+  # The tab with nothing open over the conversation: no form, no dialog,
+  # no message left from the last thing tried. Everything else it keeps.
+  let closed -> Tab = Tab {
+    ...this,
+    retitling?: false,
+    dialog: NoDialog,
+    dialogProblem: "",
+    notice: "",
+    secret: "",
+    secretFor: "",
+    failure: ""
+  }
+end

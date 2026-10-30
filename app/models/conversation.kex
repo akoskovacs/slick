@@ -6,7 +6,10 @@ using App.Models.Organization, only: [OrganizationId]
 using App.Models.Team, only: [TeamId]
 using App.Models.Ids, only: [UserId]
 
-type ConversationId = String
+distinct type ConversationId = String
+make ConversationId do
+  let empty? -> Bool = this.as(String).empty?
+end
 type ConversationKind = Channel | PrivateChat | Group
 type ConversationAccess = Public | Private
 type BotAccess = NoBots | Mentions | AllBots
@@ -17,14 +20,14 @@ record Conversation do
   slug : String = ""
   title : String = ""
   topic : String = ""
-  firstUser : UserId = ""
-  secondUser : UserId = ""
-  organizationId : OrganizationId = ""
+  firstUser : UserId = "".as(UserId)
+  secondUser : UserId = "".as(UserId)
+  organizationId : OrganizationId = "".as(OrganizationId)
   # "public" for a channel anyone in the organization may read; "private"
   # for one only its participants may — as a group chat always is.
   access : ConversationAccess = Public
   # The team that owns a channel; "" for none.
-  teamId : TeamId = ""
+  teamId : TeamId = "".as(TeamId)
   # How much of it its bots may read: "no_bots", "mentions" or "all_bots".
   botAccess : BotAccess = Mentions
   # Who may read a private channel or a group chat: its participants and,
