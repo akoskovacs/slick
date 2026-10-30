@@ -107,7 +107,9 @@ manage organizations across the server; Ada administers Acme.
 | `tey db:create` | create the environment's SQLite database file |
 | `tey db:drop` | drop the environment's SQLite database file |
 | `tey console` | the application in Kex's REPL, its queries logged (`bin/console`) |
-| `tey test` | the specs |
+| `tey test` | the specs, apart from the browser's |
+| `tey test:browser` | the browser specs, in a headless Chrome |
+| `tey test:watch` | the browser specs in a visible Chrome, paced to watch |
 | `tey odbc` | build Erlang's ODBC port program into `db/odbc`, once |
 | `tey dev` | the server, then the bot beside it — [slick-ai-bot](../slick-ai-bot) — once it answers; Ctrl-C stops all of them |
 
@@ -115,9 +117,12 @@ The browser specs use Chrome and a temporary SQLite database. With the
 dependencies and ODBC port program set up as above, run them with:
 
 ```sh
-tey test spec/browser/slick.spec.kex
-SHAKESPEARE_WATCH=1 tey test spec/browser/slick.spec.kex  # watch in Chrome
+tey test:browser
+tey test:watch                                    # watch in Chrome
+tey test:watch -- --only "creates a team and adds somebody to it"
 ```
+
+`tey test` alone runs only the specs in `spec/`, not those in `spec/browser/`.
 
 The browser dependency is a pinned Shakespeare release. To try a change to
 Shakespeare first, point `package.kex` at the adjacent checkout with
