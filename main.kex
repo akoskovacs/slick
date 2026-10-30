@@ -1,9 +1,9 @@
 # Slick
 #
 #   tey server      http://localhost:4000 — migrates first, then serves
-#   tey migrate     run the migrations this database has not run
-#   tey rollback    undo the newest migration; `tey rollback 3` undoes three
-#   tey seed        migrate, then plant what a new database starts with
+#   tey db:migrate  run the migrations this database has not run
+#   tey db:rollback undo the newest migration; `tey db:rollback 3` undoes three
+#   tey db:seed     migrate, then plant what a new database starts with
 #   tey console     the application in Kex's REPL (bin/console)
 #
 # METRO_ENV says where this is running, and PORT and HOST move the listener

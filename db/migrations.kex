@@ -43,8 +43,8 @@
 # from model enums; adding a constructor needs a new migration that widens
 # the column constraint, without changing a migration already written.
 #
-#   tey migrate          # run what this database has not run
-#   tey rollback         # undo the newest; `tey rollback 3` undoes three
+#   tey db:migrate       # run what this database has not run
+#   tey db:rollback      # undo the newest; `tey db:rollback 3` undoes three
 module DB.Migrations
 
 using Harmat.Migration, as: Migration

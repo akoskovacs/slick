@@ -15,7 +15,7 @@
 #                       unless set
 #   SLICK_BOT_DIR       the bot; ../slick-ai-bot unless set
 #   BOT_TOKEN           the bot's token; the development `claude` bot's
-#                       unless set (the one `tey seed` plants)
+#                       unless set (the one `tey db:seed` plants)
 #
 # The development token is one a development database's bot is given;
 # another database's bot needs its own, from the Bots dialog.

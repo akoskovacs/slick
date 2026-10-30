@@ -2,7 +2,7 @@
 # the migrations: those change the schema, and say nothing about what a new
 # database should have in it.
 #
-#   tey seed     plant what this environment's database starts with
+#   tey db:seed  plant what this environment's database starts with
 #
 # Planting twice plants once: a seed looks for what it would make first.
 #
