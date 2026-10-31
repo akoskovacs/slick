@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "workspace": {"members": {"slick": "."}, "manifest_fingerprint": "fa90f4dbfe6a6e46c87fb4d33e4d097765723242bbe9dbb933347406b7046eb1"},
+  "workspace": {"members": {"slick": "."}, "manifest_fingerprint": "d3b26e8842aa13f4c27d55c86ffd7393c1dee0234adcbb7a850d80ea39092fa2"},
   "toolchain": {"kex": "0.4.0", "kex_requirement": ">= 0.4.0-rc.3", "otp": 29, "otp_requirement": ""},
   "packages": {
     "harmat": {"version": "0.3.0", "source": "git", "git": "https://github.com/kexhq/harmat", "resolved": "48bb7da35403116fc863dd5d47ac7aff742794a8", "commit": "48bb7da35403116fc863dd5d47ac7aff742794a8", "subdir": ".", "path": "", "sha256": "bc8213f96ed3ed04f48787c601fe86b676e9fddcbb89186c93c02cf3d22730b2", "groups": [], "dependencies": [], "plugins": {"harmat": "e814519349d9bc6158e6dea50d58aa87d068450254e48daca770411ef2de9949"}, "workspace": false},
