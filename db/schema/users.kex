@@ -16,7 +16,7 @@ compiled do
       Column { label: "password_hash", storage: Characters },
       Column { label: "created_at", storage: Wide },
       Column { label: "name", storage: Characters, fallback: Just("''") },
-      Column { label: "kind", storage: Characters, fallback: Just(Harmat.Column.quoted(Harmat.Column.choices(Type.of(User.Person)).first.or(""))), allowed: Harmat.Column.choices(Type.of(User.Person)) },
+      Column { label: "kind", storage: Characters, fallback: Harmat.Column.literal(Characters, Harmat.Column.choices(Type.of(User.Person)).first.or("")), allowed: Harmat.Column.choices(Type.of(User.Person)) },
       Column { label: "owner_id", storage: Characters, fallback: Just("''") },
       Column { label: "api_token_digest", storage: Characters, fallback: Just("''") },
       Column { label: "owner_organization_id", storage: Characters, fallback: Just("''") },
