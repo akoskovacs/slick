@@ -1,1 +1,5 @@
 tey.lock merge=tey
+# GitHub has no Kex grammar; highlight .kex as Ruby (comments, module/end,
+# do/end blocks, |params|, :atoms, @fields) and .ket templates as HTML+ERB.
+*.kex linguist-language=Ruby
+*.ket linguist-language=HTML+ERB
