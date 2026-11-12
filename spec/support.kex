@@ -35,8 +35,8 @@ end
 # keeps the connection of where it is written, so a helper handed the
 # example as a block would run it against another database.
 foul fresh() -> DB.Store.StoreConnection do
-  let store = DB.Store.started(Config.Database.sqlite(":memory:")).try
-  DB.Store.migrate(store).try
+  let Ok(store) = DB.Store.started(Config.Database.sqlite(":memory:"))
+  let Ok(_) = DB.Store.migrate(store)
   DB.Store.StoreConnection { store: store }
 end
 
@@ -70,8 +70,8 @@ end
 
 # Somebody who has registered, and is in no organization yet.
 foul registered(name: String, email: String) -> User do
-  let token = App.Services.Authentication.register(name, email, "a long enough phrase").try
-  let user : User = App.Services.Authentication.current(Just(token)).try
+  let Ok(token) = App.Services.Authentication.register(name, email, "a long enough phrase")
+  let Just(user) = App.Services.Authentication.current(Just(token))
   user
 end
 

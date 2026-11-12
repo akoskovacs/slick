@@ -56,7 +56,10 @@ foul served(store: Server<DB.Store.StoreState>) -> Void do
       let statuses = Process.spawn(Metro.Live.Presence.Presence {})
       let probe = Config.Routes.routes(hub, events, statuses, [])
       let site = Config.Routes.routes(hub, events, statuses, probe.rootSegments)
-      site.start(bindHost, port).try
+      match site.start(bindHost, port) do
+        Ok(_) => Void
+        Error(reason) => failed("${reason}")
+      end
     end
   end
 end

@@ -16,15 +16,19 @@ using App.Models.User, only: [User]
 # The cookie a session's token travels in.
 let COOKIE = "slick_session"
 
+# What the router's pipelines put on every request before a controller sees
+# it. Each is bound by its pattern: one missing is a route wired without its
+# pipeline, a fault of the program, not something a controller answers for.
+
 hubFor : WebRequest -> Server<Hub>
 foul hubFor(request) do
-  let found : Server<Hub> = request.assigned(:hub).try
+  let Just(found) = request.assigned(:hub)
   return found
 end
 
 statusesFor : WebRequest -> Server<Presence>
 foul statusesFor(request) do
-  let found : Server<Presence> = request.assigned(:statuses).try
+  let Just(found) = request.assigned(:statuses)
   return found
 end
 
@@ -32,21 +36,21 @@ end
 # pipeline.
 eventsFor : WebRequest -> Server<Bus>
 foul eventsFor(request) do
-  let found : Server<Bus> = request.assigned(:events).try
+  let Just(found) = request.assigned(:events)
   return found
 end
 
 # Which part of Slick answers an event from a tab (config/live.kex).
 liveFor : WebRequest -> App.Live.Event.Routes
 foul liveFor(request) do
-  let found : App.Live.Event.Routes = request.assigned(:live).try
+  let Just(found) = request.assigned(:live)
   return found
 end
 
 # The person signed in, behind `signedIn`; the bot asking, behind `bearer`.
 userFor : WebRequest -> User
 foul userFor(request) do
-  let found : User = request.assigned(:user).try
+  let Just(found) = request.assigned(:user)
   return found
 end
 
