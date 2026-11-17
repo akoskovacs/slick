@@ -21,8 +21,8 @@ package "slick" do
   command("console", run: "sh bin/console", description: "The application in Kex's REPL, on this database")
   command("odbc", run: "sh script/setup-odbc.sh db/odbc", description: "Build Erlang's ODBC port program into db/odbc, once")
 
-  tey("harmat", git: "https://github.com/kexhq/harmat", ref: "48bb7da35403116fc863dd5d47ac7aff742794a8")
-  tey("metro", git: "https://github.com/kexhq/metro", ref: "f13769ce427f3532dbfbe922fb289ff9b476ba21")
+  tey("harmat", git: "https://github.com/kexhq/harmat", ref: "a2d94f7ee605e54b556ef0061871d129f7b2049d")
+  tey("metro", git: "https://github.com/kexhq/metro", ref: "9dceb867a8cd5289ae528299a5cc3e83709e1479")
 
   group :browser do
     tey("shakespeare", git: "https://github.com/kexhq/shakespeare", ref: "ddb58d9c0c51f7112526535d280d12d0e24c3ac0")

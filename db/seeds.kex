@@ -104,8 +104,7 @@ private do
     let studio = Conversations.create(acme.id, "studio", eve.id, access: Conversation.Private, teamId: team.id).try
     Messages.create(studio.id, eve.id, "New mockups are up, @design", "").try
 
-    let bots = BOTS.map { |name| bot(name, acme.id).try }
-    bots.each { |made| Memberships.add(acme.id, made.id).try }
+    botsOf(acme.id).try
     return Ok([
       "the organization Acme, at /acme",
       "${admin.email}, server administrator, password \"${PASSWORD}\"",
@@ -131,6 +130,22 @@ private do
       ownerOrganizationId: organizationId
     }
     return Users.createBot(made, Metro.Auth.Token.digest(token(name)))
+  end
+
+  # Every bot of `BOTS` in an organization, each one of its members, or the
+  # first reason one could not be. A `.try` in a block answers for the block,
+  # not for the function, so each is made in a function of its own.
+  foul botsOf(organizationId: OrganizationId) -> [User] or! String do
+    BOTS.reduce(Ok([])) do |made, name|
+      made.flatMap { |done| member(name, organizationId).map { |user| done + [user] } }
+    end
+  end
+
+  # A bot made one of its organization's members.
+  foul member(name: String, organizationId: OrganizationId) -> User or! String do
+    let made = bot(name, organizationId).try
+    Memberships.add(organizationId, made.id).try
+    Ok(made)
   end
 
   # The person registered under an email, made if there is none.
