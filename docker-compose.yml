@@ -31,7 +31,7 @@ services:
     build:
       context: .
       args:
-        KEX_IMAGE: ${KEX_IMAGE:-ghcr.io/kexhq/kex:0.4.0-rc.2}
+        KEX_IMAGE: ${KEX_IMAGE:-ghcr.io/kexhq/kex:0.4.0-rc.3}
       secrets:
         - github_token
     depends_on:
