@@ -56,6 +56,10 @@ foul withSlickServer(people?: Bool, work: BrowserFixture -> Any) -> Void do
       _ => ()
     end
   end
+# The database, the server or its port failed to start: the example fails,
+# saying which.
+rescue |problem|
+  assert(false, "the browser fixture could not start: ${problem}")
 end
 
 foul signIn(page: Shakespeare.Page, base: String, email: String) -> Void or! String do
