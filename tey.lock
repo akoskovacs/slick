@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "workspace": {"members": {"slick": "."}, "manifest_fingerprint": "7ebd995d5792914f91351ef32a7784b0355a926a6e9ea897198863b03bd9c467"},
+  "workspace": {"members": {"slick": "."}, "manifest_fingerprint": "7237414fed33905e525dd4298a8429875559ba367f58df18d246d0c6f217df38"},
   "toolchain": {"kex": "0.4.0", "kex_requirement": ">= 0.4.0-rc.3", "otp": 29, "otp_requirement": ""},
   "packages": {
     "harmat": {"version": "0.3.0", "source": "git", "git": "https://github.com/kexhq/harmat", "resolved": "a2d94f7ee605e54b556ef0061871d129f7b2049d", "commit": "a2d94f7ee605e54b556ef0061871d129f7b2049d", "subdir": ".", "path": "", "sha256": "d01c68545d1b2367f03613aa912c8e586997cbc776b84115f1f22f067d126142", "groups": [], "dependencies": [], "plugins": {"harmat": "e814519349d9bc6158e6dea50d58aa87d068450254e48daca770411ef2de9949"}, "workspace": false},
     "metro": {"version": "0.1.0", "source": "git", "git": "https://github.com/kexhq/metro", "resolved": "9dceb867a8cd5289ae528299a5cc3e83709e1479", "commit": "9dceb867a8cd5289ae528299a5cc3e83709e1479", "subdir": ".", "path": "", "sha256": "5faae7a64b8267a0eaac2e785848765c25a1dc662ab8db7700ddb53566fe166a", "groups": [], "dependencies": ["harmat"], "plugins": {"metro": "24dec164236925c6876de7909ea1933fcb7f57a699e725b6eb894bbfe90c51b8"}, "workspace": false},
-    "shakespeare": {"version": "0.1.0", "source": "git", "git": "https://github.com/kexhq/shakespeare", "resolved": "ddb58d9c0c51f7112526535d280d12d0e24c3ac0", "commit": "ddb58d9c0c51f7112526535d280d12d0e24c3ac0", "subdir": ".", "path": "", "sha256": "c6a9b991a44c5b64ef72ac1c1c82373bb494c184d65becdbb2e8d66dc96a3ee9", "groups": ["browser"], "dependencies": [], "plugins": {}, "workspace": false},
+    "shakespeare": {"version": "0.1.0", "source": "git", "git": "https://github.com/kexhq/shakespeare", "resolved": "ae4244d8db97bf95c54f9b02f529434d7a6a9154", "commit": "ae4244d8db97bf95c54f9b02f529434d7a6a9154", "subdir": ".", "path": "", "sha256": "a7e5f2387fb6fcbbc5fe65bfc16ffcb3e9cff3338a952d51468a2c9bb6901b37", "groups": ["browser"], "dependencies": [], "plugins": {}, "workspace": false},
     "slick": {"version": "0.1.0", "source": "workspace", "git": "", "resolved": "", "commit": "", "subdir": "", "path": ".", "sha256": "", "groups": [], "dependencies": ["harmat", "metro", "shakespeare"], "plugins": {}, "workspace": true}
   },
   "plugins": {"approvals": {"harmat": "e814519349d9bc6158e6dea50d58aa87d068450254e48daca770411ef2de9949", "metro": "24dec164236925c6876de7909ea1933fcb7f57a699e725b6eb894bbfe90c51b8"}}
