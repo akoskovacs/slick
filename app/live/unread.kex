@@ -54,7 +54,9 @@ end
 # for each when they are not looking.
 markRead : User -> [Reading] -> Conversation -> [Message] -> [Message] -> Bool -> (ConversationId, MessageId)
 foul markRead(user, marks, conversation, messages, thread, looking?) do
-  return ("", "") if !looking?
+  let nowhere : ConversationId = ""
+  let noThread : MessageId = ""
+  return (nowhere, noThread) if !looking?
 
   let threadId = thread.first.map { |first| first.id }.or("")
   advance(user, marks, Reading {
