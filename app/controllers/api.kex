@@ -104,7 +104,10 @@ foul commandsDeclared(request) do
   let bot = userFor(request)
   let listed : [Any] = request.list("commands")
   let commands = listed.flatMap do |each|
-    let fields : {String: Any} = each
+    let fields = match each do
+      found: {String: Any} => found
+      _ => {}
+    end
     let name = "${fields.get("name").or("")}".trim.lowerCase
     let named = name.startsWith?("/") then name.drop(1) else name
     let description = "${fields.get("description").or("")}".trim.replace("\n", " ")
