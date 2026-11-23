@@ -400,7 +400,7 @@ private do
 
   written : Any -> String
   let written(given) do
-    let fields : {String: Any} = given
+    let fields = fieldsOf(given)
     let kind = fields.get("type").map { |found| "${found}" }.or("section")
     let text = fields.get("text").map { |found| "${found}" }.or("").replace("\r", "").trim
     let single = text.replace("\n", " ")
@@ -410,11 +410,11 @@ private do
     return text.split("\n").map { |line| "> ${line}" }.join("\n") if kind == "quote" && !text.empty?
 
     if kind == "list"
-      let items : [Any] = fields.get("items").or([])
+      let items = itemsOf(fields.get("items").or([]))
       return items.map { |item| bulleted("${item}") }.join("\n")
     end
     if kind == "form"
-      let asked : [Any] = fields.get("fields").or([])
+      let asked = itemsOf(fields.get("fields").or([]))
       return asked.map { |each| fieldWritten(each) }.reject { |line| line.empty? }.join("\n")
     end
     text
@@ -424,9 +424,9 @@ private do
   # cannot hold what would make it read as something else.
   fieldWritten : Any -> String
   let fieldWritten(given) do
-    let fields : {String: Any} = given
+    let fields = fieldsOf(given)
     let label = "${fields.get("label").or("")}".replace("\n", " ").replace(": ", " ").replace("|", " ").trim
-    let offered : [Any] = fields.get("options").or([])
+    let offered = itemsOf(fields.get("options").or([]))
     let options = offered.map { |option| "${option}".replace("\n", " ").replace("|", " ").trim }.reject { |option| option.empty? }
     return "" if label.empty?
 
@@ -437,6 +437,20 @@ private do
   let bulleted(item) do
     let single = item.replace("\n", " ").trim
     "- ${single}"
+  end
+
+  # What the API was sent, as JSON gives it: an object or a list only once a
+  # type pattern says it is one; anything else reads as an empty one.
+  fieldsOf : Any -> {String: Any}
+  let fieldsOf(given) = match given do
+    fields: {String: Any} => fields
+    _ => {}
+  end
+
+  itemsOf : Any -> [Any]
+  let itemsOf(given) = match given do
+    items: [Any] => items
+    _ => []
   end
 
   # --- Text inside a block ----------------------------------------------------
