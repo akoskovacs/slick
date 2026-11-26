@@ -8,6 +8,7 @@ using Metro.Live.Socket, only: [field, unchanged, changed]
 using Metro.Validation, only: [rules, validates, present, sized]
 using App.Live.Outcome, only: [Outcome, failed]
 using App.Live.Event, only: [Event]
+using App.Models.Message, only: [MessageId]
 using App.Live.Tab, only: [Tab]
 using App.Models.Conversation, only: [Conversation]
 using App.Models.Draft, only: [Draft]
@@ -96,7 +97,7 @@ foul saveDraft(user, tab, place, body) do
     None => return unchanged(tab)
     Just(conversation) => do
       let root = App.Live.Threads.root(conversation, tab.thread).map(&.id).or("")
-      let thread = place == "reply" then root else ""
+      let thread : MessageId = place == "reply" then root else ""
       return unchanged(tab) if place == "reply" && thread.empty?
 
       Drafts.save(user.id, Draft {

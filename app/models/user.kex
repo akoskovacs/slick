@@ -75,10 +75,10 @@ end
 foul serverAdmins() -> [UserId] or! String do
   let grants = Grants.over(Grant.ServerResource, "").try
   let admins = grants.filter { |grant| grant.role == Grant.Admin }
-  let direct = admins.flatMap { |grant| grant.userId.map { |id| [id] }.or([]) }
-  let teams = admins.flatMap { |grant| grant.teamId.map { |id| [id.as(GrantResourceId)] }.or([]) }
+  let direct = admins.into { |grant| grant.userId.map { |id| [id] }.or([]) }
+  let teams = admins.into { |grant| grant.teamId.map { |id| [id.as(GrantResourceId)] }.or([]) }
   let memberships = Grants.membersOf(Grant.TeamResource, teams).try
-  let viaTeams = teams.flatMap { |teamId| memberships.get(teamId).or([]) }
+  let viaTeams = teams.into { |teamId| memberships.get(teamId).or([]) }
   return Ok((direct + viaTeams).uniq)
 end
 
@@ -203,7 +203,7 @@ make User do
   foul organizations -> [Organization] do
     return Organizations.all().or([]) if @serverAdmin?
     let mine = Grants.organizationsOf(@id).or([])
-    mine.flatMap do |id|
+    mine.into do |id|
       match Organizations.find(id) do
         Ok(Just(organization)) => [organization]
         _ => []

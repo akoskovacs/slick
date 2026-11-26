@@ -109,7 +109,7 @@ commandsDeclared : WebRequest -> WebRequest
 foul commandsDeclared(request) do
   let bot = userFor(request)
   let listed : [Any] = request.list("commands")
-  let commands = listed.flatMap do |each|
+  let commands = listed.into do |each|
     let fields = match each do
       found: {String: Any} => found
       _ => {}
@@ -218,7 +218,7 @@ foul answerList(request) do
   let since = request.query("after").or("0").to(Integer).or(0)
   let people : [User] = Users.everyone.or([])
   let found = Answers.askedBy(organization, bot.id).or([]).filter { |each| each.answeredAt > since }
-  let listed : [Any] = found.flatMap { |each| placedAnswer(bot, people, each) }
+  let listed : [Any] = found.into { |each| placedAnswer(bot, people, each) }
   return request.json(listed)
 rescue |error|
   return error
@@ -235,7 +235,7 @@ foul invocationList(request) do
   let since = request.query("after").or("0").to(Integer).or(0)
   let people : [User] = Users.everyone.or([])
   let found = DB.Repositories.Invocations.forBot(organization, bot.id, since).or([])
-  let listed : [Any] = found.flatMap do |each|
+  let listed : [Any] = found.into do |each|
     match Conversations.find(each.conversationId) do
       Ok(Just(conversation)) => [toldInvocation(bot, people, each, conversation)]
       _ => []

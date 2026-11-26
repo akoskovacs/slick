@@ -82,7 +82,7 @@ foul addMembers(teamId: TeamId, userIds: [UserId]) -> Integer or! String do
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   # A `.try` inside a block given to `map` would leave only that block:
   # what failed is collected instead.
-  let failures = newcomers.flatMap do |userId|
+  let failures = newcomers.into do |userId|
     let stored = Grants.grant(Grant.userOnTeam(userId, teamId, Grant.Member))
     match stored do
       Ok(_) => []

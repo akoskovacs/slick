@@ -33,7 +33,7 @@ foul credentials(email: String) -> (User, String)? or! String do
   return Database.select().from(DB.Schema.Users.definition)
     .where(DB.Schema.Users.email == email)
     .first
-    .flatMap do |row|
+    .into do |row|
       match row do
         None => Ok(None)
         Just(found) => Database.decoded(found, User, {})

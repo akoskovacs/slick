@@ -137,7 +137,7 @@ private do
   # not for the function, so each is made in a function of its own.
   foul botsOf(organizationId: OrganizationId) -> [User] or! String do
     BOTS.reduce(Ok([])) do |made, name|
-      made.flatMap { |done| member(name, organizationId).map { |user| done + [user] } }
+      made.into { |done| member(name, organizationId).map { |user| done + [user] } }
     end
   end
 

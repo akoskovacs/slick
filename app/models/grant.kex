@@ -121,7 +121,7 @@ make Grant do
   # The strongest role a person holds, directly or through one of their teams.
   roleFor : UserId -> [TeamId] -> [Grant] -> GrantRole?
   let roleFor(userId, teamIds, grants) do
-    let roles = grants.flatMap do |grant|
+    let roles = grants.into do |grant|
       let held = grant.userId == Just(userId)
       let viaTeam = grant.teamId.map { |teamId| teamIds.contains?(teamId) }.or(false)
       held || viaTeam then [grant.role] else []
