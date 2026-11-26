@@ -77,7 +77,7 @@ let html(body) = shown(body, "", [])
 # is read — not tags, and not what is inside `code` or `pre`.
 mentioned : String -> [String] -> [String] -> String
 let mentioned(markup, names, mine) do
-  let longestFirst = names.reject { |name| name.empty? }.uniq.sort { |one, other| one.chars.count > other.chars.count }
+  let longestFirst = names.reject(&.empty?).uniq.sort { |one, other| one.chars.count > other.chars.count }
   let pieces = markup.split("<")
   let first = marked(pieces.first.or(""), longestFirst, mine)
   # Each piece is a tag and the text after it; `depth` is how many `code`
@@ -131,7 +131,7 @@ let answer(body, entries) do
     Just(Form(fields)) => do
       let typed = fields.mapIndexed { |field, position| filled(field, sent(entries, "f${position}")) }
       let clicked = fields.map { |field| picked(field, label, sent(entries, "value")) }
-      let lines = (label.empty? then typed else clicked).reject { |line| line.empty? }
+      let lines = (label.empty? then typed else clicked).reject(&.empty?)
       lines.empty? then None else Just((index, lines.join("\n")))
     end
     _ => None
@@ -145,7 +145,7 @@ let described(body) = blocks(body).map { |block| listed(block) }
 # The text of a message made of blocks the API was sent: the same shapes
 # `described` gives. A block of a kind that is not known is a section.
 composed : [Any] -> String
-let composed(given) = given.map { |each| written(each) }.reject { |text| text.empty? }.join("\n\n")
+let composed(given) = given.map { |each| written(each) }.reject(&.empty?).join("\n\n")
 
 private do
   # --- Blocks ---------------------------------------------------------------
@@ -179,7 +179,7 @@ private do
     end
 
     let plain = lines.takeWhile { |each| ordinary?(each.trim) }
-    return [Paragraph(plain.map { |each| each.trim })] + gathered(lines.drop(plain.count))
+    return [Paragraph(plain.map(&.trim))] + gathered(lines.drop(plain.count))
   end
 
   item? : String -> Bool
@@ -196,7 +196,7 @@ private do
   field : String -> Field
   let field(written) do
     let label = written.split(": ").first.or(written).trim
-    let options = written.drop(label.count).trim.drop(1).split("|").map { |option| option.trim }.reject { |option| option.empty? }
+    let options = written.drop(label.count).trim.drop(1).split("|").map(&.trim).reject(&.empty?)
     return Choice(label, options) if written.contains?(": ") && options.count > 1
 
     Asked(written.endsWith?(":") then written.take(written.count - 1).trim else written)
@@ -415,7 +415,7 @@ private do
     end
     if kind == "form"
       let asked = itemsOf(fields.get("fields").or([]))
-      return asked.map { |each| fieldWritten(each) }.reject { |line| line.empty? }.join("\n")
+      return asked.map { |each| fieldWritten(each) }.reject(&.empty?).join("\n")
     end
     text
   end
@@ -427,7 +427,7 @@ private do
     let fields = fieldsOf(given)
     let label = "${fields.get("label").or("")}".replace("\n", " ").replace(": ", " ").replace("|", " ").trim
     let offered = itemsOf(fields.get("options").or([]))
-    let options = offered.map { |option| "${option}".replace("\n", " ").replace("|", " ").trim }.reject { |option| option.empty? }
+    let options = offered.map { |option| "${option}".replace("\n", " ").replace("|", " ").trim }.reject(&.empty?)
     return "" if label.empty?
 
     options.count > 1 then "${FIELD}${label}: ${options.join(" | ")}" else "${FIELD}${label}"

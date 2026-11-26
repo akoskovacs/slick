@@ -200,7 +200,7 @@ private do
     let outside = conversation
       .map { |open| sidebar.people.reject { |person| open.admits?(person.id) } }
       .or([])
-    let named = conversation.map { |open| open.title }.or("")
+    let named = conversation.map(&.title).or("")
     return peoplePartial(
       "Add people to ${named}",
       "They can read everything said in it, and write in it.",

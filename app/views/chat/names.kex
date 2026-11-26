@@ -23,7 +23,7 @@ let gathered(group, user, people) = group.participants
 shownAs : [User] -> UserId -> String -> String
 let shownAs(people, id, otherwise) = people
   .find { |person| person.id == id }
-  .map { |person| person.shown }
+  .map(&.shown)
   .or(otherwise)
 
 # What a conversation is called for this person: `# name` for a channel,

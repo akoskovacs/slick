@@ -92,7 +92,13 @@ foul whoami(request) do
   let bot = userFor(request)
   let mine : [Organization] = bot.organizations
   let listed : [Any] = mine.map { |each| {"slug": each.slug, "name": each.name} }
-  let answer : {String: Any} = {"id": bot.id, "name": bot.name, "bot": true, "organizations": listed, "operators": DB.Repositories.BotOperators.forBot(bot.id).or([])}
+  let answer : {String: Any} = {
+    "id": bot.id,
+    "name": bot.name,
+    "bot": true,
+    "organizations": listed,
+    "operators": DB.Repositories.BotOperators.forBot(bot.id).or([])
+  }
   return request.json(answer)
 end
 
@@ -129,7 +135,7 @@ foul commandsDeclared(request) do
     Error(reason) => return failed(request, 500, reason)
     Ok(_) => do
       hubFor(request).changed("api", "everyone")
-      let names : [Any] = commands.map { |command| command.name }
+      let names : [Any] = commands.map(&.name)
       let answer : {String: Any} = {"ok": true, "commands": names}
       return request.json(answer)
     end
@@ -166,7 +172,7 @@ foul groupList(request) do
   let listed : [Any] = found.map do |chat|
     let others = chat.participants.reject { |id| id == bot.id }
     let names : [Any] = others.map do |id|
-      people.find { |each| each.id == id }.map { |each| each.shown }.or("Someone")
+      people.find { |each| each.id == id }.map(&.shown).or("Someone")
     end
     let ids : [Any] = others
     let entry : {String: Any} = {"id": chat.id, "people": ids, "names": names}
@@ -192,8 +198,8 @@ foul chatList(request) do
     {
       "id": chat.id,
       "person": other,
-      "name": person.map { |each| each.shown }.or("Someone"),
-      "bot": person.map { |each| each.bot? }.or(false)
+      "name": person.map(&.shown).or("Someone"),
+      "bot": person.map(&.bot?).or(false)
     }
   end
   return request.json(listed)
@@ -313,7 +319,11 @@ foul statusSet(request) do
   let seconds = asked < 1 || asked > STATUS_SECONDS then STATUS_SECONDS else asked
   App.Live.Statuses.say(statusesFor(request), userFor(request), tab, text, text.empty? then 0 else seconds * 1000)
   hubFor(request).changed("api", "everyone")
-  let answer : {String: Any} = {"ok": true, "text": text, "seconds": text.empty? then 0 else seconds}
+  let answer : {String: Any} = {
+    "ok": true,
+    "text": text,
+    "seconds": text.empty? then 0 else seconds
+  }
   return request.json(answer)
 rescue |error|
   return error
@@ -348,7 +358,7 @@ evented : WebRequest -> Net.HTTP.WebSocket.Connection -> Void
 foul evented(request, socket) do
   let bot = userFor(request)
   let mine : [Organization] = bot.organizations
-  let ids : [OrganizationId] = mine.map { |each| each.id }
+  let ids : [OrganizationId] = mine.map(&.id)
   let after = request.query("after").or("0").to(Integer).or(0)
   let seat = "${Metro.Id.serial()}"
   eventsFor(request).joined(seat, bot.id, bot.name, ids, after, socket)
@@ -378,7 +388,7 @@ private do
 
   toldAnswer : User -> [User] -> Answer -> Message -> Conversation -> {String: Any}
   let toldAnswer(bot, people, given, message, conversation) do
-    let author = people.find { |person| person.id == given.userId }.map { |person| person.shown }.or("Someone")
+    let author = people.find { |person| person.id == given.userId }.map(&.shown).or("Someone")
     {
       "message": message.id,
       "thread": message.parentId,
@@ -403,7 +413,7 @@ private do
     "group": conversation.group? then conversation.id.as(String) else "",
     "thread": used.threadId,
     "user": used.userId,
-    "author": people.find { |person| person.id == used.userId }.map { |person| person.shown }.or("Someone"),
+    "author": people.find { |person| person.id == used.userId }.map(&.shown).or("Someone"),
     "invokedAt": used.invokedAt
   }
 
@@ -468,9 +478,16 @@ foul unfolded(conversation: Conversation, rootId: MessageId) -> [Any] do
   let described(message, people) do
     let author = people.find { |person| person.id == message.userId }
     {
-      "id": message.id, "user": message.userId, "author": author.map { |person| person.shown }.or("Someone"),
-      "bot": author.map { |person| person.bot? }.or(false), "body": message.body, "blocks": App.Helpers.RichText.described(message.body), "sentAt": message.sentAt,
-      "sentOn": "${DateTime.fromEpochSeconds(message.sentAt / 1000)}", "thread": message.parentId, "replies": message.replyCount
+      "id": message.id,
+      "user": message.userId,
+      "author": author.map(&.shown).or("Someone"),
+      "bot": author.map(&.bot?).or(false),
+      "body": message.body,
+      "blocks": App.Helpers.RichText.described(message.body),
+      "sentAt": message.sentAt,
+      "sentOn": "${DateTime.fromEpochSeconds(message.sentAt / 1000)}",
+      "thread": message.parentId,
+      "replies": message.replyCount
     }
   end
 end

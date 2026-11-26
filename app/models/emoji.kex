@@ -55,7 +55,7 @@ let RANGES = [
 # A keycap such as 1️⃣ still reads as text: its digit is not an emoji character.
 let emojiOnly?(body: String) -> Bool do
   let text = shown(body)
-  let glyphs = text.chars.reject { |char| char.space? }
+  let glyphs = text.chars.reject(&.space?)
   !glyphs.empty? && glyphs.all? { |char| emoji?(char) }
 end
 

@@ -114,7 +114,7 @@ serving Bus do
   slot joined(id: String, bot: UserId, name: String, organizations: [OrganizationId], after: Integer, socket: Net.HTTP.WebSocket.Connection) -> Reply<Bool> do
     let seat = Seat { id: id, bot: bot, name: name, organizations: organizations, socket: socket }
     let current = @cursor
-    let oldest = @log.first.map { |first| first.cursor }.or(1)
+    let oldest = @log.first.map(&.cursor).or(1)
     let again = after <= 0 || after > current || after + 1 < oldest
     if again
       socket.send(Text("{\"kind\":\"reset\",\"cursor\":${current}}"))

@@ -16,7 +16,7 @@ using DB.Repositories.Users, as: Users
 # chat with one, and none in a chat with a person.
 available : User -> Conversation -> [User] -> [Command]
 foul available(user, conversation, people) do
-  let bots = people.filter { |person| person.bot? }
+  let bots = people.filter(&.bot?)
   let other = conversation.counterpart(user.id)
   let listening = if conversation.direct?
     bots.filter { |bot| bot.id == other }
@@ -24,7 +24,7 @@ foul available(user, conversation, people) do
     bots.filter { |bot| conversation.admits?(bot.id) }
   end
   return [] if listening.empty?
-  return DB.Repositories.Commands.forBots(listening.map { |bot| bot.id }).or([])
+  return DB.Repositories.Commands.forBots(listening.map(&.id)).or([])
 end
 
 # Whether what was sent is a slash command for a bot in reach — and if so,

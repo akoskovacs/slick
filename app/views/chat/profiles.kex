@@ -57,7 +57,7 @@ let pane(tab, user, sidebar) do
       let active = person.bot? || sidebar.online.contains?(person.id)
       let owner = sidebar.people.find { |each| each.id == person.ownerId }
       let keeper = if person.ownerOrganizationId.empty?
-        owner.map { |each| each.shown }.or(person.bot? then "Someone" else "")
+        owner.map(&.shown).or(person.bot? then "Someone" else "")
       else
         sidebar.organization.name
       end

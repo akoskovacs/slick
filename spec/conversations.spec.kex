@@ -216,7 +216,7 @@ describe("App.Live.Conversations, group chats") do
     with Harmat.Connection = fresh() do
       let world = populated()
       let (pair, _) = stepped(world, world.ada, Tab {}, [("event", "group-create"), ("person", world.bob.id.as(String))])
-      Assert.truthy(world.ada.visible(pair.organization, pair.conversation).map { |chat| chat.direct? }.or(false))
+      Assert.truthy(world.ada.visible(pair.organization, pair.conversation).map(&.direct?).or(false))
     end
   end
 

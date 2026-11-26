@@ -123,7 +123,7 @@ end
 private do
   # Teams with their members filled in, and whether a sync has each.
   foul membered(teams: [Team]) -> [Team] or! String do
-    let byTeam : {TeamId: [UserId]} = rosters(teams.map { |team| team.id }).try
+    let byTeam : {TeamId: [UserId]} = rosters(teams.map(&.id)).try
     return Ok(teams.map do |team|
       Team {
         ...team,

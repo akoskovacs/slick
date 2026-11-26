@@ -115,10 +115,10 @@ end
 bubble : Room -> Message -> Bool -> Bool -> String
 let bubble(room, message, inThread?, carries) do
   let writer = room.people.find { |person| person.id == message.userId }
-  let author = writer.map { |person| person.shown }.or("Someone")
+  let author = writer.map(&.shown).or("Someone")
   let mine = room.reactions.filter { |reaction| reaction.messageId == message.id }
   let chips = mine
-    .map { |reaction| reaction.emoji }
+    .map(&.emoji)
     .uniq
     .map do |glyph|
       let givers = mine.filter { |reaction| reaction.emoji == glyph }
@@ -150,9 +150,9 @@ let bubble(room, message, inThread?, carries) do
       threadable?: !inThread?,
       continued?: carries,
       author: author,
-      badged: writer.map { |person| person.bot? }.or(false) then "BOT" else "",
-      emblem: writer.map { |person| person.statusEmoji }.or(""),
-      emblemNote: writer.map { |person| person.statusText }.or(""),
+      badged: writer.map(&.bot?).or(false) then "BOT" else "",
+      emblem: writer.map(&.statusEmoji).or(""),
+      emblemNote: writer.map(&.statusText).or(""),
       initial: author.take(1).upperCase,
       writer: message.userId.as(String),
       tint: "${BEAM.erlang.phash2(message.userId, 8)}",
@@ -160,10 +160,10 @@ let bubble(room, message, inThread?, carries) do
       at: message.sentAt,
       content: App.Helpers.RichText.mentioned(
         App.Helpers.RichText.shown(message.body, message.id.as(String), given),
-        room.people.map { |person| person.shown } + room.teams.map { |team| team.handle },
+        room.people.map(&.shown) + room.teams.map(&.handle),
         [shownAs(room.people, room.viewer.id, room.viewer.shown)] + room.teams
           .filter { |team| team.includes?(room.viewer.id) }
-          .map { |team| team.handle }
+          .map(&.handle)
       ),
       own?: message.userId == room.viewer.id
     },

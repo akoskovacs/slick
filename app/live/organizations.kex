@@ -46,7 +46,7 @@ foul create(user, tab, name, rootSegments) do
 
   match user.createOrganization(name, slug) do
     Error(reason) => do
-      let taken = Organizations.findBySlug(slug).map { |found| found.set? }.or(false)
+      let taken = Organizations.findBySlug(slug).map(&.set?).or(false)
       return refused(tab, App.Live.Tab.OrganizationDialog, taken then "There is already an organization called ${name}." else reason)
     end
     Ok(organization) => return changed(Tab { organization: organization.id })
