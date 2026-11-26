@@ -43,7 +43,7 @@ foul update(user, tab, entries) do
         let key = Harmat.Database.spelled(column)
         (column, kept then stored.detail(column) else field(entries, key).trim)
       end
-      let problems = User.DETAILS.flatMap do |column, label, longest|
+      let problems = User.DETAILS.into do |column, label, longest|
         faults(column, label, longest, chosen(given, column))
       end
       return refused(tab, App.Live.Tab.ProfileDialog, problems.first.or("")) if !problems.empty?
@@ -96,7 +96,7 @@ private do
   # What was given for one detail.
   chosen : [(UserDetail, String)] -> UserDetail -> String
   let chosen(pairs, column) = pairs
-    .flatMap { |key, value| key == column then [value] else [] }
+    .into { |key, value| key == column then [value] else [] }
     .first
     .or("")
 

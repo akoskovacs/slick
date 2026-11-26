@@ -44,7 +44,7 @@ end
 foul served(store: Server<DB.Store.StoreState>) -> Void do
   let port = Metro.Environment.port()
   let bindHost = Metro.Environment.host()
-  let environment = Metro.Environment.current().map { |running| running.label }.or("")
+  let environment = Metro.Environment.current().map(&.label).or("")
   IO.printLine("Slick (${environment}) is on http://${bindHost == "0.0.0.0" then "localhost" else bindHost}:${port}")
   # Everything that serves is made in here, the routes included: this is
   # where the store becomes the database every query reaches.
@@ -82,7 +82,7 @@ foul commanded(store: Server<DB.Store.StoreState>, args: [String]) -> Void do
   match args.first.or("server") do
     "server" => upToDate(store) then served(store) else ()
     "migrate" => upToDate(store) then IO.printLine("The database is up to date.") else ()
-    "rollback" => undone(store, args.second.flatMap { |text| text.to(Integer) }.or(1))
+    "rollback" => undone(store, args.second.into { |text| text.to(Integer) }.or(1))
     "seed" => upToDate(store) then seeded(store) else ()
     other => failed("unknown command ${other}; expected server, migrate, rollback or seed")
   end

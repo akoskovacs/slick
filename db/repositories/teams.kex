@@ -82,7 +82,7 @@ foul addMembers(teamId: TeamId, userIds: [UserId]) -> Integer or! String do
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
   # A `.try` inside a block given to `map` would leave only that block:
   # what failed is collected instead.
-  let failures = newcomers.flatMap do |userId|
+  let failures = newcomers.into do |userId|
     let stored = Grants.grant(Grant.userOnTeam(userId, teamId, Grant.Member))
     match stored do
       Ok(_) => []
@@ -123,7 +123,7 @@ end
 private do
   # Teams with their members filled in, and whether a sync has each.
   foul membered(teams: [Team]) -> [Team] or! String do
-    let byTeam : {TeamId: [UserId]} = rosters(teams.map { |team| team.id }).try
+    let byTeam : {TeamId: [UserId]} = rosters(teams.map(&.id)).try
     return Ok(teams.map do |team|
       Team {
         ...team,

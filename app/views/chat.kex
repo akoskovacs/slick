@@ -39,7 +39,7 @@ let welcome(tab, user) = welcomePartial(
 # conversation itself with what is beside it.
 index : Tab -> User -> Sidebar -> Pane -> String
 let index(tab, user, sidebar, pane) do
-  let shown = pane.conversation.map { |open| open.id }.or("".as(App.Models.Conversation.ConversationId))
+  let shown = pane.conversation.map(&.id).or("".as(App.Models.Conversation.ConversationId))
   let badges = sidebar.organizations.map do |each|
     badgePartial(Badge {
       key: each.id.as(String),
@@ -117,7 +117,7 @@ let index(tab, user, sidebar, pane) do
   let unsent = do |threadId|
     sidebar.drafts
       .find { |draft| draft.conversationId == shown && draft.threadId == threadId }
-      .map { |draft| draft.body }
+      .map(&.body)
       .or("")
   end
   let beside = if !pane.thread.empty?

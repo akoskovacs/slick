@@ -49,7 +49,7 @@ describe("App.Live.Profiles, opening one") do
       ])
       Assert.truthy(changed)
       Assert.equal(
-        DB.Repositories.Users.find(admin.id).map { |found| found.map { |user| user.name } },
+        DB.Repositories.Users.find(admin.id).map { |found| found.map(&.name) },
         Ok(Just("Admin Updated"))
       )
     end
@@ -85,9 +85,9 @@ describe("App.Live.Profiles, opening one") do
     with Harmat.Connection = fresh() do
       let world = populated()
       stepped(world, world.ada, Tab {}, [("event", "message-send"), ("body", "a thread")])
-      let general = world.ada.visible("", "").map { |chat| chat.id }.or("")
+      let general = world.ada.visible("", "").map(&.id).or("")
       let said : [App.Models.Message.Message] = DB.Repositories.Messages.latest(general, 1).or([])
-      let id = said.first.map { |message| message.id }.or("")
+      let id = said.first.map(&.id).or("")
       let profile = bobsProfile(world)
       let (cancelled, _) = stepped(world, world.ada, profile, [("event", "cancel")])
       Assert.equal(cancelled.profile, world.bob.id)

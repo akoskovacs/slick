@@ -19,7 +19,7 @@ foul latest(conversationId: ConversationId, limit: Integer) -> [Message] or! Str
     .orderBy(descending: [:sent_at, :id])
     .limit(limit)
     .all(as: Message)
-    .map { |messages| messages.reverse }
+    .map(&.reverse)
 end
 
 # How many messages of a conversation are newer than `after`, in

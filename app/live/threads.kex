@@ -43,7 +43,7 @@ end
 
 # The id of the message a thread starts with; "" for no thread.
 firstId : [Message] -> MessageId
-let firstId(thread) = thread.first.map { |first| first.id }.or("")
+let firstId(thread) = thread.first.map(&.id).or("")
 
 # Opens the thread a message is in beside the conversation, in place of a
 # profile or a team.

@@ -41,7 +41,7 @@ let pane(tab, user, sidebar) do
   match sidebar.teams.find { |team| team.id == tab.team } do
     None => ""
     Just(team) => do
-      let mates = team.members.flatMap do |id|
+      let mates = team.members.into do |id|
         sidebar.people.find { |person| person.id == id }.map do |person|
           [matePartial(Mate {
             key: person.id.as(String),

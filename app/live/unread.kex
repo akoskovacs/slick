@@ -54,9 +54,11 @@ end
 # for each when they are not looking.
 markRead : User -> [Reading] -> Conversation -> [Message] -> [Message] -> Bool -> (ConversationId, MessageId)
 foul markRead(user, marks, conversation, messages, thread, looking?) do
-  return ("", "") if !looking?
+  let nowhere : ConversationId = ""
+  let noThread : MessageId = ""
+  return (nowhere, noThread) if !looking?
 
-  let threadId = thread.first.map { |first| first.id }.or("")
+  let threadId = thread.first.map(&.id).or("")
   advance(user, marks, Reading {
     conversationId: conversation.id,
     readAt: newest(messages)
@@ -89,12 +91,12 @@ private do
     let channels : [Conversation] = user.readable(Conversations.channels(organization.id).or([]))
     let chats : [Conversation] = Conversations.directs(organization.id, user.id).or([])
     let groups : [Conversation] = Conversations.groups(organization.id, user.id).or([])
-    let places = (channels + chats + groups).map { |conversation| conversation.id }
+    let places = (channels + chats + groups).map(&.id)
     let follows = marks.filter do |mark|
       !mark.threadId.empty? && mark.threadId != openThread && places.contains?(mark.conversationId)
     end
-    let roots = follows.map { |mark| mark.threadId }
-    let oldest = follows.map { |mark| mark.readAt }.min.or(0)
+    let roots = follows.map(&.threadId)
+    let oldest = follows.map(&.readAt).min.or(0)
     let replies : [Message] = follows.empty? then [] else Messages.repliesTo(roots, oldest).or([])
     let answered = replies.filter do |reply|
       reply.userId != user.id && follows.any? do |mark|
@@ -126,12 +128,12 @@ private do
   readTo : Conversation -> [Reading] -> Integer -> Integer
   let readTo(conversation, marks, since) = marks
     .find { |each| each.conversationId == conversation.id && each.threadId.empty? }
-    .map { |each| each.readAt }
+    .map(&.readAt)
     .or(since)
 
   # When the newest of some messages was sent; 0 for none.
   newest : [Message] -> Integer
-  let newest(messages) = messages.last.map { |message| message.sentAt }.or(0)
+  let newest(messages) = messages.last.map(&.sentAt).or(0)
 
   # Whether this person follows the thread a message starts.
   following? : [Reading] -> MessageId -> Bool
@@ -144,7 +146,7 @@ private do
   foul advance(user, marks, reading) do
     let before = marks
       .find { |mark| mark.conversationId == reading.conversationId && mark.threadId == reading.threadId }
-      .map { |mark| mark.readAt }
+      .map(&.readAt)
       .or(0)
     Readings.markRead(user.id, reading) if reading.readAt > before
   end

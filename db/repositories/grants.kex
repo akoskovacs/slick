@@ -141,7 +141,7 @@ foul readersOf(resourceType: GrantResourceType, resourceIds: [GrantResourceId]) 
     .orderBy([:granted_at, :id])
     .all(as: Grant)
     .try
-  let teamIds = found.flatMap { |grant| grant.teamId.map { |id| [id.as(GrantResourceId)] }.or([]) }.uniq
+  let teamIds = found.into { |grant| grant.teamId.map { |id| [id.as(GrantResourceId)] }.or([]) }.uniq
   let teams : {GrantResourceId: [UserId]} = membersOf(TeamResource, teamIds).or({})
   return Ok(found.reduce({}) do |grouped, grant|
     let holders = match grant.userId do

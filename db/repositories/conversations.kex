@@ -190,7 +190,7 @@ end
 foul admit(conversationId: ConversationId, userIds: [UserId]) -> Integer or! String do
   let present : [UserId] = (participantsOf([conversationId]).try).get(conversationId).or([])
   let newcomers = userIds.uniq.reject { |userId| present.contains?(userId) }
-  let failures = newcomers.flatMap do |userId|
+  let failures = newcomers.into do |userId|
     let stored = Grants.grant(Grant.userOnConversation(userId, conversationId, Grant.Member))
     match stored do
       Ok(_) => []
@@ -327,7 +327,7 @@ private do
     let closed = conversations.filter { |conversation| conversation.access == Private }
     return Ok(conversations) if closed.empty?
 
-    let byConversation : {ConversationId: [UserId]} = participantsOf(closed.map { |each| each.id }).try
+    let byConversation : {ConversationId: [UserId]} = participantsOf(closed.map(&.id)).try
     return Ok(conversations.map do |conversation|
       Conversation { ...conversation, participants: byConversation.get(conversation.id).or([]) }
     end)

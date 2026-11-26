@@ -199,7 +199,7 @@ describe("Slick") do
     with Harmat.Connection = fresh() do
       Assert.equal(DB.Seeds.planted(Test), Ok([]))
       Assert.equal(DB.Seeds.planted(Production), Ok([]))
-      Assert.equal(DB.Seeds.planted(Development).map { |lines| lines.count }, Ok(6))
+      Assert.equal(DB.Seeds.planted(Development).map(&.count), Ok(6))
       Assert.equal(DB.Seeds.planted(Development), Ok([]))
 
       let token = App.Services.Authentication.signIn("ada@example.com", DB.Seeds.PASSWORD).try
@@ -209,8 +209,8 @@ describe("Slick") do
       let claude : User = App.Services.Bots.bearer(Just("Bearer ${DB.Seeds.BOT_TOKEN}")).try
       Assert.equal(claude.name, "claude")
       # The bots script/dev.sh runs beside the server, each by its own token.
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_development_muse")).map { |bot| bot.name }, Just("muse"))
-      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_development_opencode")).map { |bot| bot.name }, Just("opencode"))
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_development_muse")).map(&.name), Just("muse"))
+      Assert.equal(App.Services.Bots.bearer(Just("Bearer slick_bot_development_opencode")).map(&.name), Just("opencode"))
 
       # The bot reads a channel through the API, and a thread when it asks
       # for one — but only a thread of the conversation it names.
@@ -245,7 +245,7 @@ describe("Slick") do
         "{\"commands\":[{\"name\":\"/model\",\"description\":\"Pick a model\"},{\"name\":\"mode\"}]}"
       ))
       Assert.equal(declaring.code, 200)
-      Assert.equal(DB.Repositories.Commands.forBots([claude.id]).map { |found| found.map { |command| command.name } }, Ok(["mode", "model"]))
+      Assert.equal(DB.Repositories.Commands.forBots([claude.id]).map { |found| found.map(&.name) }, Ok(["mode", "model"]))
       let offeredHere = App.Live.Chat.markup(statuses, ada, Tab {})
       Assert.truthy(offeredHere.contains?("data-live-hook=\"Composer\""))
       Assert.truthy(offeredHere.contains?("&quot;insert&quot;:&quot;@claude /model &quot;"))
@@ -797,7 +797,7 @@ describe("User, deciding from grants") do
       Assert.truthy(admin.memberOf?(other.id))
       Assert.truthy(admin.canManage?(other.id))
       Assert.equal(admin.role(Grant.OrganizationResource, other.id.as(Grant.GrantResourceId)), Just(Grant.Admin))
-      Assert.equal(admin.home(other.id).map { |organization| organization.id }, Just(other.id))
+      Assert.equal(admin.home(other.id).map(&.id), Just(other.id))
       Assert.truthy(admin.organizations.any? { |organization| organization.id == other.id })
       Assert.truthy(App.Live.Chat.markup(statuses, admin, Tab { organization: other.id }).contains?("Manage people"))
 
